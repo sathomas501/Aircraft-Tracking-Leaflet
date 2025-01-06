@@ -1,0 +1,86 @@
+/* === Base Layer === */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html, body {
+    @apply antialiased bg-gray-50 text-gray-900;
+  }
+
+  *:focus {
+    @apply outline-none ring-2 ring-blue-500 ring-offset-2;
+  }
+}
+
+/* === Component Styles === */
+@layer components {
+  /* === Layout & Containers === */
+  .app-container {
+    @apply opacity-0 transition-opacity duration-200 min-h-screen;
+    &.styles-loaded { @apply opacity-100; }
+  }
+
+  .grid-container {
+    @apply grid gap-4 p-4;
+    &.aircraft-grid { @apply grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4; }
+  }
+
+  /* === Cards & Displays === */
+  .card {
+    @apply bg-white rounded-lg shadow transition-shadow duration-200 hover:shadow-md;
+    &.aircraft-card { @apply p-4 min-w-[200px] space-y-2; }
+  }
+
+  /* === Status Indicators === */
+  .status-badge {
+    @apply px-2 py-1 rounded-full text-xs font-medium inline-flex items-center gap-1;
+    &.active { @apply bg-green-100 text-green-800; }
+  }
+
+  /* === Map Components === */
+  .map-container {
+    @apply relative w-full h-[calc(100vh-4rem)] rounded-lg overflow-hidden shadow-md;
+  }
+
+  .aircraft-marker {
+    @apply transform-gpu transition-all duration-200;
+    &.selected {
+      @apply z-10 scale-110 drop-shadow-lg;
+      filter: brightness(1.2);
+    }
+  }
+
+  /* === Selector Components === */
+  .unified-selector {
+    @apply relative z-[1000];
+    .selector-input {
+      @apply w-full px-4 py-2 border rounded-lg transition-colors duration-200;
+    }
+  }
+
+  /* === Loading States === */
+  .loading-spinner {
+    @apply animate-spin rounded-full border-4 border-gray-300;
+    border-top-color: theme('colors.blue.500');
+  }
+}
+
+/* === Utility Patterns === */
+@layer utilities {
+  .text-shadow-sm { text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1); }
+  .backdrop-blur-md { backdrop-filter: blur(8px); }
+}
+
+/* === Framework Overrides === */
+.leaflet-container {
+  @apply w-full h-full z-10;
+}
+
+.leaflet-control-zoom {
+  @apply border-0 shadow-lg;
+}
+
+.aircraft-marker .aircraft-icon img {
+  @apply transition-all duration-300;
+}
