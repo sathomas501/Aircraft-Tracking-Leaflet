@@ -1,1 +1,7 @@
-t
+# Ignore Next.js build and cache files
+.next/
+
+# Ignore other system-specific files
+.DS_Store
+node_modules/
+*.log
