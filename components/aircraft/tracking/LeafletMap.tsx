@@ -3,23 +3,37 @@ import { MapContainer, TileLayer, Marker, Popup, ZoomControl } from 'react-leafl
 import L from 'leaflet';
 import { AircraftDisplay } from '../AircraftDisplay';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
-import { UnifiedSelector } from '../selector/UnifiedSelector';
+import  UnifiedSelector  from './../selector/UnifiedSelector';
 import { useAircraftData } from '@/hooks/useAircraftData';
-import { openSkyClient } from '@/lib/opensky-client';
-import type { Aircraft, Position, Trails, PositionData } from '@/types/types';
+import { fetchOpenskyPositions } from '@/lib/opensky-client'; // Adjust export/import
+import type { Aircraft, Position, Trails, PositionData, SelectOption } from '@/types/types';
+import LeafletMap from './LeafletMap'; // Adjust the path based on your folder structure
 
 
 // Import Leaflet CSS
 import 'leaflet/dist/leaflet.css';
 
+
 interface LeafletMapProps {
+  selectedType: string;
+  selectedManufacturer: string;
+  selectedModel: string;
+  onManufacturerSelect: (manufacturer: string) => void;
+  onModelSelect: (model: string) => void;
   onAircraftCountChange?: (count: number) => void;
 }
+
 
 const RETRY_MAX = 3;
 const TRAIL_LENGTH = 20;
 
-export const LeafletMap: React.FC<LeafletMapProps> = ({ onAircraftCountChange }) => {
+const LeafletMap: React.FC<LeafletMapProps> = ({
+  selectedType,
+  selectedManufacturer,
+  selectedModel,
+  onManufacturerSelect,
+  onModelSelect,
+}) => {
   const [state, setState] = useState({
     selectedManufacturer: '',
     selectedModel: '',
@@ -35,11 +49,16 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({ onAircraftCountChange })
   });
 
   const {
-    data: { manufacturers = [], models = [] },
+    data,
     isLoading,
     error: dataError,
     refetch
-  } = useAircraftData(state.selectedManufacturer, state.selectedType);
+  } = useAircraftData(state.selectedManufacturer, state.selectedModel, state.selectedType);
+   
+
+  
+  // Safely access manufacturers data
+const manufacturersList = data?.manufacturers || [];
 
   const updateState = useCallback((updates: Partial<typeof state>) => {
     setState(prev => ({ ...prev, ...updates }));
@@ -97,14 +116,33 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({ onAircraftCountChange })
           />
           <ZoomControl position="topright" />
           
-          {manufacturers.map((aircraft) => {
-            const position = state.livePositions[aircraft.value];
-            if (!position?.latitude || !position?.longitude) return null;
+          {manufacturersList.map((aircraft: SelectOption) => {
+ const position = state.livePositions[aircraft.value];
+ if (!position?.latitude || !position?.longitude) return null;
 
-            return (
-              <Marker
-                key={aircraft.value}
-                position={[position.latitude, position.longitude]}
+ const aircraftData: Aircraft = {
+   icao24: aircraft.value,
+   "N-NUMBER": "",  // Required field
+   manufacturer: aircraft.label,
+   model: "",       // Required field 
+   operator: "",    // Required field
+   NAME: "",        // Required field
+   CITY: "",        // Required field 
+   STATE: "",       // Required field
+   latitude: position.latitude,
+   longitude: position.longitude,
+   velocity: position.velocity,
+   heading: position.heading,
+   altitude: position.altitude,
+   on_ground: position.on_ground,
+   last_contact: position.last_contact,
+   isTracked: true
+ };
+
+ return (
+   <Marker
+     key={aircraft.value}
+     position={[position.latitude, position.longitude]}
                 icon={L.divIcon({
                   className: 'aircraft-marker',
                   html: `
@@ -125,25 +163,14 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({ onAircraftCountChange })
                 })}
               >
                 <Popup>
-                  <div className="min-w-[200px]">
-                    <AircraftDisplay
-                      aircraft={{
-                        icao24: aircraft.value,
-                        manufacturer: aircraft.label,
-                        latitude: position.latitude,
-                        longitude: position.longitude,
-                        velocity: position.velocity,
-                        heading: position.heading,
-                        altitude: position.altitude,
-                        on_ground: position.on_ground,
-                        last_contact: position.last_contact,
-                        isTracked: true
-                      }}
-                      displayMode="popup"
-                    />
-                  </div>
-                </Popup>
-              </Marker>
+       <div className="min-w-[200px]">
+         <AircraftDisplay
+           aircraft={aircraftData}
+           displayMode="popup"
+         />
+       </div>
+     </Popup>
+   </Marker>
             );
           })}
         </MapContainer>
