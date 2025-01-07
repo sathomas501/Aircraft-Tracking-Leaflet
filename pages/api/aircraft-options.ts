@@ -21,7 +21,9 @@ const AIRCRAFT_TYPES = [
   { value: '6', label: 'Rotorcraft', count: 0 },
 ];
 
-const dbPath = path.join(process.cwd(), 'lib', 'aircraft.db');
+const dbPath = path.join(process.cwd(), 'lib', 'db', 'aircraft.db');
+console.log('Current working directory:', process.cwd());
+
 
 export default async function handler(
   req: NextApiRequest,

@@ -1,4 +1,4 @@
-import { createDbConnection } from '@/lib/db';
+import { createDbConnection } from './../lib/db/db';
 import { SelectOption } from '@/types/types';
 
 export interface ManufacturerRow {
