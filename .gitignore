@@ -5,3 +5,8 @@
 .DS_Store
 node_modules/
 *.log
+
+# Ignore large database files
+lib/MASTER.txt
+lib/db/aircraft.db
+
