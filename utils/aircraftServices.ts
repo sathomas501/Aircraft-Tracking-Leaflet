@@ -1,8 +1,10 @@
+// utils/aircraftServices.ts
 import axios from 'axios';
-import { getActiveIcao24ByManufacturer } from '@/utils/dbQueries';
-import { SelectOption } from '@/types/types';
+import { getActiveIcao24ByManufacturer } from '@/lib/db/queries';
+import { openSkyService } from '@/lib/api/opensky';
+import type { SelectOption } from '@/types/base';
+import type { PositionData } from '@/types/api/opensky';
 
-// Define interfaces for type safety
 interface ManufacturerRow {
     manufacturer: string;
     count: number;
@@ -44,14 +46,9 @@ export const fetchIcao24FromAPI = async (manufacturer: string): Promise<string[]
     }
 
     try {
-        console.log('Fetching ICAO24s for manufacturer:', manufacturer);
         const response = await axios.get<Icao24Response>('/api/aircraft/icao24s', { 
-            params: { 
-                manufacturer: manufacturer.trim() 
-            } 
+            params: { manufacturer: manufacturer.trim() }
         });
-        
-        console.log('ICAO24s response:', response.data);
         return response.data.icao24List || [];
     } catch (error) {
         if (axios.isAxiosError(error)) {
@@ -71,6 +68,15 @@ export const fetchModels = async (manufacturer: string, activeOnly: boolean = fa
         return response.data.models;
     } catch (error) {
         console.error('Error fetching models:', error);
+        return [];
+    }
+};
+
+export const fetchAircraftPositions = async (icao24List: string[]): Promise<PositionData[]> => {
+    try {
+        return await openSkyService.getPositions(icao24List);
+    } catch (error) {
+        console.error('Error fetching aircraft positions:', error);
         return [];
     }
 };
