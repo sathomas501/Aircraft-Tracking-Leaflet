@@ -1,6 +1,6 @@
 // pages/api/aircraft/icao24s.ts
-import { NextApiRequest, NextApiResponse } from 'next';
-import { getActiveIcao24ByManufacturer } from '@/utils/dbQueries';
+import type { NextApiRequest, NextApiResponse } from 'next';
+import { getDb } from '@/lib/db/connection';
 
 interface Icao24Response {
     icao24List: string[];
@@ -9,10 +9,9 @@ interface Icao24Response {
 }
 
 export default async function handler(
-    req: NextApiRequest, 
+    req: NextApiRequest,
     res: NextApiResponse<Icao24Response>
 ) {
-    // Only allow GET requests
     if (req.method !== 'GET') {
         return res.status(405).json({
             icao24List: [],
@@ -31,8 +30,18 @@ export default async function handler(
     }
 
     try {
-        const icao24List = await getActiveIcao24ByManufacturer(manufacturer);
+        const db = await getDb();
+        const query = `
+            SELECT icao24
+            FROM aircraft
+            WHERE manufacturer = ?
+                AND icao24 IS NOT NULL
+                AND LENGTH(TRIM(icao24)) > 0;
+        `;
         
+        const results = await db.all(query, [manufacturer]);
+        const icao24List = results.map(row => row.icao24);
+
         if (!icao24List.length) {
             return res.status(200).json({
                 icao24List: [],

@@ -1,0 +1,109 @@
+📂 
+├── 📄 .env
+├── 📄 .gitattributes
+├── 📄 .gitignore
+├── 📂 components
+│   ├── 📂 Layout
+│   │   ├── 📄 About.tsx
+│   │   ├── 📄 Header.tsx
+│   │   ├── 📄 Layout.tsx
+│   │   └── 📄 index.tsx
+│   ├── 📂 aircraft
+│   │   ├── 📄 AircraftDisplay.tsx
+│   │   ├── 📄 index.ts
+│   │   ├── 📂 selector
+│   │   │   ├── 📄 UnifiedSelector.tsx
+│   │   │   └── 📄 index.ts
+│   │   └── 📂 tracking
+│   │       ├── 📂 Map
+│   │       │   ├── 📄 MapWrapper.tsx
+│   │       │   ├── 📂 components
+│   │       │   │   ├── 📂 AircraftIcon
+│   │       │   │   │   ├── 📄 AircraftIcon.tsx
+│   │       │   │   │   └── 📄 constants.ts
+│   │       │   │   ├── 📄 AircraftMarker.tsx
+│   │       │   │   ├── 📂 Controls
+│   │       │   │   │   └── 📄 MapControls.tsx
+│   │       │   │   ├── 📄 FitToBounds.tsx
+│   │       │   │   └── 📄 MapLoading.tsx
+│   │       │   └── 📄 index.ts
+│   │       └── 📄 index.ts
+│   ├── 📂 shared
+│   │   ├── 📂 LoadingSpinner
+│   │   │   ├── 📄 LoadingSpinner.tsx
+│   │   │   ├── 📄 constants.ts
+│   │   │   ├── 📄 index.ts
+│   │   │   └── 📄 types.ts
+│   │   └── 📄 index.ts
+│   └── 📂 ui
+│       ├── 📂 Card
+│       │   ├── 📄 Card.tsx
+│       │   └── 📄 index.tsx
+│       └── 📂 Select
+│           ├── 📄 PaginatedSelect.tsx
+│           ├── 📄 Select.tsx
+│           └── 📄 index.ts
+├── 📂 constants
+│   ├── 📄 aircraft.ts
+│   ├── 📄 index.ts
+│   ├── 📄 map.ts
+│   └── 📄 ui.ts
+├── 📂 hooks
+│   ├── 📄 useAircraftData.ts
+│   ├── 📄 useOpenskyPositions.ts
+│   └── 📄 usePositionData.ts
+├── 📂 lib
+│   ├── 📄 MASTER.txt
+│   ├── 📂 api
+│   │   ├── 📄 constants.ts
+│   │   └── 📄 opensky.ts
+│   └── 📂 db
+│       ├── 📄 aircraft.db
+│       ├── 📄 connection.ts
+│       ├── 📄 constants.ts
+│       └── 📄 queries.ts
+├── 📄 next-env.d.ts
+├── 📄 next.config.js
+├── 📄 package-lock.json
+├── 📄 package.json
+├── 📂 pages
+│   ├── 📄 LeafletMap.tsx
+│   ├── 📄 _app.tsx
+│   ├── 📂 api
+│   │   ├── 📂 aircraft
+│   │   │   ├── 📄 icao24s.ts
+│   │   │   ├── 📄 index.ts
+│   │   │   └── 📄 models.ts
+│   │   ├── 📄 health.ts
+│   │   ├── 📄 manufacturers.ts
+│   │   ├── 📄 opensky.ts
+│   │   ├── 📄 positions.ts
+│   │   └── 📄 websocket.ts
+│   ├── 📄 documents.tsx
+│   ├── 📄 index.tsx
+│   └── 📄 map.tsx
+├── 📄 postcss.config.js
+├── 📂 styles
+│   ├── 📄 @tailwinds.css
+│   ├── 📄 globals.css
+│   ├── 📄 leaflet.css
+│   └── 📄 utils.ts
+├── 📄 tailwind.config.js
+├── 📄 tree_output.txt
+├── 📄 tsconfig.json
+├── 📂 types
+│   ├── 📂 api
+│   │   └── 📄 opensky.ts
+│   ├── 📄 base.ts
+│   ├── 📄 css.d.ts
+│   ├── 📄 index.ts
+│   └── 📄 map.ts
+└── 📂 utils
+    ├── 📄 adapters.ts
+    ├── 📄 aircraftServices.ts
+    ├── 📄 api-error.ts
+    ├── 📄 cn.ts
+    ├── 📄 errors.ts
+    ├── 📄 helpers.ts
+    ├── 📄 index.ts
+    └── 📄 uiConstants.ts
