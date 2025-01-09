@@ -1,11 +1,6 @@
 import React, { useState, useEffect } from 'react';
-
-interface SelectOption {
-  value: string;
-  label: string;
-  count: number;
-}
-
+import { fetchAircraftPositions, fetchManufacturers } from '@/utils/aircraftServices';
+import type { SelectOption } from '@/types/base';
 
 interface UnifiedSelectorProps {
   selectedType: string;
@@ -22,44 +17,70 @@ const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
   selectedManufacturer,
   selectedModel,
 }) => {
-
   const [manufacturers, setManufacturers] = useState<SelectOption[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const fetchManufacturers = async (): Promise<SelectOption[]> => {
-    try {
-      const response = await fetch('/api/manufacturers');
-      if (!response.ok) {
-        throw new Error(`HTTP error! Status: ${response.status}`);
+  useEffect(() => {
+    const loadManufacturers = async () => {
+      try {
+        setLoading(true);
+        const options = await fetchManufacturers(false);
+        setManufacturers(options);
+      } catch (error) {
+        console.error('Error fetching manufacturers:', error);
+        setError('Unable to load manufacturers. Please try again later.');
+      } finally {
+        setLoading(false);
       }
-      const data = await response.json();
-      return data.manufacturers || [];
-    } catch (error) {
-      console.error('Failed to fetch manufacturers:', error);
-      return [];
+    };
+
+    loadManufacturers();
+  }, []);
+
+  const handleManufacturerChange = async (manufacturer: string) => {
+    onManufacturerSelect(manufacturer);
+
+    if (!manufacturer) return;
+
+    try {
+      const positions = await fetchAircraftPositions([manufacturer]);
+      console.log('Fetched active aircraft positions:', positions);
+    } catch (err) {
+      console.error('Error fetching aircraft positions:', err);
     }
   };
 
-  useEffect(() => {
-    const fetchManufacturersData = async () => {
-      const manufacturersData = await fetchManufacturers();
-      setManufacturers(manufacturersData);
-    };
-
-    fetchManufacturersData();
-  }, []);
+  if (loading) return <div>Loading manufacturers...</div>;
+  if (error) return <div className="text-red-500">{error}</div>;
 
   return (
     <div>
-      <h1>Unified Selector</h1>
-      {/* Example UI */}
+      <h1>Aircraft Selector</h1>
       <p>Selected Type: {selectedType}</p>
-      <select value={selectedManufacturer} onChange={(e) => onManufacturerSelect(e.target.value)}>
+      {/* Manufacturer Dropdown */}
+      <select
+        value={selectedManufacturer}
+        onChange={(e) => handleManufacturerChange(e.target.value)}
+        className="w-full p-2 border rounded"
+      >
         <option value="">Select Manufacturer</option>
-        {/* Options would go here */}
+        {manufacturers.map((manufacturer) => (
+          <option key={manufacturer.value} value={manufacturer.value}>
+            {manufacturer.label} ({manufacturer.count})
+          </option>
+        ))}
       </select>
-      <select value={selectedModel} onChange={(e) => onModelSelect(e.target.value)}>
+
+      {/* Model Dropdown */}
+      <select
+        value={selectedModel}
+        onChange={(e) => onModelSelect(e.target.value)}
+        className="w-full p-2 border rounded mt-2"
+        disabled={!selectedManufacturer}
+      >
         <option value="">Select Model</option>
-        {/* Options would go here */}
+        {/* Future enhancement: Populate models dynamically */}
       </select>
     </div>
   );
