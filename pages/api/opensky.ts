@@ -1,102 +1,49 @@
-// lib/api/opensky.ts
-import axios from 'axios';
-import NodeCache from 'node-cache';
-import type { PositionData, OpenSkyResponse } from '@/types/api/opensky';
+// pages/api/opensky.ts
+import type { NextApiRequest, NextApiResponse } from 'next';
+import { openSkyService } from '@/lib/services/opensky';
+import { API_PARAMS } from '@/lib/api/constants';
 
-export class OpenSkyApiError extends Error {
-  constructor(
-    message: string,
-    public readonly statusCode?: number
-  ) {
-    super(message);
-    this.name = 'OpenSkyApiError';
+export default async function handler(
+  req: NextApiRequest,
+  res: NextApiResponse
+) {
+  // Handle WebSocket upgrade
+  if (req.method === 'GET' && (req as any).socket?.server && req.url?.includes('/api/opensky')) {
+    return res.status(426).json({ message: 'Upgrade Required' });
+  }
+
+  if (req.method !== 'GET') {
+    return res.status(405).json({ 
+      error: 'Method not allowed',
+      message: `HTTP method ${req.method} is not supported.`
+    });
+  }
+
+  const { [API_PARAMS.ICAO24S]: icao24s } = req.query;
+  
+  if (!icao24s) {
+    return res.status(400).json({ 
+      error: `Missing ${API_PARAMS.ICAO24S} parameter` 
+    });
+  }
+
+  try {
+    const icaoList = typeof icao24s === 'string' 
+      ? icao24s.split(',')
+      : Array.isArray(icao24s) 
+        ? icao24s 
+        : [icao24s];
+
+    console.log('Fetching positions for', icaoList.length, 'aircraft');
+    const positions = await openSkyService.getPositions(icaoList);
+    
+    console.log('Retrieved positions for', positions.length, 'aircraft');
+    res.status(200).json(positions);
+  } catch (error) {
+    console.error('OpenSky API error:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch from OpenSky',
+      message: process.env.NODE_ENV === 'development' ? (error as Error).message : undefined
+    });
   }
 }
-
-class OpenSkyService {
-  private cache: NodeCache;
-  private readonly cacheTime = 15; // 15 seconds TTL
-  private readonly restUrl = 'https://opensky-network.org/api/states/all';
-
-  constructor(
-    private readonly username?: string,
-    private readonly password?: string
-  ) {
-    this.cache = new NodeCache({ stdTTL: this.cacheTime });
-  }
-
-  public async getPositions(icao24s?: string[]): Promise<PositionData[]> {
-    try {
-      // Try cache first
-      const cachedData = this.cache.get<PositionData[]>('positions');
-      if (cachedData) {
-        return icao24s 
-          ? cachedData.filter(pos => icao24s.includes(pos.icao24))
-          : cachedData;
-      }
-
-      // Fetch from API if cache miss
-      const response = await axios.get<OpenSkyResponse>(
-        this.restUrl,
-        {
-          params: icao24s?.length ? { icao24: icao24s.join(',') } : undefined,
-          auth: this.username && this.password 
-            ? { username: this.username, password: this.password }
-            : undefined,
-          timeout: 5000
-        }
-      );
-
-      if (!response.data?.states) {
-        throw new OpenSkyApiError('No aircraft state data received');
-      }
-
-      const positions = this.parsePositions(response.data);
-      this.cache.set('positions', positions);
-      return positions;
-
-    } catch (error) {
-      if (axios.isAxiosError(error)) {
-        throw new OpenSkyApiError(
-          error.response?.data?.message || 'Failed to fetch aircraft positions',
-          error.response?.status
-        );
-      }
-      throw new OpenSkyApiError('Failed to fetch positions');
-    }
-  }
-
-  private parsePositions(data: OpenSkyResponse): PositionData[] {
-    return data.states.reduce<PositionData[]>((acc, state) => {
-      const [
-        icao24, _, __, ___, last_contact,
-        longitude, latitude, altitude,
-        on_ground, velocity, heading
-      ] = state;
-
-      if (typeof latitude === 'number' && typeof longitude === 'number') {
-        acc.push({
-          icao24,
-          latitude,
-          longitude,
-          altitude: typeof altitude === 'number' ? altitude : undefined,
-          velocity: typeof velocity === 'number' ? velocity : undefined,
-          heading: typeof heading === 'number' ? heading : undefined,
-          on_ground: Boolean(on_ground),
-          last_contact: typeof last_contact === 'number' ? last_contact : undefined
-        });
-      }
-      return acc;
-    }, []);
-  }
-
-  public cleanup(): void {
-    this.cache.close();
-  }
-}
-
-// Create singleton instance
-export const openSkyService = new OpenSkyService(
-  process.env.NEXT_PUBLIC_OPENSKY_USERNAME,
-  process.env.NEXT_PUBLIC_OPENSKY_PASSWORD
-);
