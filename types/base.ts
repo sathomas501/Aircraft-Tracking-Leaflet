@@ -133,3 +133,24 @@ export function positionDataToAircraftPosition(data: PositionData): AircraftPosi
     on_ground: data.on_ground
   };
 }
+
+export function mapPositionDataToAircraft(positionData: PositionData[]): Aircraft[] {
+  return positionData.map((data) => ({
+    icao24: data.icao24,
+    "N-NUMBER": "",
+    manufacturer: "Unknown",
+    model: "Unknown",
+    operator: "Unknown",
+    latitude: data.latitude ?? 0,
+    longitude: data.longitude ?? 0,
+    altitude: data.altitude ?? 0,
+    heading: data.heading ?? 0,
+    velocity: data.velocity ?? 0,
+    on_ground: data.on_ground ?? false,
+    last_contact: data.last_contact ?? Date.now(),
+    NAME: "",
+    CITY: "",
+    STATE: "",
+    isTracked: true,
+  }));
+}
