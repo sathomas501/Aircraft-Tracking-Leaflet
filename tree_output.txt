@@ -12,23 +12,28 @@
 │   │   ├── 📄 AircraftDisplay.tsx
 │   │   ├── 📄 index.ts
 │   │   ├── 📂 selector
+│   │   │   ├── 📄 ManufacturerMapOverlay.tsx
 │   │   │   ├── 📄 UnifiedSelector.tsx
 │   │   │   └── 📄 index.ts
 │   │   └── 📂 tracking
 │   │       ├── 📂 Map
+│   │       │   ├── 📄 MapComponent.tsx
 │   │       │   ├── 📄 MapWrapper.tsx
 │   │       │   ├── 📂 components
 │   │       │   │   ├── 📂 AircraftIcon
 │   │       │   │   │   ├── 📄 AircraftIcon.tsx
 │   │       │   │   │   └── 📄 constants.ts
 │   │       │   │   ├── 📄 AircraftMarker.tsx
-│   │       │   │   ├── 📂 Controls
-│   │       │   │   │   └── 📄 MapControls.tsx
 │   │       │   │   ├── 📄 FitToBounds.tsx
-│   │       │   │   └── 📄 MapLoading.tsx
+│   │       │   │   ├── 📄 MapControls.tsx
+│   │       │   │   └── 📂 aircraft
+│   │       │   │       └── 📂 tracking
+│   │       │   │           └── 📂 Map
+│   │       │   ├── 📄 constants.ts
 │   │       │   └── 📄 index.ts
 │   │       └── 📄 index.ts
 │   ├── 📂 shared
+│   │   ├── 📄 ErrorBoundary.tsx
 │   │   ├── 📂 LoadingSpinner
 │   │   │   ├── 📄 LoadingSpinner.tsx
 │   │   │   ├── 📄 constants.ts
@@ -48,6 +53,7 @@
 │   ├── 📄 index.ts
 │   ├── 📄 map.ts
 │   └── 📄 ui.ts
+├── 📄 graph.svg
 ├── 📂 hooks
 │   ├── 📄 useAircraftData.ts
 │   ├── 📄 useOpenskyPositions.ts
@@ -67,7 +73,6 @@
 ├── 📄 package-lock.json
 ├── 📄 package.json
 ├── 📂 pages
-│   ├── 📄 LeafletMap.tsx
 │   ├── 📄 _app.tsx
 │   ├── 📂 api
 │   │   ├── 📂 aircraft
@@ -77,12 +82,15 @@
 │   │   ├── 📄 health.ts
 │   │   ├── 📄 manufacturers.ts
 │   │   ├── 📄 opensky.ts
+│   │   ├── 📄 ping.js
 │   │   ├── 📄 positions.ts
 │   │   └── 📄 websocket.ts
 │   ├── 📄 documents.tsx
 │   ├── 📄 index.tsx
 │   └── 📄 map.tsx
 ├── 📄 postcss.config.js
+├── 📂 public
+│   └── 📄 icons8-favicon-80.png
 ├── 📂 styles
 │   ├── 📄 @tailwinds.css
 │   ├── 📄 globals.css
@@ -104,6 +112,4 @@
     ├── 📄 api-error.ts
     ├── 📄 cn.ts
     ├── 📄 errors.ts
-    ├── 📄 helpers.ts
-    ├── 📄 index.ts
-    └── 📄 uiConstants.ts
+    └── 📄 helpers.ts

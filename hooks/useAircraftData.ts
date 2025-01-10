@@ -22,6 +22,28 @@ interface AircraftData {
   };
 }
 
+// Position data query hook
+export const usePositions = (manufacturer: string, model?: string) => {
+  return useQuery({
+    queryKey: ['positions', manufacturer, model],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (manufacturer) params.append('manufacturer', manufacturer);
+      if (model) params.append('model', model);
+      
+      const response = await fetch(`/api/positions?${params}`);
+      if (!response.ok) {
+        throw new Error(`API error: ${response.status}`);
+      }
+      
+      return response.json();
+    },
+    enabled: Boolean(manufacturer),
+    refetchInterval: 30000, // Refetch every 30 seconds
+  });
+};
+
+
 // Main aircraft data query with type support
 
 export const useAircraftData = (manufacturer: string, nNumber: string, model: string, type?: string, ) => {
@@ -74,7 +96,7 @@ export const useManufacturers = () => {
     queryKey: ['manufacturers'],
     queryFn: async () => {
       console.log('useManufacturers: Fetching manufacturers');
-      const response = await fetch('/api/aircraft-options');
+      const response = await fetch('/api/manufacturers');
       
       console.log('useManufacturers: API response:', { 
         status: response.status, 
@@ -138,11 +160,7 @@ export const useAircraftModels = (manufacturer: string, type?: string) => {
 
       console.log('useAircraftModels: Fetching models for:', { manufacturer, type });
       
-      const params = new URLSearchParams({ manufacturer });
-      if (type) {
-        params.append('type', type);
-      }
-      const response = await fetch(`/api/aircraft-options?${params}`);
+      const response = await fetch(`/api/aircraft/models?manufacturer=${encodeURIComponent(manufacturer)}`);
       
       console.log('useAircraftModels: API response:', { 
         status: response.status, 
