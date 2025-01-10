@@ -2,8 +2,7 @@
 import dynamic from 'next/dynamic';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 
-// Dynamically import the map with no SSR
-const MapWithNoSSR = dynamic(
+const DynamicMap = dynamic(
   () => import('@/components/aircraft/tracking/Map').then(mod => mod.MapWrapper),
   {
     ssr: false,
@@ -18,14 +17,7 @@ const MapWithNoSSR = dynamic(
 export default function HomePage() {
   return (
     <main className="min-h-screen">
-      <MapWithNoSSR />
+      <DynamicMap />
     </main>
   );
 }
-
-// Mark this page as static to avoid SSR issues
-export const getStaticProps = () => {
-  return {
-    props: {},
-  };
-};

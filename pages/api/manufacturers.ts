@@ -1,4 +1,3 @@
-// pages/api/manufacturers.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { getDb } from '@/lib/db/connection';
 
@@ -18,7 +17,10 @@ export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse<ManufacturersResponse>
 ) {
+  console.log('Manufacturers API called with query:', req.query);
+
   if (req.method !== 'GET') {
+    console.log(`Invalid method ${req.method} called`);
     return res.status(405).json({ 
       error: 'Method not allowed',
       message: `HTTP method ${req.method} is not supported.`
@@ -29,7 +31,10 @@ export default async function handler(
   const activeFilter = activeOnly === 'true' ? 'AND active = 1' : '';
 
   try {
+    console.log('Attempting to get database connection...');
     const db = await getDb();
+    console.log('Database connection successful');
+
     const query = `
       SELECT 
         manufacturer AS value,
@@ -48,13 +53,22 @@ export default async function handler(
       LIMIT 50;
     `;
 
+    console.log('Executing query:', query);
     const manufacturers = await db.all<SelectOption[]>(query);
+    console.log(`Query successful, found ${manufacturers?.length || 0} manufacturers`);
+
     res.status(200).json({ manufacturers });
   } catch (error) {
-    console.error('Error fetching manufacturers:', error);
+    const err = error as Error;
+    console.error('Error in manufacturers API:', {
+      name: err.name,
+      message: err.message,
+      stack: err.stack,
+    });
+
     res.status(500).json({ 
       error: 'Failed to fetch manufacturers',
-      message: process.env.NODE_ENV === 'development' ? (error as Error).message : undefined,
+      message: process.env.NODE_ENV === 'development' ? err.message : 'Internal server error',
       manufacturers: []
     });
   }
