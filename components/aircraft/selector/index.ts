@@ -1,2 +1,1 @@
-// components/aircraft/selector/index.ts
-export { UnifiedSelector } from './UnifiedSelector';
+export { default as UnifiedSelector } from './UnifiedSelector';
