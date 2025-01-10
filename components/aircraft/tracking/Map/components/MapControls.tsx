@@ -1,38 +1,39 @@
-// components/aircraft/tracking/Map/components/Controls/MapControls.tsx
-import React, { useCallback } from 'react';
+// components/aircraft/tracking/Map/components/MapControls.tsx
+import React from 'react';
 import { useMap } from 'react-leaflet';
 import type { LatLngExpression } from 'leaflet';
-import { CONTINENTAL_US_BOUNDS } from './../../../../../../constants/map';
 
 interface MapControlsProps {
   onFitBounds?: () => void;
   selectedAircraftPosition?: LatLngExpression;
+  className?: string;
 }
 
 export const MapControls: React.FC<MapControlsProps> = ({ 
   onFitBounds, 
-  selectedAircraftPosition 
+  selectedAircraftPosition,
+  className
 }) => {
   const map = useMap();
 
-  const handleResetView = useCallback(() => {
-    map.fitBounds(CONTINENTAL_US_BOUNDS, { padding: [20, 20] });
-  }, [map]);
+  const handleResetView = () => {
+    map.setView([51.505, -0.09], 13);
+  };
 
-  const handleFocusSelected = useCallback(() => {
+  const handleFocusSelected = () => {
     if (selectedAircraftPosition) {
       map.setView(selectedAircraftPosition, 10);
     } else if (onFitBounds) {
       onFitBounds();
     }
-  }, [map, selectedAircraftPosition, onFitBounds]);
+  };
 
   return (
-    <div className="leaflet-top leaflet-left">
-      <div className="leaflet-control leaflet-bar">
+    <div className="absolute top-4 left-4 z-[1000]">
+      <div className="flex flex-col gap-2 bg-white rounded-lg shadow-lg p-2">
         <button
           onClick={handleResetView}
-          className="p-2 bg-white hover:bg-gray-100 border-b border-gray-300"
+          className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
           title="Reset view"
           type="button"
         >
@@ -41,7 +42,7 @@ export const MapControls: React.FC<MapControlsProps> = ({
         {(selectedAircraftPosition || onFitBounds) && (
           <button
             onClick={handleFocusSelected}
-            className="p-2 bg-white hover:bg-gray-100"
+            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
             title={selectedAircraftPosition ? "Focus selected aircraft" : "Fit all aircraft"}
             type="button"
           >
