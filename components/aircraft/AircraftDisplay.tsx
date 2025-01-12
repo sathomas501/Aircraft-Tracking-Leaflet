@@ -1,6 +1,6 @@
 // components/aircraft/AircraftDisplay.tsx
 import React, { useCallback } from 'react';
-import { Aircraft } from '@/types/types';
+import { Aircraft } from '@/types/base';
 import { Popup } from 'react-leaflet';
 
 interface AircraftDisplayProps {

@@ -1,10 +1,13 @@
+//lib/api/constants.ts
+
 export const API_ENDPOINTS = {
-  OPENSKY_BASE: 'https://opensky-network.org/api',
-  OPENSKY_STATES: '/states/all',
-  LOCAL_MANUFACTURERS: '/api/manufacturers',
-  LOCAL_OPENSKY: '/api/opensky',
-  LOCAL_ICAO24: '/api/aircraft/icao24s'
+  OPENSKY_BASE: 'https://opensky-network.org/api' as const,
+  OPENSKY_STATES: '/states/all?' as const,
+  LOCAL_MANUFACTURERS: '/api/manufacturers' as const,
+  LOCAL_OPENSKY: '/api/opensky' as const,
+  LOCAL_ICAO24: '/api/aircraft/icao24s' as const
 } as const;
+
 
 export const ICAO24_INDEX = 0;
 export const LONGITUDE_INDEX = 5;

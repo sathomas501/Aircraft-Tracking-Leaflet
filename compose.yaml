@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  server:
+    build:
+      context: .
+    environment:
+      - NODE_ENV=production
+    ports:
+      - "3001:3001"
+    volumes:
+      - .:/usr/src/app
+      - /usr/src/app/node_modules
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
