@@ -22,8 +22,7 @@ export const AIRCRAFT = {
 export const VALID_PAGE_SIZE = 1000;
 export const MAX_PAGE_SIZE = 5000;
 
-// OpenSky-related constants
-export const API_ENDPOINTS = ["https://opensky-network.org/apistates/all?"];
+// OpenSky-related constant
 export const ICAO24_INDEX = 0;
 export const LONGITUDE_INDEX = 5;
 export const LATITUDE_INDEX = 6;

@@ -1,7 +1,10 @@
 📂 
+├── 📄 .dockerignore
 ├── 📄 .env
 ├── 📄 .gitattributes
 ├── 📄 .gitignore
+├── 📄 Dockerfile
+├── 📄 README.Docker.md
 ├── 📂 components
 │   ├── 📂 Layout
 │   │   ├── 📄 About.tsx
@@ -12,7 +15,6 @@
 │   │   ├── 📄 AircraftDisplay.tsx
 │   │   ├── 📄 index.ts
 │   │   ├── 📂 selector
-│   │   │   ├── 📄 ManufacturerMapOverlay.tsx
 │   │   │   ├── 📄 UnifiedSelector.tsx
 │   │   │   └── 📄 index.ts
 │   │   └── 📂 tracking
@@ -25,10 +27,7 @@
 │   │       │   │   │   └── 📄 constants.ts
 │   │       │   │   ├── 📄 AircraftMarker.tsx
 │   │       │   │   ├── 📄 FitToBounds.tsx
-│   │       │   │   ├── 📄 MapControls.tsx
-│   │       │   │   └── 📂 aircraft
-│   │       │   │       └── 📂 tracking
-│   │       │   │           └── 📂 Map
+│   │       │   │   └── 📄 MapControls.tsx
 │   │       │   ├── 📄 constants.ts
 │   │       │   └── 📄 index.ts
 │   │       └── 📄 index.ts
@@ -48,6 +47,7 @@
 │           ├── 📄 PaginatedSelect.tsx
 │           ├── 📄 Select.tsx
 │           └── 📄 index.ts
+├── 📄 compose.yaml
 ├── 📂 constants
 │   ├── 📄 aircraft.ts
 │   ├── 📄 index.ts
@@ -56,6 +56,7 @@
 ├── 📄 graph.svg
 ├── 📂 hooks
 │   ├── 📄 useAircraftData.ts
+│   ├── 📄 useOpenSkyWebSocket.ts
 │   ├── 📄 useOpenskyPositions.ts
 │   └── 📄 usePositionData.ts
 ├── 📂 lib
@@ -63,11 +64,39 @@
 │   ├── 📂 api
 │   │   ├── 📄 constants.ts
 │   │   └── 📄 opensky.ts
-│   └── 📂 db
-│       ├── 📄 aircraft.db
-│       ├── 📄 connection.ts
-│       ├── 📄 constants.ts
-│       └── 📄 queries.ts
+│   ├── 📂 config
+│   │   ├── 📄 featur-manager.ts
+│   │   ├── 📄 feature-manager.ts
+│   │   ├── 📄 features.ts
+│   │   ├── 📄 opensky.ts
+│   │   └── 📄 utils.ts
+│   ├── 📂 db
+│   │   ├── 📄 aircraft.db
+│   │   ├── 📄 connection.ts
+│   │   ├── 📄 constants.ts
+│   │   └── 📄 queries.ts
+│   ├── 📂 middleware
+│   │   └── 📄 error-handler.ts
+│   └── 📂 services
+│       ├── 📄 cache-preloader.ts
+│       ├── 📄 enhanced-cache.ts
+│       ├── 📂 error-handler
+│       │   ├── 📄 api-error.ts
+│       │   ├── 📄 hook.ts
+│       │   ├── 📄 index.ts
+│       │   ├── 📄 types.ts
+│       │   └── 📄 utils.ts
+│       ├── 📄 error-handler.ts
+│       ├── 📄 opensky-auth.ts
+│       ├── 📂 opensky-integrated
+│       │   ├── 📄 index.ts
+│       │   ├── 📄 service.ts
+│       │   ├── 📄 types.ts
+│       │   └── 📄 ws-handler.ts
+│       ├── 📄 opensky-integrated.ts
+│       ├── 📄 opensky.ts
+│       ├── 📄 types.ts
+│       └── 📄 websocket-auth.ts
 ├── 📄 next-env.d.ts
 ├── 📄 next.config.js
 ├── 📄 package-lock.json
@@ -80,7 +109,9 @@
 │   │   │   ├── 📄 index.ts
 │   │   │   └── 📄 models.ts
 │   │   ├── 📄 health.ts
+│   │   ├── 📄 icao24-verify.ts
 │   │   ├── 📄 manufacturers.ts
+│   │   ├── 📄 opensky-test.ts
 │   │   ├── 📄 opensky.ts
 │   │   ├── 📄 ping.js
 │   │   ├── 📄 positions.ts
@@ -88,6 +119,7 @@
 │   ├── 📄 documents.tsx
 │   ├── 📄 index.tsx
 │   └── 📄 map.tsx
+├── 📄 pnpm-lock.yaml
 ├── 📄 postcss.config.js
 ├── 📂 public
 │   └── 📄 icons8-favicon-80.png
@@ -105,11 +137,17 @@
 │   ├── 📄 base.ts
 │   ├── 📄 css.d.ts
 │   ├── 📄 index.ts
-│   └── 📄 map.ts
+│   ├── 📄 map.ts
+│   ├── 📄 module.d.ts
+│   └── 📄 modules.ts
 └── 📂 utils
     ├── 📄 adapters.ts
     ├── 📄 aircraftServices.ts
-    ├── 📄 api-error.ts
     ├── 📄 cn.ts
     ├── 📄 errors.ts
-    └── 📄 helpers.ts
+    ├── 📄 helpers.ts
+    ├── 📂 position-interpolation
+    │   ├── 📄 index.ts
+    │   ├── 📄 interpolator.ts
+    │   └── 📄 types.ts
+    └── 📄 position-interpolation.ts
