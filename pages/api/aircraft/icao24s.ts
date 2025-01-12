@@ -10,51 +10,64 @@ interface Icao24Response {
 
 export default async function handler(
     req: NextApiRequest,
-    res: NextApiResponse<Icao24Response>
+    res: NextApiResponse
 ) {
-    if (req.method !== 'GET') {
-        return res.status(405).json({
-            icao24List: [],
-            error: 'Method not allowed'
-        });
-    }
-
-    const { manufacturer } = req.query;
-    console.log('Received manufacturer query:', manufacturer);
-
-    if (!manufacturer || typeof manufacturer !== 'string') {
-        return res.status(400).json({
-            icao24List: [],
-            error: 'Manufacturer parameter is required and must be a string'
-        });
-    }
-
     try {
         const db = await getDb();
-        const query = `
-            SELECT icao24
-            FROM aircraft
-            WHERE manufacturer = ?
-                AND icao24 IS NOT NULL
-                AND LENGTH(TRIM(icao24)) > 0;
-        `;
-        
-        const results = await db.all(query, [manufacturer]);
-        const icao24List = results.map(row => row.icao24);
+        const { manufacturer, model } = req.query;
 
-        if (!icao24List.length) {
-            return res.status(200).json({
-                icao24List: [],
-                message: `No ICAO24 numbers found for manufacturer: ${manufacturer}`
-            });
+        if (!manufacturer) {
+            return res.status(400).json({ error: 'Manufacturer parameter required' });
         }
 
-        return res.status(200).json({ icao24List });
+        let query = `
+            SELECT DISTINCT icao24
+            FROM aircraft
+            WHERE manufacturer = ?
+            AND icao24 IS NOT NULL
+            AND icao24 != ''
+        `;
+        
+        let params = [manufacturer];
+
+        // Add model filter if provided
+        if (model) {
+            query += ` AND model = ?`;
+            params.push(model as string);
+        }
+
+        query += ' LIMIT 500';  // Reasonable limit for tracking
+        const aircraft = await db.all(query, params);
+
+        res.status(200).json({
+            icao24List: aircraft.map(a => a.icao24),
+            meta: {
+                total: aircraft.length,
+                manufacturer,
+                model: model || 'all',
+                timestamp: new Date().toISOString()
+            }
+        });
+
+        console.log('Fetching ICAO24s with query:', {
+            manufacturer,
+            model: model || 'all',
+            sqlQuery: query,
+            params
+        });
+        
+        if (aircraft.length === 0) {
+            console.warn('No ICAO24s found for the given parameters');
+        } else {
+            console.log(`Fetched ${aircraft.length} ICAO24s, sample:`, aircraft.slice(0, 5));
+        }
+        
+
     } catch (error) {
-        console.error('Error fetching ICAO24 numbers:', error);
-        return res.status(500).json({
-            icao24List: [],
-            error: 'Internal server error while fetching ICAO24 numbers'
+        console.error('Database query error:', error);
+        res.status(500).json({
+            error: 'Failed to fetch ICAO24 list',
+            message: error instanceof Error ? error.message : 'Unknown error'
         });
     }
 }

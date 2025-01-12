@@ -19,29 +19,30 @@ export class OpenSkyError extends Error {
  * Raw state vector array from OpenSky API
  */
 export type OpenSkyStateVector = [
-  string,               // icao24
-  string | null,        // callsign
-  string,              // origin_country
-  number | null,       // time_position
-  number,              // last_contact
-  number | null,       // longitude
-  number | null,       // latitude
-  number | null,       // baro_altitude
-  boolean,             // on_ground
-  number | null,       // velocity
-  number | null,       // true_track
-  number | null,       // vertical_rate
-  number[] | null,     // sensors
-  number | null,       // geo_altitude
-  string | null,       // squawk
-  boolean,             // spi
-  number               // position_source
+  icao24: string,
+  callsign: string | null,
+  origin_country: string,
+  time_position: number | null,
+  last_contact: number,
+  longitude: number | null,
+  latitude: number | null,
+  baro_altitude: number | null,
+  on_ground: boolean,
+  velocity: number | null,
+  true_track: number | null,
+  vertical_rate: number | null,
+  sensors: number[] | null,
+  geo_altitude: number | null,
+  squawk: string | null,
+  spi: boolean,
+  position_source: number
 ];
 
 export interface OpenSkyResponse {
   time: number;
-  states: OpenSkyStateVector[];
+  states: OpenSkyStateVector[] | null;
 }
+
 
 
 export interface OpenSkyState {
@@ -64,14 +65,11 @@ export interface OpenSkyState {
   position_source: number;
 }
 
-
-
-
 export interface WebSocketMessage {
   type: 'subscribe' | 'unsubscribe';
   filters: {
-    states: boolean;
-    [key: string]: boolean;
+      states?: boolean;
+      icao24?: string[];
   };
 }
 
@@ -132,7 +130,10 @@ export const OpenSkyUtils = {
     );
   },
 
+
+  
   responseToStateMap(response: OpenSkyResponse): OpenSkyStateMap {
+    if (!response.states) return {};
     return response.states.reduce<OpenSkyStateMap>((acc, vector) => {
       const state = this.vectorToState(vector);
       if (this.hasValidPosition(state)) {
@@ -183,5 +184,59 @@ export interface PositionData {
   heading?: number;
   on_ground?: boolean;
   last_contact?: number;
+}
+
+// lib/services/opensky.ts
+
+class OpenSkyService {
+  private parseOpenSkyStates(response: OpenSkyResponse): PositionData[] {
+  if (!response.states || !Array.isArray(response.states)) {
+      return [];
+  }
+
+  const isValidCoordinate = (value: number | null): value is number =>
+      typeof value === 'number' && !isNaN(value);
+
+  return response.states.reduce<PositionData[]>((acc, state) => {
+      if (!Array.isArray(state) || state.length < 17) {
+          console.warn('Invalid state vector:', state);
+          return acc;
+      }
+
+      const [
+          icao24,
+          _callsign,
+          _origin_country,
+          _time_position,
+          last_contact,
+          longitude,
+          latitude,
+          _baro_altitude,
+          on_ground,
+          velocity,
+          heading,
+          _vertical_rate,
+          _sensors,
+          altitude,
+          _squawk,
+          _spi,
+          _position_source
+      ] = state;
+
+      if (isValidCoordinate(latitude) && isValidCoordinate(longitude)) {
+          acc.push({
+              icao24,
+              latitude,
+              longitude,
+              altitude: typeof altitude === 'number' ? altitude : undefined,
+              velocity: typeof velocity === 'number' ? velocity : undefined,
+              heading: typeof heading === 'number' ? heading : undefined,
+              on_ground: Boolean(on_ground),
+              last_contact: typeof last_contact === 'number' ? last_contact : undefined
+          });
+      }
+      return acc;
+    }, []);
+  }
 }
 
