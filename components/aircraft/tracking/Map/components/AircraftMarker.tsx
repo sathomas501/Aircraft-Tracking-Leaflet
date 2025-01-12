@@ -3,7 +3,7 @@ import React from 'react';
 import { Marker, Popup } from 'react-leaflet';
 import L from 'leaflet';
 import { AircraftDisplay } from '@/components/aircraft/AircraftDisplay';
-import type { PositionData } from '@/types/types';
+import type { PositionData } from '@/types/base';
 import { mapPositionDataToAircraft } from '@/utils/adapters';
 
 interface AircraftMarkerProps {

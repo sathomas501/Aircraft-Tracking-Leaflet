@@ -1,10 +1,10 @@
 // lib/config/opensky.ts
-import { API_ENDPOINTS } from '@/constants/aircraft';
+import {API_ENDPOINTS} from '@/lib/api/constants'
 
 export const OPENSKY_CONFIG = {
   // API Configuration
   API: {
-    ENDPOINTS: API_ENDPOINTS,
+    ENDPOINTS: `${API_ENDPOINTS.OPENSKY_BASE}${API_ENDPOINTS.OPENSKY_STATES}`,
     TIMEOUT: {
       DEFAULT: 10000,
       WEBSOCKET: 30000,
