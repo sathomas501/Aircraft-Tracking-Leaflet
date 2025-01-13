@@ -1,47 +1,59 @@
-import { useState, useEffect } from 'react';
-import { OpenSkyService, type PositionData } from './../pages/api/opensky';
-import { chunk } from 'lodash';
+// hooks/useOpenskyPositions.ts
+import { useState, useCallback, useRef, useEffect } from 'react';
+import type { PositionData } from '@/types/api/opensky';
+import { openSkyService } from '@/lib/api/opensky';
 
-const BATCH_SIZE = 100;
+interface UseOpenSkyPositionsProps {
+  pollInterval?: number;
+  icao24s?: string[];
+}
 
-export const useOpenskyPositions = (manufacturer: string) => {
-  const [positions, setPositions] = useState<PositionData>({});
-  const [isLoading, setIsLoading] = useState(false);
+export function useOpenSkyPositions({ 
+  pollInterval = 15000,
+  icao24s 
+}: UseOpenSkyPositionsProps = {}) {
+  const [positions, setPositions] = useState<Record<string, PositionData>>({});
+  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const fetchPositions = useCallback(async () => {
+    try {
+      const newPositions = await openSkyService.getPositions(icao24s);
+      setPositions(prev => {
+        const updatedPositions: Record<string, PositionData> = {};
+        newPositions.forEach(pos => {
+          if (pos.icao24) {
+            updatedPositions[pos.icao24] = pos;
+          }
+        });
+        return updatedPositions;
+      });
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err : new Error('Failed to fetch positions'));
+    } finally {
+      setIsLoading(false);
+    }
+  }, [icao24s]);
 
   useEffect(() => {
-    if (!manufacturer) {
-      setPositions({});
-      return;
-    }
-
-    setIsLoading(true);
-    const openSkyService = new OpenSkyService(process.env.OPENSKY_USERNAME || '', process.env.OPENSKY_PASSWORD || '');
-
-    const setupSubscription = async () => {
-      try {
-        // Initial position fetch
-        const data = await openSkyService.fetchPositions();
-        setPositions(data);
-
-        // Subscribe to updates
-        const cleanup = openSkyService.onPositionUpdate((newPositions) => {
-          setPositions(prev => ({ ...prev, ...newPositions }));
-        });
-
-        return () => {
-          cleanup();
-          openSkyService.disconnect();
-        };
-      } catch (err) {
-        setError(err instanceof Error ? err : new Error('Failed to fetch aircraft data'));
-      } finally {
-        setIsLoading(false);
-      }
+    fetchPositions();
+    
+    const pollPositions = () => {
+      timeoutRef.current = setTimeout(() => {
+        fetchPositions().then(() => pollPositions());
+      }, pollInterval);
     };
 
-    setupSubscription();
-  }, [manufacturer]);
+    pollPositions();
+
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+    };
+  }, [fetchPositions, pollInterval]);
 
   return { positions, isLoading, error };
-};
+}

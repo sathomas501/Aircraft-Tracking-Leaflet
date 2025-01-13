@@ -13,3 +13,6 @@ lib/db/aircraft.db
 # Ignore large binary files
 node_modules/@next/swc-win32-x64-msvc/next-swc.win32-x64-msvc.node
 node_modules
+
+# .gitignore
+data/active_status.db

@@ -7,6 +7,7 @@ import { AIRCRAFT } from '@/constants/aircraft';
 import type { Aircraft } from '@/types/base';
 import { openSkyIntegrated } from '@/lib/services/opensky-integrated';
 import { errorHandler, ErrorType } from '@/lib/services/error-handler';
+import { OpenSkyService } from '@/lib/services/openSkyService';
 
 
 const MapComponent = dynamic(() => import('./MapComponent'), {
@@ -55,35 +56,33 @@ export function MapWrapper() {
     }, [icao24List]);
 
     const handleManufacturerSelect = useCallback(async (manufacturer: string) => {
-        console.log('Manufacturer selected:', manufacturer);
-        setSelectedManufacturer(manufacturer);
-        setSelectedModel('');
-        setAircraft([]);
         setIsLoading(true);
-
         try {
-            const response = await fetch(`/api/aircraft/icao24s?manufacturer=${manufacturer}`);
-            if (!response.ok) {
-                throw new Error('Failed to fetch ICAO24 list');
-            }
-            
-            const data = await response.json();
-            if (data.icao24List?.length > 0) {
-                setIcao24List(data.icao24List);
-            } else {
-                throw new Error('No aircraft found for this manufacturer');
-            }
+            await openSkyService.trackManufacturer(manufacturer);
+            const counts = await openSkyService.getActiveCount(manufacturer);
+            setActiveCount(counts);
         } catch (error) {
-            console.error('Error fetching ICAO24 list:', error);
-            errorHandler.handleError(ErrorType.DATA, 'Failed to fetch aircraft list');
+            errorHandler.handleError(ErrorType.DATA, 'Failed to track manufacturer');
         } finally {
             setIsLoading(false);
         }
     }, []);
+    
 
-    const handleModelSelect = useCallback((model: string) => {
-        setSelectedModel(model);
-    }, []);
+    const handleModelSelect = useCallback(async (model: string) => {
+        if (!selectedManufacturer) return;
+        
+        setIsLoading(true);
+        try {
+            await openSkyService.trackManufacturer(selectedManufacturer, model);
+            const counts = await openSkyService.getActiveCount(selectedManufacturer, model);
+            setActiveCount(counts);
+        } catch (error) {
+            errorHandler.handleError(ErrorType.DATA, 'Failed to track model');
+        } finally {
+            setIsLoading(false);
+        }
+    }, [selectedManufacturer]);
 
     const toggleSelector = useCallback(() => {
         setIsSelectorOpen(prev => !prev);

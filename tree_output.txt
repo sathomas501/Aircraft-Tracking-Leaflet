@@ -53,6 +53,8 @@
 │   ├── 📄 index.ts
 │   ├── 📄 map.ts
 │   └── 📄 ui.ts
+├── 📂 data
+│   └── 📄 active_status.db
 ├── 📄 graph.svg
 ├── 📂 hooks
 │   ├── 📄 useAircraftData.ts
@@ -71,6 +73,7 @@
 │   │   ├── 📄 opensky.ts
 │   │   └── 📄 utils.ts
 │   ├── 📂 db
+│   │   ├── 📄 activeConnection.ts
 │   │   ├── 📄 aircraft.db
 │   │   ├── 📄 connection.ts
 │   │   ├── 📄 constants.ts
@@ -78,6 +81,7 @@
 │   ├── 📂 middleware
 │   │   └── 📄 error-handler.ts
 │   └── 📂 services
+│       ├── 📄 CleanupService.ts
 │       ├── 📄 cache-preloader.ts
 │       ├── 📄 enhanced-cache.ts
 │       ├── 📂 error-handler
@@ -87,19 +91,26 @@
 │       │   ├── 📄 types.ts
 │       │   └── 📄 utils.ts
 │       ├── 📄 error-handler.ts
+│       ├── 📄 manufacturerTrackingService.ts
+│       ├── 📄 openSkyService.ts
+│       ├── 📄 openSkySyncService.ts
 │       ├── 📄 opensky-auth.ts
+│       ├── 📄 opensky-errors.ts
 │       ├── 📂 opensky-integrated
 │       │   ├── 📄 index.ts
 │       │   ├── 📄 service.ts
 │       │   ├── 📄 types.ts
 │       │   └── 📄 ws-handler.ts
 │       ├── 📄 opensky-integrated.ts
+│       ├── 📄 opensky-validation.ts
 │       ├── 📄 opensky.ts
+│       ├── 📄 rate-limiter.ts
+│       ├── 📄 regionFilterService.ts
 │       ├── 📄 types.ts
 │       └── 📄 websocket-auth.ts
+├── 📄 middleware.ts
 ├── 📄 next-env.d.ts
 ├── 📄 next.config.js
-├── 📄 package-lock.json
 ├── 📄 package.json
 ├── 📂 pages
 │   ├── 📄 _app.tsx
@@ -107,7 +118,9 @@
 │   │   ├── 📂 aircraft
 │   │   │   ├── 📄 icao24s.ts
 │   │   │   ├── 📄 index.ts
-│   │   │   └── 📄 models.ts
+│   │   │   ├── 📄 models.ts
+│   │   │   ├── 📄 opensky-update.ts
+│   │   │   └── 📄 track-manufacturer.ts
 │   │   ├── 📄 health.ts
 │   │   ├── 📄 icao24-verify.ts
 │   │   ├── 📄 manufacturers.ts
@@ -133,13 +146,15 @@
 ├── 📄 tsconfig.json
 ├── 📂 types
 │   ├── 📂 api
+│   │   ├── 📄 api.ts
 │   │   └── 📄 opensky.ts
 │   ├── 📄 base.ts
 │   ├── 📄 css.d.ts
 │   ├── 📄 index.ts
 │   ├── 📄 map.ts
 │   ├── 📄 module.d.ts
-│   └── 📄 modules.ts
+│   ├── 📄 modules.ts
+│   └── 📄 regions.ts
 └── 📂 utils
     ├── 📄 adapters.ts
     ├── 📄 aircraftServices.ts

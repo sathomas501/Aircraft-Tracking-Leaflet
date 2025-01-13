@@ -1,550 +1,155 @@
 // lib/services/opensky.ts
 import axios from 'axios';
-import NodeCache from 'node-cache';
 import WebSocket from 'ws';
-import { RateLimiter } from './rate-limiter';
-import { 
+import NodeCache from 'node-cache';
+import type { Aircraft } from '@/types/base';
+
+import type { 
+    OpenSkyResponse, 
     PositionData, 
-    OpenSkyState, 
     WebSocketMessage,
-    OpenSkyResponse 
+    OpenSkyState,
+    OpenSkyUtils,
+    parseOpenSkyStates
 } from '@/types/api/opensky';
 import {
+    OPENSKY_INDICES,
     API_ENDPOINTS,
     API_PARAMS,
-    RETRY_ATTEMPTS,
-    RETRY_DELAY,
-    WS_RECONNECT_DELAY,
+    WS_CONFIG,
 } from '@/lib/api/constants';
 
-import { 
-    ICAO24_INDEX, 
-    LONGITUDE_INDEX, 
-    LATITUDE_INDEX,
-    ALTITUDE_INDEX,
-    VELOCITY_INDEX,
-    HEADING_INDEX,
-    ON_GROUND_INDEX,
-    LAST_CONTACT_INDEX } from '@/lib/api/constants';
+export class OpenSkyError extends Error {
+  constructor(message: string, public readonly cause?: unknown) {
+      super(message);
+      this.name = 'OpenSkyError';
+  }
+}
 
-// Rate limiting configuration
-const RATE_LIMITS = {
-    ANONYMOUS: {
-        requestsPerMinute: 100,
-        requestsPerDay: 10000,
-        batchSize: 25,
-        minInterval: 5000,
-    },
-    AUTHENTICATED: {
-        requestsPerMinute: 300,
-        requestsPerDay: 50000,
-        batchSize: 100,
-        minInterval: 1000,
-    }
-} as const;
+export type PositionUpdateCallback = (positions: PositionData[]) => Promise<void>;
+export type WebSocketClient = WebSocket;
 
-export class OpenSkyService {
+export interface ActiveCounts {
+    active: number;
+    total: number;
+}
+
+export interface OpenSkyServiceInterface {
+  getPositions(icao24s?: string[]): Promise<PositionData[]>;
+  getActiveCount(manufacturer: string, model?: string): Promise<ActiveCounts>;
+  clearActiveCache(manufacturer?: string, model?: string): void;
+  cleanup(): void;
+  onPositionUpdate(callback: PositionUpdateCallback): void;
+  removePositionUpdateCallback(callback: PositionUpdateCallback): void;
+  subscribeToAircraft(icao24s: string[]): Promise<void>;
+  unsubscribeFromAircraft(icao24s: string[]): void;
+  addClient(client: WebSocketClient): void;
+  removeClient(client: WebSocketClient): void;
+}
+
+class OpenSkyService implements OpenSkyServiceInterface {
     private cache: NodeCache;
+    private activeAircraftCache: NodeCache;
     private ws: WebSocket | null = null;
-    private reconnectTimeout: NodeJS.Timeout | null = null;
-    private wsReconnectAttempts = 0;
-    private readonly maxWsReconnectAttempts = 5;
+    private reconnectAttempts = 0;
+    private readonly maxReconnectAttempts = WS_CONFIG.RECONNECT_ATTEMPTS;
     private readonly wsUrl: string;
     private readonly restUrl: string;
-    private readonly cacheTime = 15;
-    private clients: Set<WebSocket> = new Set();
-    private activeSubscriptions: Set<string> = new Set();
-    private pendingRequests: Map<string, Promise<PositionData[]>> = new Map();
-    private rateLimiter: RateLimiter;
-    private lastRequestTime = 0;
+    private readonly cacheTTL = 15;
     private batchQueue: string[] = [];
-    private batchTimeout: NodeJS.Timeout | null = null;
+    private pendingRequests = new Map<string, Promise<PositionData[]>>();
+    private positionCallbacks = new Set<PositionUpdateCallback>();
+    private subscribedIcao24s = new Set<string>();
+    private clients = new Set<WebSocketClient>();
 
     constructor(
         private readonly username?: string,
         private readonly password?: string,
-        private isWebSocketEnabled = true
+        private enableWebSocket = true
     ) {
-        // Initialize cache
-        this.cache = new NodeCache({ stdTTL: this.cacheTime });
-        
-        // Initialize rate limiter
-        const limits = username && password ? RATE_LIMITS.AUTHENTICATED : RATE_LIMITS.ANONYMOUS;
-        this.rateLimiter = new RateLimiter({
-            maxRequests: limits.requestsPerMinute,
-            interval: 60000,
-            maxRequestsPerDay: limits.requestsPerDay
+        this.cache = new NodeCache({ stdTTL: this.cacheTTL });
+        this.activeAircraftCache = new NodeCache({ 
+            stdTTL: 300,
+            checkperiod: 60 
         });
-
-        // Configure URLs
         this.restUrl = `${API_ENDPOINTS.OPENSKY_BASE}${API_ENDPOINTS.OPENSKY_STATES}`;
+        this.wsUrl = this.constructWebSocketUrl();
         
-        if (username && password) {
-            const encodedUsername = encodeURIComponent(username);
-            const encodedPassword = encodeURIComponent(password);
-            this.wsUrl = `wss://${new URL(API_ENDPOINTS.OPENSKY_BASE).host}/api/websocket/auth?username=${encodedUsername}&password=${encodedPassword}`;
-        } else {
-            this.wsUrl = `wss://${new URL(API_ENDPOINTS.OPENSKY_BASE).host}/api/websocket/`;
-        }
-
-        if (this.isWebSocketEnabled) {
+        if (this.enableWebSocket) {
             this.initializeWebSocket();
         }
     }
 
-    
-    private initializeWebSocket(): void {
-      if (!this.isWebSocketEnabled || this.ws) return;
-   
-      try {
-          const ws = new WebSocket(this.wsUrl);
-          this.ws = ws;
-   
-          ws.on('open', () => {
-              console.log('WebSocket connected');
-              this.wsReconnectAttempts = 0;
-              this.resubscribeAll();
-          });
-   
-          ws.on('message', (data) => {
-              try {
-                  const positions = this.parseWebSocketMessage(data);
-                  this.updateCacheAndBroadcast(positions);
-              } catch (error) {
-                  console.error('Error processing WebSocket message:', error);
-              }
-          });
-   
-          ws.on('close', () => {
-              console.log('WebSocket connection closed');
-              this.handleWebSocketClose();
-          });
-   
-          ws.on('error', (error) => {
-              console.error('WebSocket error:', error);
-              this.handleWebSocketError(error);
-          });
-      } catch (error) {
-          console.error('Failed to initialize WebSocket:', error);
-          this.handleWebSocketError(error);
-      }
-   }
-   
-   private handleWebSocketClose(): void {
-      if (this.ws?.readyState === WebSocket.OPEN) {
-          this.ws.close();
-      }
-      this.ws = null;
-      
-      if (this.isWebSocketEnabled) {
-          this.scheduleReconnect();
-      }
-   }
-   
-   private handleWebSocketError(error: unknown): void {
-      console.error('WebSocket error:', error);
-      if (this.ws?.readyState === WebSocket.OPEN) {
-          this.ws.close();
-      }
-      this.ws = null;
-      this.scheduleReconnect();
-   }
-   
-   private scheduleReconnect(): void {
-      if (this.reconnectTimeout) {
-          clearTimeout(this.reconnectTimeout);
-      }
-   
-      if (this.wsReconnectAttempts >= this.maxWsReconnectAttempts) {
-          console.log('Max WebSocket reconnection attempts reached, disabling WebSocket');
-          this.isWebSocketEnabled = false;
-          return;
-      }
-   
-      this.wsReconnectAttempts++;
-      this.reconnectTimeout = setTimeout(() => {
-          console.log(`Attempting WebSocket reconnection (${this.wsReconnectAttempts}/${this.maxWsReconnectAttempts})`);
-          this.initializeWebSocket();
-      }, WS_RECONNECT_DELAY * Math.pow(2, this.wsReconnectAttempts - 1));
-   }
-   
-   private parseWebSocketMessage(data: WebSocket.Data): PositionData[] {
-      const message = JSON.parse(data.toString());
-      if (!message.states) return [];
-      return this.parseOpenSkyStates(message.states);
-   }
-   
-   private resubscribeAll(): void {
-      if (this.activeSubscriptions.size === 0) return;
-      
-      const subscriptions = Array.from(this.activeSubscriptions);
-      console.log('Resubscribing to aircraft:', subscriptions);
-      
-      if (this.ws?.readyState === WebSocket.OPEN) {
-          this.ws.send(JSON.stringify({
-              type: 'subscribe',
-              filters: { icao24: subscriptions }
-          }));
-      }
-   }
-   
-   public addClient(client: WebSocket): void {
-      this.clients.add(client);
-      console.log(`Client added. Total clients: ${this.clients.size}`);
-      
-      // Send initial cache data if available
-      const cachedData = this.cache.get<Record<string, PositionData>>('positions');
-      if (cachedData) {
-          client.send(JSON.stringify(Object.values(cachedData)));
-      }
-   }
-   
-   public removeClient(client: WebSocket): void {
-      this.clients.delete(client);
-      console.log(`Client removed. Total clients: ${this.clients.size}`);
-   }
-   
-   private updateCacheAndBroadcast(positions: PositionData[]): void {
-      this.updateCache(positions);
-      this.broadcastPositions(positions);
-   }
-   
-   private broadcastPositions(positions: PositionData[]): void {
-      const message = JSON.stringify(positions);
-      this.clients.forEach(client => {
-          if (client.readyState === WebSocket.OPEN) {
-              try {
-                  client.send(message);
-              } catch (error) {
-                  console.error('Error broadcasting to client:', error);
-              }
-          }
-      });
-   }
-  
-   // Position fetching methods for OpenSkyService
-
-public async getPositions(icao24s?: string[]): Promise<PositionData[]> {
-  try {
-      // Try cache first
-      const cachedData = this.cache.get<Record<string, PositionData>>('positions');
-      if (cachedData) {
-          const positions = icao24s 
-              ? Object.values(cachedData).filter(pos => icao24s.includes(pos.icao24))
-              : Object.values(cachedData);
-          if (positions.length > 0) {
-              return positions;
-          }
-      }
-
-      // Check for pending request
-      const cacheKey = icao24s ? icao24s.sort().join(',') : 'all';
-      const pendingRequest = this.pendingRequests.get(cacheKey);
-      if (pendingRequest) {
-          return pendingRequest;
-      }
-
-      // Make new request with retry
-      const request = this.retryOperation(async () => {
-          if (!this.rateLimiter.tryAcquire()) {
-              throw new Error('Rate limit exceeded');
-          }
-          return this._fetchPositions(icao24s || []);
-      });
-
-      this.pendingRequests.set(cacheKey, request);
-      
-      try {
-          const positions = await request;
-          this.updateCache(positions);
-          return positions;
-      } finally {
-          this.pendingRequests.delete(cacheKey);
-      }
-
-  } catch (error) {
-      console.error('Error fetching positions:', error);
-      throw error;
-  }
-}
-
-private async _fetchPositions(icao24s: string[]): Promise<PositionData[]> {
-  const response = await axios.get<OpenSkyResponse>(
-      this.restUrl,
-      {
-          params: icao24s.length ? { [API_PARAMS.ICAO24]: icao24s.join(',') } : undefined,
-          auth: this.username && this.password 
-              ? { username: this.username, password: this.password }
-              : undefined,
-          timeout: 10000
-      }
-  );
-
-  if (!response.data?.states) {
-      return [];
+    private getCachedData(key: string): PositionData[] | undefined {
+      return this.cache.get<PositionData[]>(key);
   }
 
-  return this.parseOpenSkyStates(response.data.states);
-}
-
-private parseOpenSkyStates(states: any[][]): PositionData[] {
-  if (!Array.isArray(states)) return [];
-
-  return states.reduce<PositionData[]>((acc, state) => {
-      if (!state || !state[ICAO24_INDEX]) return acc;
-
-      const longitude = parseFloat(state[LONGITUDE_INDEX]);
-      const latitude = parseFloat(state[LATITUDE_INDEX]);
-      
-      if (isNaN(latitude) || isNaN(longitude)) return acc;
-
-      acc.push({
-          icao24: state[ICAO24_INDEX],
-          latitude,
-          longitude,
-          altitude: typeof state[ALTITUDE_INDEX] === 'number' ? state[ALTITUDE_INDEX] : undefined,
-          velocity: typeof state[VELOCITY_INDEX] === 'number' ? state[VELOCITY_INDEX] : undefined,
-          heading: typeof state[HEADING_INDEX] === 'number' ? state[HEADING_INDEX] : undefined,
-          on_ground: Boolean(state[ON_GROUND_INDEX]),
-          last_contact: typeof state[LAST_CONTACT_INDEX] === 'number' ? state[LAST_CONTACT_INDEX] : undefined
-      });
-
-      return acc;
-  }, []);
-}
-
-private async retryOperation<T>(operation: () => Promise<T>): Promise<T> {
-  let lastError: Error | null = null;
-
-  for (let attempt = 1; attempt <= RETRY_ATTEMPTS; attempt++) {
-      try {
-          return await operation();
-      } catch (error) {
-          lastError = error as Error;
-          console.error(`Attempt ${attempt} failed:`, error);
-          
-          if (attempt < RETRY_ATTEMPTS) {
-              await new Promise(resolve => setTimeout(resolve, RETRY_DELAY * attempt));
-          }
-      }
+  private cacheData(key: string, data: PositionData[]): void {
+      this.cache.set(key, data);
   }
 
-  throw lastError || new Error('Operation failed after retries');
+  private parsePositionData(raw: any[]): PositionData | null {
+    if (!Array.isArray(raw) || raw.length < 17) return null;
+
+    const [
+        icao24,
+        _callsign,
+        _origin_country,
+        _time_position,
+        rawLastContact,
+        rawLongitude,
+        rawLatitude,
+        _baro_altitude,
+        rawOnGround,
+        rawVelocity,
+        rawHeading,
+        _vertical_rate,
+        _sensors,
+        rawAltitude,
+        _squawk,
+        _spi,
+        _position_source
+    ] = raw;
+
+    const latitude = Number(rawLatitude);
+    const longitude = Number(rawLongitude);
+
+    // Validate required coordinates
+    if (
+        isNaN(latitude) ||
+        isNaN(longitude) ||
+        latitude < -90 ||
+        latitude > 90 ||
+        longitude < -180 ||
+        longitude > 180
+    ) {
+        return null;
+    }
+
+    const currentTime = Math.floor(Date.now() / 1000);
+    const lastContact = Number(rawLastContact);
+
+    // Create position with required fields and defaults
+    return {
+        icao24: String(icao24),
+        latitude,
+        longitude,
+        altitude: Number(rawAltitude) || 0,  // Default to 0 if NaN
+        velocity: Number(rawVelocity) || 0,  // Default to 0 if NaN
+        heading: Number(rawHeading) || 0,    // Default to 0 if NaN
+        on_ground: Boolean(rawOnGround),     // Convert to boolean
+        last_contact: (!isNaN(lastContact) && lastContact > 0) ? lastContact : currentTime
+    };
 }
 
-// Rate limiting and batch processing methods for OpenSkyService
+private parseOpenSkyStates(rawStates: any[][]): PositionData[] {
+    if (!Array.isArray(rawStates)) return [];
 
-private async processBatchQueue(): Promise<void> {
-  if (this.batchQueue.length === 0) return;
-
-  const limits = this.username && this.password ? RATE_LIMITS.AUTHENTICATED : RATE_LIMITS.ANONYMOUS;
-  const now = Date.now();
-  const timeUntilNextRequest = Math.max(0, this.lastRequestTime + limits.minInterval - now);
-
-  if (timeUntilNextRequest > 0) {
-      await new Promise(resolve => setTimeout(resolve, timeUntilNextRequest));
-  }
-
-  try {
-      while (this.batchQueue.length > 0) {
-          // Check if we can make a request
-          if (!this.rateLimiter.tryAcquire()) {
-              console.log('Rate limit reached, waiting...');
-              await new Promise(resolve => setTimeout(resolve, 1000));
-              continue;
-          }
-
-          const batch = this.batchQueue.splice(0, limits.batchSize);
-          console.log(`Processing batch of ${batch.length} aircraft`);
-
-          try {
-              const positions = await this.retryOperation(() => this._fetchPositions(batch));
-              this.updateCache(positions);
-              this.broadcastPositions(positions);
-          } catch (error) {
-              console.error('Error processing batch:', error);
-          }
-
-          this.lastRequestTime = Date.now();
-          
-          // Add delay between batches
-          if (this.batchQueue.length > 0) {
-              await new Promise(resolve => setTimeout(resolve, limits.minInterval));
-          }
-      }
-  } finally {
-      this.batchTimeout = null;
-  }
+    return rawStates
+        .map(state => this.parsePositionData(state))
+        .filter((pos): pos is PositionData => pos !== null);
 }
 
-public async subscribeToAircraft(icao24s: string[]): Promise<void> {
-  const newIcao24s = icao24s.filter(icao => !this.activeSubscriptions.has(icao));
-  
-  if (newIcao24s.length === 0) return;
-
-  // Add to active subscriptions
-  newIcao24s.forEach(icao => this.activeSubscriptions.add(icao));
-
-  // Add to WebSocket subscription if available
-  if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({
-          type: 'subscribe',
-          filters: { icao24: newIcao24s }
-      }));
-  }
-
-  // Queue for REST API fetching
-  this.batchQueue.push(...newIcao24s);
-  
-  // Start batch processing if not already running
-  if (!this.batchTimeout) {
-      this.batchTimeout = setTimeout(() => this.processBatchQueue(), 0);
-  }
-}
-
-private async checkRateLimit(): Promise<void> {
-  const limits = this.username && this.password 
-      ? RATE_LIMITS.AUTHENTICATED 
-      : RATE_LIMITS.ANONYMOUS;
-
-  const now = Date.now();
-  const timeSinceLastRequest = now - this.lastRequestTime;
-  
-  if (timeSinceLastRequest < limits.minInterval) {
-      await new Promise(resolve => 
-          setTimeout(resolve, limits.minInterval - timeSinceLastRequest)
-      );
-  }
-  
-  this.lastRequestTime = Date.now();
-}
-
-private getRateLimitInfo(): {
-  remainingRequests: number;
-  timeUntilReset: number;
-  dailyRequestsRemaining?: number;
-} {
-  return {
-      remainingRequests: this.rateLimiter.getRemainingRequests(),
-      timeUntilReset: this.rateLimiter.getTimeUntilNextSlot(),
-      dailyRequestsRemaining: this.rateLimiter.getRemainingDailyRequests()
-  };
-}
-
-// Cache management methods for OpenSkyService
-
-private updateCache(positions: PositionData[]): void {
-  const cachedData = this.cache.get<Record<string, PositionData>>('positions') || {};
-  const now = Date.now();
-
-  positions.forEach(position => {
-      // Only cache if position is recent (within last minute)
-      if (position.last_contact && 
-          now - position.last_contact * 1000 < 60000) {
-          cachedData[position.icao24] = position;
-      }
-  });
-
-  this.cache.set('positions', cachedData);
-}
-
-private cleanCache(): void {
-  const cachedData = this.cache.get<Record<string, PositionData>>('positions');
-  if (!cachedData) return;
-
-  const now = Date.now();
-  const cleanedData: Record<string, PositionData> = {};
-
-  // Remove stale positions (older than 1 minute)
-  Object.entries(cachedData).forEach(([icao24, position]) => {
-      if (position.last_contact && 
-          now - position.last_contact * 1000 < 60000) {
-          cleanedData[icao24] = position;
-      }
-  });
-
-  this.cache.set('positions', cleanedData);
-}
-
-private getCachedPositions(icao24s?: string[]): PositionData[] {
-  const cachedData = this.cache.get<Record<string, PositionData>>('positions');
-  if (!cachedData) return [];
-
-  if (!icao24s) {
-      return Object.values(cachedData);
-  }
-
-  return icao24s
-      .map(icao24 => cachedData[icao24])
-      .filter((position): position is PositionData => !!position);
-}
-
-private isCacheValid(): boolean {
-  const cachedData = this.cache.get<Record<string, PositionData>>('positions');
-  if (!cachedData) return false;
-
-  const now = Date.now();
-  return Object.values(cachedData).some(position => 
-      position.last_contact && 
-      now - position.last_contact * 1000 < 60000
-  );
-}
-
-public invalidateCache(): void {
-  this.cache.del('positions');
-}
-
-// Setup cache cleanup interval
-private setupCacheCleanup(): void {
-  setInterval(() => {
-      this.cleanCache();
-  }, 60000); // Clean every minute
-}
-
-// Method to get cache statistics
-public getCacheStats(): {
-  size: number;
-  hits: number;
-  misses: number;
-  ttl: number;
-} {
-  return {
-      size: this.cache.stats.keys,
-      hits: this.cache.stats.hits,
-      misses: this.cache.stats.misses,
-      ttl: this.cacheTime
-  };
-}
-
-// Cleanup and utility methods for OpenSkyService
-
-// Primary cleanup method
-public cleanup(): void {
-  // Clear timeouts and intervals
-  if (this.reconnectTimeout) {
-      clearTimeout(this.reconnectTimeout);
-      this.reconnectTimeout = null;
-  }
-  if (this.batchTimeout) {
-      clearTimeout(this.batchTimeout);
-      this.batchTimeout = null;
-  }
-
-  // Close WebSocket connection
-  if (this.ws) {
-      this.ws.close();
-      this.ws = null;
-  }
-
-  // Clear all caches and queues
-  this.cache.close();
-  this.clients.clear();
-  this.activeSubscriptions.clear();
-  this.pendingRequests.clear();
-  this.batchQueue = [];
-}
-
-// Utility methods for data validation and transformation
 private validatePosition(position: Partial<PositionData>): position is PositionData {
   return Boolean(
       position.icao24 &&
@@ -555,64 +160,377 @@ private validatePosition(position: Partial<PositionData>): position is PositionD
       position.latitude >= -90 &&
       position.latitude <= 90 &&
       position.longitude >= -180 &&
-      position.longitude <= 180
+      position.longitude <= 180 &&
+      typeof position.on_ground === 'boolean' &&
+      typeof position.last_contact === 'number'
   );
 }
 
-public getServiceStatus(): {
-  wsConnected: boolean;
-  wsReconnectAttempts: number;
-  activeSubscriptions: number;
-  connectedClients: number;
-  batchQueueSize: number;
-  pendingRequests: number;
-} {
+public positionToAircraft(pos: PositionData): Aircraft {
   return {
-      wsConnected: this.ws?.readyState === WebSocket.OPEN,
-      wsReconnectAttempts: this.wsReconnectAttempts,
-      activeSubscriptions: this.activeSubscriptions.size,
-      connectedClients: this.clients.size,
-      batchQueueSize: this.batchQueue.length,
-      pendingRequests: this.pendingRequests.size
+      icao24: pos.icao24,
+      "N-NUMBER": "",
+      manufacturer: "Unknown",
+      model: "Unknown",
+      operator: "Unknown",
+      latitude: pos.latitude,
+      longitude: pos.longitude,
+      altitude: pos.altitude,
+      heading: pos.heading,
+      velocity: pos.velocity,
+      on_ground: pos.on_ground,
+      last_contact: pos.last_contact,
+      NAME: "",
+      CITY: "",
+      STATE: "",
+      isTracked: true
   };
 }
+  // Implement the getPositions method that was previously fetchPositions
+  /** Fetch aircraft positions via the OpenSky REST API */
+  public async getPositions(icao24s?: string[]): Promise<PositionData[]> {
+    try {
+        const cacheKey = icao24s?.sort().join(',') || 'all';
+        
+        // Check cache first
+        const cachedData = this.cache.get<PositionData[]>(cacheKey);
+        if (cachedData) {
+            return cachedData;
+        }
 
-private formatPositionData(position: PositionData): PositionData {
-  return {
-    icao24: position.icao24,
-    latitude: position.latitude !== undefined ? Number(position.latitude.toFixed(6)) : undefined,
-    longitude: position.longitude !== undefined ? Number(position.longitude.toFixed(6)) : undefined,
-    altitude: position.altitude !== undefined ? Number(position.altitude.toFixed(2)) : undefined,
-    velocity: position.velocity !== undefined ? Number(position.velocity.toFixed(2)) : undefined,
-    heading: position.heading !== undefined ? Number(position.heading.toFixed(2)) : undefined,
-    on_ground: position.on_ground,
-    last_contact: position.last_contact,
-  };
+        // Check pending requests
+        const pendingRequest = this.pendingRequests.get(cacheKey);
+        if (pendingRequest) {
+            return pendingRequest;
+        }
+
+        const params = icao24s?.length ? 
+            { [API_PARAMS.ICAO24]: icao24s.join(',') } : 
+            undefined;
+
+        const response = await axios.get<OpenSkyResponse>(this.restUrl, {
+            params,
+            auth: this.username && this.password
+                ? { username: this.username, password: this.password }
+                : undefined,
+            timeout: 10000,
+        });
+
+        const positions = this.parseOpenSkyStates(response.data?.states || []);
+        this.cache.set(cacheKey, positions);
+        
+        return positions;
+    } catch (error) {
+        console.error('Error fetching positions:', error);
+        throw new OpenSkyError('Failed to fetch positions', error);
+    }
+}
+
+
+public async getActiveCount(manufacturer: string, model?: string): Promise<ActiveCounts> {
+  const cacheKey = `active_count:${manufacturer}${model ? `:${model}` : ''}`;
+  
+  const cached = this.cache.get<ActiveCounts>(cacheKey);
+  if (cached) {
+      return cached;
+  }
+
+  try {
+      const queryParams = new URLSearchParams({ manufacturer });
+      if (model) {
+          queryParams.append('model', model);
+      }
+
+      // Get all ICAO24s for this manufacturer/model
+      const response = await axios.get(`${API_ENDPOINTS.OPENSKY_BASE}/api/aircraft/icao24s?${queryParams}`);
+      const icao24s: string[] = response.data?.icao24List || [];
+
+      if (!icao24s.length) {
+          const counts = { active: 0, total: icao24s.length };
+          this.cache.set(cacheKey, counts);
+          return counts;
+      }
+
+      // Get positions for these aircraft
+      const positions = await this.getPositions(icao24s);
+      
+      // Count active aircraft (valid positions within the last 2 hours)
+      const activeCount = positions.filter(pos => 
+          this.validatePosition(pos) && 
+          pos.last_contact > (Date.now() / 1000 - 7200)
+      ).length;
+
+      const counts: ActiveCounts = {
+          active: activeCount,
+          total: icao24s.length
+      };
+
+      this.cache.set(cacheKey, counts, 300); // Cache for 5 minutes
+      return counts;
+  } catch (error) {
+      console.error('Error getting active aircraft count:', error);
+      return { active: 0, total: 0 };
+  }
+}
+
+  public clearActiveCache(manufacturer?: string, model?: string): void {
+    if (manufacturer) {
+        const pattern = `active_count:${manufacturer}${model ? `:${model}` : ''}`;
+        const keys = this.activeAircraftCache.keys().filter((k: string) => k.startsWith(pattern));
+        keys.forEach((key: string) => this.activeAircraftCache.del(key));
+    } else {
+        this.activeAircraftCache.flushAll();
+    }
+}
+  /**
+   * Constructs the WebSocket URL with authentication if provided.
+   */
+  private constructWebSocketUrl(): string {
+    const base = `wss://${new URL(API_ENDPOINTS.OPENSKY_BASE).host}/api/websocket/`;
+    if (this.username && this.password) {
+      const encodedUser = encodeURIComponent(this.username);
+      const encodedPass = encodeURIComponent(this.password);
+      return `${base}auth?username=${encodedUser}&password=${encodedPass}`;
+    }
+    return base;
+  }
+
+
+
+  /**
+   * Fetch aircraft positions via the OpenSky REST API.
+   */
+  public async fetchPositions(icao24s: string[]): Promise<PositionData[]> {
+    try {
+      // Check cache first
+      const cacheKey = icao24s.sort().join(',');
+      const cachedData = this.getCachedData(cacheKey);
+      if (cachedData) {
+        return cachedData;
+      }
+
+      // Check for pending request
+      const pendingRequest = this.pendingRequests.get(cacheKey);
+      if (pendingRequest) {
+        return pendingRequest;
+      }
+
+      // Make new request
+      const request = this.makeRequest(icao24s);
+      this.pendingRequests.set(cacheKey, request);
+
+      try {
+        const positions = await request;
+        this.cacheData(cacheKey, positions);
+        return positions;
+      } finally {
+        this.pendingRequests.delete(cacheKey);
+      }
+    } catch (error) {
+      console.error('Error fetching positions:', error);
+      throw new OpenSkyError('Failed to fetch positions', error);
+    }
+  }
+
+  private async makeRequest(icao24s: string[]): Promise<PositionData[]> {
+    const params = icao24s.length
+      ? { [API_PARAMS.ICAO24]: icao24s.join(',') }
+      : undefined;
+
+    const response = await axios.get<OpenSkyResponse>(this.restUrl, {
+      params,
+      auth: this.username && this.password
+        ? { username: this.username, password: this.password }
+        : undefined,
+      timeout: 10000,
+    });
+
+    if (!response.data?.states) return [];
+    return this.parseOpenSkyStates(response.data.states);
+  }
+
+
+  public onPositionUpdate(callback: PositionUpdateCallback): void {
+    this.positionCallbacks.add(callback);
+}
+
+public removePositionUpdateCallback(callback: PositionUpdateCallback): void {
+    this.positionCallbacks.delete(callback);
+}
+
+public async subscribeToAircraft(icao24s: string[]): Promise<void> {
+    icao24s.forEach(icao => this.subscribedIcao24s.add(icao));
+
+    if (this.ws?.readyState === WebSocket.OPEN) {
+        const message: WebSocketMessage = {
+            type: 'subscribe',
+            filters: {
+                states: true,
+                icao24: Array.from(this.subscribedIcao24s)
+            }
+        };
+        this.ws.send(JSON.stringify(message));
+    }
 }
 
 
 public unsubscribeFromAircraft(icao24s: string[]): void {
-  icao24s.forEach(icao => {
-      this.activeSubscriptions.delete(icao);
-  });
+    icao24s.forEach(icao => this.subscribedIcao24s.delete(icao));
 
-  if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({
-          type: 'unsubscribe',
-          filters: { icao24: icao24s }
-      }));
-  }
+    if (this.ws?.readyState === WebSocket.OPEN) {
+        const message: WebSocketMessage = {
+            type: 'unsubscribe',
+            filters: { icao24: icao24s }
+        };
+        this.ws.send(JSON.stringify(message));
+    }
 }
 
-public reset(): void {
-  this.cleanup();
-  this.wsReconnectAttempts = 0;
-  this.lastRequestTime = 0;
-  if (this.isWebSocketEnabled) {
-      this.initializeWebSocket();
+  /**
+   * WebSocket handling methods
+   */
+  private initializeWebSocket(): void {
+    if (!this.wsUrl || this.ws) return;
+
+    try {
+      this.ws = new WebSocket(this.wsUrl);
+      this.ws.on('open', this.handleWebSocketOpen.bind(this));
+      this.ws.on('message', this.handleWebSocketMessage.bind(this));
+      this.ws.on('error', this.handleWebSocketError.bind(this));
+      this.ws.on('close', this.handleWebSocketClose.bind(this));
+    } catch (error) {
+      console.error('Failed to initialize WebSocket:', error);
+      this.handleWebSocketError(error);
+    }
   }
-}}
 
-// Error handling, logging, and additional utility methods for OpenSkyService
+  private handleWebSocketOpen(): void {
+    console.log('WebSocket connection established');
+    this.reconnectAttempts = 0;
+    this.broadcastConnectionStatus(true);
+  }
 
-// Custom error types
+  private async handleWebSocketMessage(data: WebSocket.Data): Promise<void> {
+    try {
+        const message = JSON.parse(data.toString());
+        if (message.states) {
+            const positions = this.parseOpenSkyStates(message.states);
+            
+            const filteredPositions = positions.filter(
+                pos => this.subscribedIcao24s.has(pos.icao24)
+            );
+
+            if (filteredPositions.length > 0) {
+                await Promise.all(
+                    Array.from(this.positionCallbacks).map(callback =>
+                        callback(filteredPositions).catch(error => {
+                            console.error('Error in position update callback:', error);
+                        })
+                    )
+                );
+            }
+        }
+    } catch (error) {
+        console.error('Error processing WebSocket message:', error);
+    }
+}
+
+
+  private handleWebSocketError(error: unknown): void {
+    console.error('WebSocket error:', error);
+    this.broadcastConnectionStatus(false);
+  }
+
+  private handleWebSocketClose(): void {
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.close();
+    }
+    this.ws = null;
+    this.broadcastConnectionStatus(false);
+    
+    if (this.enableWebSocket && this.reconnectAttempts < this.maxReconnectAttempts) {
+      this.scheduleReconnect();
+    }
+  }
+
+  private scheduleReconnect(): void {
+    this.reconnectAttempts++;
+    const delay = Math.min(
+      WS_CONFIG.RECONNECT_DELAY * Math.pow(2, this.reconnectAttempts - 1),
+      WS_CONFIG.MAX_RECONNECT_DELAY
+    );
+    
+    setTimeout(() => this.initializeWebSocket(), delay);
+  }
+
+  /**
+   * Client management methods
+   */
+  public addClient(client: WebSocketClient): void {
+    this.clients.add(client);
+    if (client.readyState === WebSocket.OPEN) {
+        this.sendToClient(client, {
+            type: 'connection_status',
+            connected: this.ws?.readyState === WebSocket.OPEN
+        });
+    }
+}
+
+public removeClient(client: WebSocketClient): void {
+    this.clients.delete(client);
+}
+
+  private broadcastPositions(positions: PositionData[]): void {
+    this.broadcast({
+      type: 'positions',
+      data: positions
+    });
+  }
+
+  private broadcastConnectionStatus(connected: boolean): void {
+    this.broadcast({
+      type: 'connection_status',
+      connected
+    });
+  }
+
+  private broadcast(message: unknown): void {
+    const messageStr = JSON.stringify(message);
+    this.clients.forEach(client => {
+      if (client.readyState === WebSocket.OPEN) {
+        this.sendToClient(client, messageStr);
+      }
+    });
+  }
+
+  private sendToClient(client: WebSocket, message: unknown): void {
+    try {
+      client.send(typeof message === 'string' ? message : JSON.stringify(message));
+    } catch (error) {
+      console.error('Error sending to client:', error);
+      this.removeClient(client);
+    }
+  }
+
+// Override cleanup to include active aircraft cache
+public cleanup(): void {
+  if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.close();
+  }
+  this.ws = null;
+  this.clients.clear();
+  this.cache.close();
+  this.activeAircraftCache.close();
+  this.pendingRequests.clear();
+  this.batchQueue = [];
+  this.positionCallbacks.clear();
+  this.subscribedIcao24s.clear();
+}
+}
+
+// Export the service instance with the interface type
+export const openSkyService: OpenSkyServiceInterface = new OpenSkyService(
+process.env.OPENSKY_USERNAME,
+process.env.OPENSKY_PASSWORD,
+true
+);
