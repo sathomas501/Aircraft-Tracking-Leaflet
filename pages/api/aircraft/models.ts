@@ -1,18 +1,9 @@
 // pages/api/aircraft/models.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { getDb } from '@/lib/db/connection';
-
-interface SelectOption {
-  value: string;
-  label: string;
-  count: number;
-}
-
-interface ModelsResponse {
-  models?: SelectOption[];
-  error?: string;
-  message?: string;
-}
+import { getActiveDb } from '@/lib/db/activeConnection';
+import type { SelectOption } from '@/types/base';
+import type { ModelsResponse } from '@/types/api/api';
 
 export default async function handler(
   req: NextApiRequest,
@@ -25,7 +16,7 @@ export default async function handler(
     });
   }
 
-  const { manufacturer, activeOnly } = req.query;
+  const { manufacturer } = req.query;
 
   if (!manufacturer || typeof manufacturer !== 'string') {
     return res.status(400).json({ 
@@ -34,13 +25,33 @@ export default async function handler(
     });
   }
 
-  console.log(`Models API Request for manufacturer: ${manufacturer}, activeOnly: ${activeOnly}`);
+  console.log(`Models API Request for manufacturer: ${manufacturer}`);
 
   try {
-    const db = await getDb();
-    
+    const mainDb = await getDb();
+    const activeDb = await getActiveDb();
+
+    // First, get active models count for this manufacturer
+    const activeQuery = `
+      SELECT COUNT(DISTINCT a.icao24) as active_count, a.model
+      FROM aircraft a
+      INNER JOIN (
+        SELECT icao24
+        FROM active_aircraft
+        WHERE last_contact >= unixepoch('now') - 7200
+      ) act ON a.icao24 = act.icao24
+      WHERE a.manufacturer = ?
+      GROUP BY a.model
+    `;
+
+    const activeResults = await mainDb.all(activeQuery, [manufacturer]);
+    const activeCountMap = new Map(
+      activeResults.map(row => [row.model, row.active_count])
+    );
+
+    // Then get total counts for models
     const query = `
-      SELECT DISTINCT
+      SELECT 
         model AS value,
         model AS label,
         COUNT(*) AS count
@@ -50,19 +61,35 @@ export default async function handler(
         AND model IS NOT NULL
         AND model != ''
         AND LENGTH(TRIM(model)) >= 2
-        ${activeOnly === 'true' ? 'AND active = 1' : ''}
+        AND icao24 IS NOT NULL
+        AND LENGTH(TRIM(icao24)) > 0
       GROUP BY model
       HAVING COUNT(*) > 0
       ORDER BY COUNT(*) DESC, model ASC;
     `;
 
-    const models = await db.all<SelectOption[]>(query, [manufacturer]);
-    console.log(`Successfully fetched ${models.length} models for ${manufacturer}`);
-    
-    res.status(200).json({ models });
+    const models = await mainDb.all<SelectOption[]>(query, [manufacturer]);
+
+    // Combine the results
+    const response = models.map(m => ({
+      ...m,
+      count: Number(m.count) || 0,
+      activeCount: Number(activeCountMap.get(m.value)) || 0
+    }));
+
+    // Sort by active count, then total count
+    response.sort((a, b) => {
+      if (b.activeCount !== a.activeCount) {
+        return b.activeCount - a.activeCount;
+      }
+      return b.count - a.count;
+    });
+
+    return res.status(200).json({ models: response });
+
   } catch (error) {
     console.error('Error fetching models:', error);
-    res.status(500).json({ 
+    return res.status(500).json({ 
       error: 'Failed to fetch models',
       message: process.env.NODE_ENV === 'development' ? (error as Error).message : undefined
     });

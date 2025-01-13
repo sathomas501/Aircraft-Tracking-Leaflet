@@ -8,7 +8,6 @@
     "start": "next start -p 3001",
     "find-unused": "ts-prune"
   },
-
   "dependencies": {
     "@tanstack/react-query": "^5.62.2",
     "axios": "^1.7.9",
@@ -31,6 +30,7 @@
     "ws": "^8.18.0"
   },
   "devDependencies": {
+    "@next/bundle-analyzer": "^15.1.4",
     "@types/axios": "^0.14.4",
     "@types/better-sqlite3": "^7.6.12",
     "@types/leaflet": "^1.9.15",
