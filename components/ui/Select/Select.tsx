@@ -1,9 +1,5 @@
 import * as React from 'react';
-
-export interface SelectOption {
-  value: string;
-  label: string;
-}
+import type { SelectOption } from '@/types/base';
 
 export interface SelectProps {
   label: string;
@@ -15,6 +11,7 @@ export interface SelectProps {
   error?: string;
   isLoading?: boolean;
   isInitialLoad?: boolean;
+  showCounts?: boolean;
 }
 
 export function Select({
@@ -26,12 +23,29 @@ export function Select({
   disabled = false,
   error,
   isLoading = false,
-  isInitialLoad = false
+  isInitialLoad = false,
+  showCounts = false
 }: SelectProps): JSX.Element {
   const selectId = React.useId();
 
   const handleChange = (e: React.ChangeEvent<HTMLSelectElement>): void => {
     onChange(e.target.value);
+  };
+
+  const formatOptionLabel = (option: SelectOption): string => {
+    if (!showCounts) return option.label;
+    
+    const counts = [];
+    if (typeof option.activeCount === 'number') {
+      counts.push(`${option.activeCount.toLocaleString()} active`);
+    }
+    if (typeof option.count === 'number') {
+      counts.push(`${option.count.toLocaleString()} total`);
+    }
+    
+    return counts.length > 0
+      ? `${option.label} (${counts.join(' / ')})`
+      : option.label;
   };
 
   return React.createElement('div', {
@@ -68,7 +82,7 @@ export function Select({
         React.createElement('option', {
           key: option.value,
           value: option.value
-        }, option.label)
+        }, formatOptionLabel(option))
       )
     ]),
     

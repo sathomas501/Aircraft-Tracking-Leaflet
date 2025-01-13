@@ -7,17 +7,21 @@ WORKDIR /app
 # Install pnpm globally
 RUN npm install -g pnpm
 
-# Copy package.json to install dependencies
-COPY package.json ./
+# Copy package.json and pnpm-lock.yaml to install dependencies
+COPY package.json pnpm-lock.yaml ./
 
 # Install dependencies with pnpm
-RUN pnpm install
+RUN pnpm install --frozen-lockfile
 
 # Copy the rest of the application code
 COPY . .
 
-# Expose the port your application will run on (replace 3000 with your app's port)
+# Build the Next.js application
+RUN pnpm build
+
+# Expose the port your application will run on
 EXPOSE 3000
 
-# Set the command to run your application
+# Set the command to start your application
 CMD ["pnpm", "start"]
+
