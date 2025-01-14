@@ -3,17 +3,15 @@ import axios from 'axios';
 import WebSocket from 'ws';
 import NodeCache from 'node-cache';
 import type { Aircraft } from '@/types/base';
+import { getDb } from '@/lib/db/connection';
 
 import type { 
     OpenSkyResponse, 
     PositionData, 
     WebSocketMessage,
-    OpenSkyState,
-    OpenSkyUtils,
-    parseOpenSkyStates
 } from '@/types/api/opensky';
+
 import {
-    OPENSKY_INDICES,
     API_ENDPOINTS,
     API_PARAMS,
     WS_CONFIG,
@@ -28,7 +26,6 @@ export class OpenSkyError extends Error {
 
 export type PositionUpdateCallback = (positions: PositionData[]) => Promise<void>;
 export type WebSocketClient = WebSocket;
-
 export interface ActiveCounts {
     active: number;
     total: number;
@@ -175,9 +172,9 @@ public positionToAircraft(pos: PositionData): Aircraft {
       operator: "Unknown",
       latitude: pos.latitude,
       longitude: pos.longitude,
-      altitude: pos.altitude,
-      heading: pos.heading,
-      velocity: pos.velocity,
+      altitude: pos.altitude ?? 0,       // Default to 0 if undefined
+      heading: pos.heading ?? 0,         // Default to 0 if undefined
+      velocity: pos.velocity ?? 0,       // Default to 0 if undefined
       on_ground: pos.on_ground,
       last_contact: pos.last_contact,
       NAME: "",
@@ -359,31 +356,67 @@ public removePositionUpdateCallback(callback: PositionUpdateCallback): void {
 }
 
 public async subscribeToAircraft(icao24s: string[]): Promise<void> {
-    icao24s.forEach(icao => this.subscribedIcao24s.add(icao));
+  // Keep existing subscription logic
+  icao24s.forEach(icao => this.subscribedIcao24s.add(icao));
 
-    if (this.ws?.readyState === WebSocket.OPEN) {
-        const message: WebSocketMessage = {
-            type: 'subscribe',
-            filters: {
-                states: true,
-                icao24: Array.from(this.subscribedIcao24s)
-            }
-        };
-        this.ws.send(JSON.stringify(message));
-    }
+  if (this.ws?.readyState === WebSocket.OPEN) {
+      const message: WebSocketMessage = {
+          type: 'subscribe',
+          filters: {
+              states: true,
+              icao24: Array.from(this.subscribedIcao24s)
+          }
+      };
+      this.ws.send(JSON.stringify(message));
+
+      // Add database update for initial state
+      try {
+          const db = await getDb();
+          // Mark these aircraft as potentially active
+          await db.run(`
+              UPDATE aircraft 
+              SET 
+                  is_active = 1,
+                  updated_at = datetime('now')
+              WHERE icao24 IN (${icao24s.map(() => '?').join(',')})
+          `, icao24s);
+      } catch (error) {
+          console.error('Error updating aircraft active status:', error);
+      }
+  }
 }
 
+public async unsubscribeFromAircraft(icao24s: string[]): Promise<void> {
+  icao24s.forEach(icao => this.subscribedIcao24s.delete(icao));
 
-public unsubscribeFromAircraft(icao24s: string[]): void {
-    icao24s.forEach(icao => this.subscribedIcao24s.delete(icao));
+  if (this.ws?.readyState === WebSocket.OPEN) {
+      const message: WebSocketMessage = {
+          type: 'unsubscribe',
+          filters: { icao24: icao24s }
+      };
+      this.ws.send(JSON.stringify(message));
 
-    if (this.ws?.readyState === WebSocket.OPEN) {
-        const message: WebSocketMessage = {
-            type: 'unsubscribe',
-            filters: { icao24: icao24s }
-        };
-        this.ws.send(JSON.stringify(message));
-    }
+      // Add database cleanup
+      try {
+          const db = await getDb();
+          await db.run(`
+              UPDATE aircraft 
+              SET 
+                  is_active = 0,
+                  last_contact = NULL,
+                  latitude = NULL,
+                  longitude = NULL,
+                  altitude = NULL,
+                  velocity = NULL,
+                  heading = NULL,
+                  on_ground = 0,
+                  updated_at = NULL
+              WHERE icao24 IN (${icao24s.map(() => '?').join(',')})
+          `, icao24s);
+      } catch (error) {
+          console.error('Error clearing aircraft active status:', error);
+      }
+  }
 }
 
   /**
@@ -415,26 +448,88 @@ public unsubscribeFromAircraft(icao24s: string[]): void {
         const message = JSON.parse(data.toString());
         if (message.states) {
             const positions = this.parseOpenSkyStates(message.states);
-            
-            const filteredPositions = positions.filter(
+           
+            // Filter positions for subscribed aircraft
+            const subscribedPositions = positions.filter(
                 pos => this.subscribedIcao24s.has(pos.icao24)
             );
 
-            if (filteredPositions.length > 0) {
-                await Promise.all(
-                    Array.from(this.positionCallbacks).map(callback =>
-                        callback(filteredPositions).catch(error => {
-                            console.error('Error in position update callback:', error);
-                        })
-                    )
-                );
+            if (subscribedPositions.length > 0) {
+                try {
+                    const db = await getDb();
+                    // Use a transaction for better performance
+                    await db.run('BEGIN TRANSACTION');
+
+                    for (const position of subscribedPositions) {
+                        await db.run(`
+                            UPDATE aircraft 
+                            SET 
+                                is_active = 1,
+                                last_contact = ?,
+                                latitude = ?,
+                                longitude = ?,
+                                altitude = ?,
+                                velocity = ?,
+                                heading = ?,
+                                on_ground = ?,
+                                updated_at = datetime('now')
+                            WHERE icao24 = ?
+                        `, [
+                            position.last_contact,
+                            position.latitude,
+                            position.longitude,
+                            position.altitude,
+                            position.velocity,
+                            position.heading,
+                            position.on_ground ? 1 : 0,
+                            position.icao24
+                        ]);
+                    }
+
+                    await db.run('COMMIT');
+
+                    // Maintain existing broadcast behavior
+                    this.broadcastPositions(subscribedPositions);
+                    
+                    // Use Promise.all for callbacks
+                    await Promise.all(
+                        Array.from(this.positionCallbacks).map(callback => 
+                            callback(subscribedPositions)
+                        )
+                    );
+
+                } catch (error) {
+                    console.error('Error updating aircraft positions:', error);
+                    // Ensure transaction is rolled back on error
+                    try {
+                        const db = await getDb();
+                        await db.run('ROLLBACK');
+                    } catch (rollbackError) {
+                        console.error('Error rolling back transaction:', rollbackError);
+                    }
+                }
             }
         }
     } catch (error) {
         console.error('Error processing WebSocket message:', error);
     }
+
 }
 
+// Add the callback handling directly in the class
+private async notifyCallbacks(positions: PositionData[]): Promise<void> {
+  try {
+      await Promise.all(
+          Array.from(this.positionCallbacks).map(callback => 
+              callback(positions).catch(error => {
+                  console.error('Error in position callback:', error);
+              })
+          )
+      );
+  } catch (error) {
+      console.error('Error notifying callbacks:', error);
+  }
+}
 
   private handleWebSocketError(error: unknown): void {
     console.error('WebSocket error:', error);
