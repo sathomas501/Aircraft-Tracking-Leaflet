@@ -1,6 +1,6 @@
 // lib/db/queries.ts
-import { getDb } from '@/lib/db/connection';
-import type { SelectOption } from '@/types/base';
+import { getActiveDb } from '../db/databaseManager';
+import { SelectOption } from '@/types/base';
 
 export interface ManufacturerRow {
     manufacturer: string;
@@ -22,7 +22,7 @@ export const getActiveManufacturers = async (): Promise<ManufacturerRow[]> => {
     `;
 
     try {
-        const db = await getDb();
+        const db = await getActiveDb();
         const rows = await db.all<ManufacturerRow[]>(query);
         return rows || [];
     } catch (error) {
@@ -42,9 +42,9 @@ export const getActiveIcao24ByManufacturer = async (manufacturer: string): Promi
     `;
 
     try {
-        const db = await getDb();
+        const db = await getActiveDb();
         const rows = await db.all<{ icao24: string }[]>(query, [manufacturer]);
-        return rows.map(row => row.icao24);
+        return rows.map((row: { icao24: string }) => row.icao24);
     } catch (error) {
         console.error('Database query error:', error);
         throw error;
@@ -68,7 +68,7 @@ export const getModelsByManufacturer = async (manufacturer: string): Promise<Sel
     `;
 
     try {
-        const db = await getDb();
+        const db = await getActiveDb();
         const rows = await db.all<SelectOption[]>(query, [manufacturer]);
         return rows || [];
     } catch (error) {

@@ -1,7 +1,9 @@
 // lib/services/openSkySyncService.ts
-import { getDb } from '@/lib/db/connection';
-import { openSkyService } from '@/lib/api/opensky';
-import type { PositionData } from '@/types/api/opensky';
+import { getActiveDb } from '@/lib/db/databaseManager';
+import { openSkyService } from '@/lib/services/openSkyService';
+import type { PositionData } from '@/types/base';
+
+const db = await getActiveDb();
 
 export class OpenSkySyncService {
   private static instance: OpenSkySyncService;
@@ -20,7 +22,7 @@ export class OpenSkySyncService {
   }
 
   private async updateActiveAircraft(positions: PositionData[]): Promise<void> {
-    const db = await getDb();
+    const db = await getActiveDb();
 
     try {
       await db.run('BEGIN TRANSACTION');
@@ -82,7 +84,7 @@ export class OpenSkySyncService {
   public async syncActiveAircraft(): Promise<void> {
     try {
       // Get all tracked aircraft ICAO24 codes from our database
-      const db = await getDb();
+      const db = await getActiveDb();
       const trackedAircraft = await db.all<{ icao24: string }[]>(`
         SELECT DISTINCT icao24 
         FROM aircraft 
@@ -126,7 +128,7 @@ export class OpenSkySyncService {
   }
 
   public cleanupStaleData = async (): Promise<void> => {
-    const db = await getDb();
+    const db = await getActiveDb();
     const staleThreshold = Math.floor(Date.now() / 1000) - 7200; // 2 hours
 
     try {

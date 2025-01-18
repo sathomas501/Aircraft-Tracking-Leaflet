@@ -2,22 +2,14 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { ManufacturerTrackingService } from '@/lib/services/manufacturerTrackingService';
 import { errorHandler, ErrorType } from '@/lib/services/error-handler';
-import { openSkyService } from '@/lib/services/opensky';
+import { getActiveDb } from '@/lib/db/databaseManager';
 
-interface TrackManufacturerResponse {
-    success: boolean;
-    manufacturer?: string;
-    message: string;
-    activeCount?: number;
-    totalCount?: number;
-    tracking?: boolean;
-    currentManufacturer?: string;
-    error?: string;
-}
+const db = await getActiveDb();
+
 
 export default async function handler(
     req: NextApiRequest,
-    res: NextApiResponse<TrackManufacturerResponse>
+    res: NextApiResponse
 ) {
     if (req.method !== 'POST') {
         return res.status(405).json({ 
@@ -26,7 +18,8 @@ export default async function handler(
         });
     }
 
-    const { manufacturer } = req.body;
+    const { manufacturer, model } = req.body;
+
     if (!manufacturer) {
         return res.status(400).json({ 
             success: false, 
@@ -35,40 +28,61 @@ export default async function handler(
     }
 
     try {
-        const trackingService = ManufacturerTrackingService.getInstance();
-        const currentlyTracking = trackingService.getCurrentManufacturer();
+        console.log(`Starting tracking for manufacturer: ${manufacturer}`);
+        
+        // Get ICAO24s directly from the database
+        const db = await getActiveDb();
+        let query = `
+            SELECT DISTINCT icao24
+            FROM aircraft
+            WHERE manufacturer = ?
+            AND icao24 IS NOT NULL
+            AND LENGTH(TRIM(icao24)) > 0
+        `;
+        
+        const params = [manufacturer];
 
-        // If already tracking this manufacturer, just return current status
-        if (currentlyTracking === manufacturer) {
-            const counts = await openSkyService.getActiveCount(manufacturer);
-            return res.status(200).json({
-                success: true,
-                manufacturer,
-                message: `Already tracking aircraft for ${manufacturer}`,
-                activeCount: counts.active,
-                totalCount: counts.total,
-                tracking: true,
-                currentManufacturer: manufacturer
+        // Add model filter if provided
+        if (model) {
+            query += ` AND model = ?`;
+            params.push(model);
+        }
+
+        const aircraft = await db.all(query, params);
+        const icao24List = aircraft.map(a => a.icao24);
+
+        if (!icao24List || icao24List.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: `No aircraft found for ${manufacturer}`,
+                activeCount: 0
             });
         }
 
-        // Start tracking new manufacturer
-        await trackingService.startTracking(manufacturer);
-        const counts = await openSkyService.getActiveCount(manufacturer);
+        console.log(`Found ${icao24List.length} aircraft to check`);
 
-        console.log(`Started tracking aircraft for manufacturer: ${manufacturer}`);
+        // Start tracking service
+        const trackingService = ManufacturerTrackingService.getInstance();
+        await trackingService.startTracking(manufacturer);
+
+        // Get initial active positions
+        const positions = await trackingService.getActiveAircraft(icao24List);
+        const activeCount = positions.length;
+
+        console.log(`Found ${activeCount} active aircraft`);
 
         return res.status(200).json({
             success: true,
             manufacturer,
             message: `Now tracking aircraft for ${manufacturer}`,
-            activeCount: counts.active,
-            totalCount: counts.total,
-            tracking: trackingService.isTracking(),
-            currentManufacturer: manufacturer
+            activeCount,
+            totalCount: icao24List.length,
+            positions,
+            tracking: true
         });
 
     } catch (error) {
+        console.error('Error in track-manufacturer API:', error);
         const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
         errorHandler.handleError(ErrorType.DATA, `Failed to track manufacturer: ${errorMessage}`);
         
@@ -79,3 +93,4 @@ export default async function handler(
         });
     }
 }
+

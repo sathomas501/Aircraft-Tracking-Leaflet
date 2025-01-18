@@ -19,6 +19,20 @@ export interface AircraftPosition extends Position {
 }
 
 /**
+ * Raw position data from OpenSky API
+ */
+export interface PositionData {
+  icao24: string;
+  latitude: number;  // Changed from optional to required
+  longitude: number; // Changed from optional to required
+  velocity?: number;  // Changed from optional to required
+  heading: number;   // Changed from optional to required
+  altitude?: number;  // Changed from optional to required
+  on_ground: boolean;
+  last_contact: number;
+}
+
+/**
  * Complete aircraft information including registration and tracking data
  */
 export interface Aircraft {
@@ -37,6 +51,7 @@ export interface Aircraft {
   velocity: number;
   on_ground: boolean;
   last_contact: number;
+  lastSeen?: number;
 
   // Registration information
   NAME: string;
@@ -45,17 +60,14 @@ export interface Aircraft {
 
   // Tracking state
   isTracked: boolean;
-
- 
+  
   registration?: string;
   manufacturerName?: string;
   owner?: string;
   registered?: string;
   manufacturerIcao?: string;
   operatorIcao?: string;
-  // Position data
   active?: boolean;
-
 }
 
 /**
@@ -78,24 +90,8 @@ export interface Trails {
 }
 
 /**
- * Raw position data from OpenSky API
- */
-// Update PositionData to match Aircraft requirements
-export interface PositionData {
-  icao24: string;
-  latitude?: number;
-  longitude?: number;
-  velocity?: number;
-  heading?: number;
-  altitude?: number;
-  on_ground: boolean;  // Make required
-  last_contact: number;  // Make required
-}
-
-/**
  * Select option for dropdowns and selectors
  */
-// types/base.ts
 export interface SelectOption {
   value: string;
   label: string;
@@ -135,9 +131,7 @@ export function toAircraftPosition(aircraft: Aircraft): AircraftPosition {
 /**
  * Helper function to convert PositionData to AircraftPosition
  */
-export function positionDataToAircraftPosition(data: PositionData): AircraftPosition | null {
-  if (!data.latitude || !data.longitude) return null;
-  
+export function positionDataToAircraftPosition(data: PositionData): AircraftPosition {
   return {
     lat: data.latitude,
     lng: data.longitude,
@@ -149,64 +143,57 @@ export function positionDataToAircraftPosition(data: PositionData): AircraftPosi
 }
 
 export function mapPositionDataToAircraft(positionData: PositionData[]): Aircraft[] {
-  const currentTime = Math.floor(Date.now() / 1000);
-  
-  return positionData.map((data) => {
-      // Ensure we have valid position data or defaults
-      const validData: Required<PositionData> = {
-          icao24: data.icao24,
-          latitude: data.latitude ?? 0,
-          longitude: data.longitude ?? 0,
-          altitude: data.altitude ?? 0,
-          heading: data.heading ?? 0,
-          velocity: data.velocity ?? 0,
-          on_ground: data.on_ground,      // Already required
-          last_contact: data.last_contact // Already required
-      };
-
-      return {
-          icao24: validData.icao24,
-          "N-NUMBER": "",
-          manufacturer: "Unknown",
-          model: "Unknown",
-          operator: "Unknown",
-          latitude: validData.latitude,
-          longitude: validData.longitude,
-          altitude: validData.altitude,
-          heading: validData.heading,
-          velocity: validData.velocity,
-          on_ground: validData.on_ground,
-          last_contact: validData.last_contact,
-          NAME: "",
-          CITY: "",
-          STATE: "",
-          isTracked: true
-      };
-  });
+  return positionData.map((data) => ({
+    icao24: data.icao24,
+    "N-NUMBER": "",
+    manufacturer: "Unknown",
+    model: "Unknown",
+    operator: "Unknown",
+    latitude: data.latitude,
+    longitude: data.longitude,
+    altitude: data.altitude ?? -1, // Replace `undefined` with a fallback value
+    heading: data.heading,
+    velocity: data.velocity ?? 0, // Replace `undefined` with a fallback value
+    on_ground: data.on_ground,
+    last_contact: data.last_contact,
+    NAME: "",
+    CITY: "",
+    STATE: "",
+    isTracked: true
+  }));
 }
 
 // Helper function to create PositionData with required fields
 export function createPositionData(
   icao24: string,
-  partialData: Partial<Omit<PositionData, 'icao24' | 'on_ground' | 'last_contact'>>
+  partialData: Required<Omit<PositionData, 'icao24' | 'on_ground' | 'last_contact'>>
 ): PositionData {
   const currentTime = Math.floor(Date.now() / 1000);
   
   return {
-      icao24,
-      on_ground: false,  // Default value
-      last_contact: currentTime,  // Default value
-      ...partialData
+    icao24,
+    latitude: partialData.latitude,
+    longitude: partialData.longitude,
+    altitude: partialData.altitude,
+    heading: partialData.heading,
+    velocity: partialData.velocity,
+    on_ground: false,
+    last_contact: currentTime
   };
 }
 
 // Helper function to validate position data
 export function validatePositionData(data: Partial<PositionData>): data is PositionData {
   return (
-      typeof data.icao24 === 'string' &&
-      typeof data.on_ground === 'boolean' &&
-      typeof data.last_contact === 'number' &&
-      !isNaN(data.last_contact)
+    typeof data.icao24 === 'string' &&
+    typeof data.latitude === 'number' &&
+    typeof data.longitude === 'number' &&
+    typeof data.altitude === 'number' &&
+    typeof data.heading === 'number' &&
+    typeof data.velocity === 'number' &&
+    typeof data.on_ground === 'boolean' &&
+    typeof data.last_contact === 'number' &&
+    !isNaN(data.last_contact)
   );
 }
 

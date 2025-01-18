@@ -1,4 +1,8 @@
 // lib/services/error-handler.ts
+
+/**
+ * Types of errors that can occur in the application
+ */
 export enum ErrorType {
     NETWORK = 'NETWORK',
     AUTH = 'AUTH',
@@ -7,6 +11,9 @@ export enum ErrorType {
     WEBSOCKET = 'WEBSOCKET'
 }
 
+/**
+ * Error details including retry information
+ */
 interface ErrorDetails {
     type: ErrorType;
     message: string;
@@ -23,6 +30,9 @@ interface ErrorState {
     retryTimeouts: Map<ErrorType, NodeJS.Timeout>;
 }
 
+/**
+ * Singleton class for handling application errors with retry logic
+ */
 class ErrorHandler {
     private static instance: ErrorHandler;
     private state: ErrorState = {
@@ -35,7 +45,6 @@ class ErrorHandler {
     private readonly BASE_RETRY_DELAY = 5000; // 5 seconds
 
     private constructor() {
-        // Initialize handlers for each error type
         Object.values(ErrorType).forEach(type => {
             this.state.handlers.set(type, new Set());
         });
@@ -61,56 +70,48 @@ class ErrorHandler {
             resolved: false
         };
 
-        // Special handling for rate limit errors
         if (type === ErrorType.RATE_LIMIT && context?.retryAfter) {
             details.retryAfter = context.retryAfter;
         }
 
         this.state.errors.set(type, details);
-
-        // Notify all handlers for this error type
         this.notifyHandlers(type, details);
-
-        // Handle automatic retries if applicable
         this.handleRetry(type, details);
     }
 
     private handleRetry(type: ErrorType, details: ErrorDetails) {
-        // Clear any existing retry timeout
         const existingTimeout = this.state.retryTimeouts.get(type);
         if (existingTimeout) {
             clearTimeout(existingTimeout);
         }
 
-        // Don't retry if max retries reached
         if (details.retryCount && details.retryCount >= this.MAX_RETRY_COUNT) {
             console.log(`Max retries (${this.MAX_RETRY_COUNT}) reached for ${type}`);
             return;
         }
 
-        // Calculate retry delay with exponential backoff
         const retryDelay = details.retryAfter 
             ? details.retryAfter * 1000 
             : this.BASE_RETRY_DELAY * Math.pow(2, details.retryCount || 0);
 
-        // Set up retry timeout
         const timeout = setTimeout(() => {
             this.state.retryTimeouts.delete(type);
             this.notifyHandlers(type, { ...details, resolved: true });
         }, retryDelay);
 
         this.state.retryTimeouts.set(type, timeout);
-
         console.log(`Scheduled retry for ${type} in ${retryDelay}ms (attempt ${details.retryCount})`);
     }
 
+    /**
+     * Subscribe to error events of a specific type
+     * @returns Unsubscribe function
+     */
     subscribe(type: ErrorType, handler: (error: ErrorDetails) => void): () => void {
         const handlers = this.state.handlers.get(type);
         if (handlers) {
             handlers.add(handler);
         }
-
-        // Return unsubscribe function
         return () => {
             if (handlers) {
                 handlers.delete(handler);
@@ -137,7 +138,6 @@ class ErrorHandler {
 
     clearError(type: ErrorType) {
         this.state.errors.delete(type);
-        // Clear any pending retry timeout
         const timeout = this.state.retryTimeouts.get(type);
         if (timeout) {
             clearTimeout(timeout);
@@ -147,7 +147,6 @@ class ErrorHandler {
 
     clearAllErrors() {
         this.state.errors.clear();
-        // Clear all retry timeouts
         this.state.retryTimeouts.forEach(timeout => clearTimeout(timeout));
         this.state.retryTimeouts.clear();
     }
@@ -178,7 +177,6 @@ class ErrorHandler {
         };
     }
 
-    // Hook for React components
     useErrorHandler(type: ErrorType) {
         if (typeof window === 'undefined') return null;
 

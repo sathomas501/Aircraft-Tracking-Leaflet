@@ -1,7 +1,9 @@
 // pages/api/positions.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
 import type { Aircraft } from '@/types/base';
-import { getDb } from '@/lib/db/connection';
+import { getActiveDb } from '@/lib/db/databaseManager';
+
+const db = await getActiveDb();
 
 interface PositionsResponse {
   aircraft?: Aircraft[];
@@ -26,7 +28,7 @@ export default async function handler(
   }
 
   try {
-    const db = await getDb();
+    const db = await getActiveDb();
     const placeholders = icao24s.map(() => '?').join(',');
     const query = `
       SELECT icao24, manufacturer, model
