@@ -1,128 +1,86 @@
-// lib/services/manufacturerTrackingService.ts
-import { openSkyService } from '@/lib/api/opensky';
-import { getDb } from '@/lib/db/connection';
-import { getActiveDb } from '@/lib/db/activeConnection';
-import type { PositionData } from '@/types/api/opensky';
+import { getActiveDb } from '@/lib/db/databaseManager';
+import { OpenSkyManager } from '@/lib/services/openSkyService';
+import { CacheManager } from '@/lib/services/managers/cache-manager'; // A
+import type { PositionData } from '@/types/base';
 
 export class ManufacturerTrackingService {
     private static instance: ManufacturerTrackingService;
+    private cache: CacheManager<PositionData[]> = new CacheManager<PositionData[]>(60); // Cache TTL: 60 seconds
     private currentManufacturer: string | null = null;
-    private updateInterval: NodeJS.Timeout | null = null;
-    private icao24List: string[] = [];
-    private wsSubscribed = false;
-    private positionUpdateCallback: ((positions: PositionData[]) => Promise<void>) | null = null;
-    
-    private readonly UPDATE_INTERVAL = 15000; // 15 seconds
 
+    // Private constructor for singleton pattern
     private constructor() {}
 
+    /**
+     * Singleton instance accessor
+     */
     public static getInstance(): ManufacturerTrackingService {
-        if (!this.instance) {
-            this.instance = new ManufacturerTrackingService();
+        if (!ManufacturerTrackingService.instance) {
+            ManufacturerTrackingService.instance = new ManufacturerTrackingService();
         }
-        return this.instance;
+        return ManufacturerTrackingService.instance;
     }
 
+    /**
+     * Starts tracking aircraft for a specific manufacturer.
+     * @param manufacturer - Manufacturer name
+     */
     public async startTracking(manufacturer: string): Promise<void> {
-        // Stop tracking previous manufacturer if any
-        await this.stopTracking();
+        if (this.currentManufacturer !== manufacturer) {
+            console.log(`[DEBUG] Switching to manufacturer: ${manufacturer}`);
+            this.currentManufacturer = manufacturer;
 
-        this.currentManufacturer = manufacturer;
-        
-        // Get all icao24s for this manufacturer
-        const mainDb = await getDb();
-        const aircraft = await mainDb.all<{ icao24: string }[]>(`
-            SELECT icao24
+            // Reset cache for the new manufacturer
+            this.cache.flush();
+        } else {
+            console.log(`[DEBUG] Already tracking manufacturer: ${manufacturer}`);
+        }
+    }
+
+    /**
+     * Fetches active aircraft positions for a list of ICAO24 identifiers.
+     * @param icao24List - List of ICAO24 aircraft identifiers
+     * @returns Promise<PositionData[]> - List of position data for active aircraft
+     */
+    public async getActiveAircraft(manufacturer: string): Promise<PositionData[]> {
+        const db = await getActiveDb();
+    
+        const query = `
+            SELECT DISTINCT icao24
             FROM aircraft
-            WHERE 
-                manufacturer = ?
-                AND icao24 IS NOT NULL
-                AND LENGTH(TRIM(icao24)) > 0
-        `, [manufacturer]);
-
-        this.icao24List = aircraft.map(a => a.icao24);
-
-        // Start periodic updates
-        this.startPeriodicUpdates();
-        
-        // Subscribe to WebSocket updates
-        await this.subscribeToWebSocket();
-
-        // Do initial update
-        await this.updatePositions();
+            WHERE manufacturer = ?
+              AND icao24 IS NOT NULL
+              AND LENGTH(TRIM(icao24)) > 0
+        `;
+        const aircraft = await db.all(query, [manufacturer]);
+        const icao24List = aircraft.map((a: { icao24: string }) => a.icao24);
+    
+        if (!icao24List.length) {
+            console.warn(`[WARN] No ICAO24 identifiers found for manufacturer: ${manufacturer}`);
+            return [];
+        }
+    
+        const positions = await OpenSkyService.getInstance().fetchPositions(icao24List);
+    
+        console.log(`[DEBUG] Found ${positions.length} active aircraft for manufacturer: ${manufacturer}`);
+        return positions;
     }
+    
+    
 
+    /**
+     * Stops tracking the current manufacturer.
+     */
     public async stopTracking(): Promise<void> {
-        if (this.updateInterval) {
-            clearInterval(this.updateInterval);
-            this.updateInterval = null;
+        if (this.currentManufacturer) {
+            console.log(`[DEBUG] Stopping tracking for manufacturer: ${this.currentManufacturer}`);
+            this.currentManufacturer = null;
+
+            // Clear the cache when stopping tracking
+            this.cache.flush();
+        } else {
+            console.log('[DEBUG] No manufacturer is currently being tracked');
         }
-        
-        if (this.wsSubscribed && this.positionUpdateCallback) {
-            openSkyService.unsubscribeFromAircraft(this.icao24List);
-            openSkyService.removePositionUpdateCallback(this.positionUpdateCallback);
-            this.wsSubscribed = false;
-            this.positionUpdateCallback = null;
-        }
-
-        this.currentManufacturer = null;
-        this.icao24List = [];
-    }
-
-    private startPeriodicUpdates(): void {
-        this.updateInterval = setInterval(() => {
-            this.updatePositions().catch(error => {
-                console.error('Error updating positions:', error);
-            });
-        }, this.UPDATE_INTERVAL);
-    }
-
-    private async subscribeToWebSocket(): Promise<void> {
-        if (this.icao24List.length === 0) return;
-
-        try {
-            await openSkyService.subscribeToAircraft(this.icao24List);
-            this.wsSubscribed = true;
-
-            // Create and store the callback
-            this.positionUpdateCallback = async (positions: PositionData[]) => {
-                if (this.currentManufacturer) {
-                    await this.updateActiveDatabase(positions);
-                }
-            };
-
-            // Register the callback
-            openSkyService.onPositionUpdate(this.positionUpdateCallback);
-
-        } catch (error) {
-            console.error('Failed to subscribe to WebSocket updates:', error);
-        }
-    }
-
-    private async updatePositions(): Promise<void> {
-        if (!this.currentManufacturer || this.icao24List.length === 0) return;
-
-        try {
-            const positions = await openSkyService.getPositions(this.icao24List);
-            await this.updateActiveDatabase(positions);
-        } catch (error) {
-            console.error('Error updating positions:', error);
-        }
-    }
-
-    private async updateActiveDatabase(positions: PositionData[]): Promise<void> {
-        // ... rest of the implementation remains the same ...
-    }
-
-    public getCurrentManufacturer(): string | null {
-        return this.currentManufacturer;
-    }
-
-    public isTracking(): boolean {
-        return this.currentManufacturer !== null;
-    }
-
-    public async cleanup(): Promise<void> {
-        await this.stopTracking();
     }
 }
+

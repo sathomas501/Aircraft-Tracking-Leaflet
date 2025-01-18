@@ -1,4 +1,4 @@
-import { PositionData, Aircraft } from '@/types/types';
+import { PositionData, Aircraft } from '@/types/base';
 
 export const mapPositionDataToAircraft = (position: PositionData): Aircraft => ({
   icao24: position.icao24 || '', // Default to empty string if undefined

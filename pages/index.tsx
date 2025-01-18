@@ -2,6 +2,7 @@
 import dynamic from 'next/dynamic';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 
+
 const DynamicMap = dynamic(
   () => import('@/components/aircraft/tracking/Map').then(mod => mod.MapWrapper),
   {

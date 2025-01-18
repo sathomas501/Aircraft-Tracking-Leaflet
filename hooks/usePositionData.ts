@@ -1,7 +1,7 @@
 // hooks/usePositionData.ts
 import { useState, useCallback, useRef } from 'react';
 import { fetchAircraftPositions } from '@/utils/aircraftServices';
-import type { PositionData } from '@/types/api/opensky';
+import type { PositionData } from '@/types/base';
 
 const CACHE_DURATION = 30_000; // 30 seconds
 const MAX_RETRIES = 3;

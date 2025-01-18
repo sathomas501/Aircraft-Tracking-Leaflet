@@ -1,3 +1,4 @@
+
 // lib/services/cache-preloader.ts
 import { aircraftCache } from './aircraft-cache';
 import { errorHandler, ErrorType } from './error-handler';
@@ -22,7 +23,6 @@ class CachePreloaderService {
 
     private defaultConfig: PreloadConfig = {
         regions: [{
-            // Continental US
             lamin: 24.396308,
             lomin: -125.000000,
             lamax: 49.384358,
@@ -51,15 +51,14 @@ class CachePreloaderService {
         this.updateProgress(0);
 
         try {
-            // Preload each region
             const regions = config.regions || this.defaultConfig.regions || [];
             const totalRegions = regions.length;
 
-            for (let i = 0; i < regions.length; i++) {
+            for (let i = 0; i < totalRegions; i++) {
                 const region = regions[i];
                 try {
                     await this.preloadRegion(region, config.maxAircraftPerRegion);
-                    this.updateProgress((i + 1) / totalRegions * 100);
+                    this.updateProgress(((i + 1) / totalRegions) * 100);
                 } catch (error) {
                     errorHandler.handleError(error, {
                         type: ErrorType.DATA_ERROR,
@@ -67,17 +66,14 @@ class CachePreloaderService {
                     });
                 }
 
-                // Wait between regions to respect rate limits
-                if (i < regions.length - 1) {
-                    await new Promise(resolve => setTimeout(resolve, 10000));
+                if (i < totalRegions - 1) {
+                    await this.delay(10000); // Wait between regions
                 }
             }
 
-            // If manufacturers are specified, preload manufacturer-specific data
             if (config.manufacturers?.length) {
                 await this.preloadManufacturers(config.manufacturers);
             }
-
         } finally {
             this.isPreloading = false;
             this.updateProgress(100);
@@ -85,24 +81,22 @@ class CachePreloaderService {
     }
 
     private async preloadRegion(region: PreloadConfig['regions'][0], maxAircraft: number = 500): Promise<void> {
-        const response = await fetch('/api/opensky', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                region,
-                maxAircraft
-            })
-        });
+        try {
+            const response = await fetch('/api/opensky', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ region, maxAircraft })
+            });
 
-        if (!response.ok) {
-            throw new Error(`Failed to preload region: ${response.statusText}`);
+            if (!response.ok) {
+                throw new Error(`Failed to preload region: ${response.statusText}`);
+            }
+
+            const data = await response.json();
+            aircraftCache.updateFromRest(region.description, data);
+        } catch (error) {
+            throw new Error(`Preloading failed for region ${region.description}: ${error.message}`);
         }
-
-        const data = await response.json();
-        // Allow the cache service to handle the data
-        aircraftCache.updateFromRest(region.description, data);
     }
 
     private async preloadManufacturers(manufacturers: string[]): Promise<void> {
@@ -113,7 +107,6 @@ class CachePreloaderService {
 
                 const { icao24List } = await response.json();
                 if (icao24List?.length) {
-                    // Preload positions for these aircraft
                     const positions = await fetch(`/api/opensky?icao24s=${icao24List.join(',')}`);
                     if (positions.ok) {
                         const data = await positions.json();
@@ -126,10 +119,12 @@ class CachePreloaderService {
                     message: `Failed to preload manufacturer: ${manufacturer}`
                 });
             }
-
-            // Respect rate limits between manufacturers
-            await new Promise(resolve => setTimeout(resolve, 10000));
+            await this.delay(10000); // Rate limit
         }
+    }
+
+    private delay(ms: number): Promise<void> {
+        return new Promise(resolve => setTimeout(resolve, ms));
     }
 
     onProgress(listener: (progress: number) => void) {

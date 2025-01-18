@@ -1,12 +1,14 @@
 // lib/services/opensky-validation.ts
-import type { PositionData, OpenSkyState } from '@/types/api/opensky';
+import type { OpenSkyState } from '@/types/api/opensky';
 import { OPENSKY_INDICES } from '@/lib/api/constants';
 import { OpenSkyError, OpenSkyErrorCode } from './opensky-errors';
+import type {PositionData } from '@/types/base'
 
 /**
  * Converts any value to a number or undefined if invalid
  */
-export function toNumberOrUndefined(value: any): number | undefined {
+export import { types } from 'util';
+ function toNumberOrUndefined(value: any): number | undefined {
     if (value === null || value === undefined) return undefined;
     const num = Number(value);
     return isNaN(num) ? undefined : num;

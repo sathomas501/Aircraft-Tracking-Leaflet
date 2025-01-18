@@ -1,74 +1,99 @@
+// pages/api/manufacturers.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { db, runQuery } from '@/lib/db/connection';
-import { getActiveDb } from '@/lib/db/activeConnection';
-import type { ManufacturersResponse } from '@/types/api/api';
+import DatabaseManager from '@/lib/db/databaseManager';
+import { errorHandler, ErrorType } from '@/lib/services/error-handler';
 
+interface ManufacturerData {
+    name: string;
+    count: number;
+    activeCount: number;
+}
+
+interface ManufacturerResponse {
+    value: string;
+    label: string;
+    count: number;
+    activeCount: number;
+}
 
 export default async function handler(
-    req: NextApiRequest,
-    res: NextApiResponse<{ manufacturers: ManufacturersResponse[] } | { error: string; message: string; manufacturers: ManufacturersResponse[] }>
+    req: NextApiRequest, 
+    res: NextApiResponse<{ manufacturers: ManufacturerResponse[] } | { error: string; message?: string }>
 ) {
-    if (req.method !== 'GET') {
-        return res.status(405).json({ error: 'Method not allowed', message: `HTTP method ${req.method} is not supported.`, manufacturers: [] });
-    }
-
     try {
-        const mainDb = db();
+        if (req.method !== 'GET') {
+            res.setHeader('Allow', ['GET']);
+            return res.status(405).json({ 
+                error: 'Method Not Allowed',
+                message: `Method ${req.method} is not allowed` 
+            });
+        }
 
-        const baseQuery = `
+        console.log('Starting manufacturers fetch...');
+        
+        // Get database connection
+        const db = await DatabaseManager.getDb();
+        console.log('Database connection established');
+
+        // Simple query first to check database connection
+        const testQuery = await db.get('SELECT COUNT(*) as count FROM aircraft');
+        console.log('Database connection test successful, total aircraft:', testQuery.count);
+
+        // Main query
+        console.log('Executing manufacturers query...');
+        const manufacturers = await db.all<ManufacturerData[]>(`
             SELECT 
-                manufacturer AS value,
-                manufacturer AS label,
-                COUNT(*) AS count
+                manufacturer as name,
+                COUNT(*) as count,
+                SUM(CASE WHEN is_active = 1 
+                    AND last_contact >= unixepoch('now') - 7200
+                    THEN 1 ELSE 0 END) as activeCount
             FROM aircraft
             WHERE 
-                manufacturer IS NOT NULL 
+                manufacturer IS NOT NULL
                 AND manufacturer != ''
-                AND LENGTH(TRIM(manufacturer)) >= 2
-                AND icao24 IS NOT NULL
-                AND LENGTH(TRIM(icao24)) > 0
+                AND LENGTH(TRIM(manufacturer)) > 1
             GROUP BY manufacturer
-            HAVING COUNT(*) >= 10
-            ORDER BY COUNT(*) DESC
-            LIMIT 50;
-        `;
+            HAVING count >= 10
+            ORDER BY count DESC
+            LIMIT 50
+        `);
 
-        const manufacturers = await runQuery(mainDb, baseQuery);
+        console.log(`Found ${manufacturers.length} manufacturers`);
 
-        if (!manufacturers || manufacturers.length === 0) {
-            return res.status(200).json({ manufacturers: [] });
+        if (!Array.isArray(manufacturers)) {
+            throw new Error('Invalid response from database');
         }
 
-        try {
-            const activeDb = await getActiveDb();
-            const placeholders = manufacturers.map(() => '?').join(',');
-            const activeQuery = `
-                SELECT 
-                    manufacturer,
-                    COUNT(DISTINCT icao24) as active_count
-                FROM active_aircraft 
-                WHERE 
-                    manufacturer IN (${placeholders})
-                    AND last_contact >= unixepoch('now') - 7200
-                GROUP BY manufacturer;
-            `;
+        const formattedManufacturers = manufacturers.map((m: ManufacturerData) => ({
+            value: m.name,
+            label: m.name,
+            count: Number(m.count) || 0,
+            activeCount: Number(m.activeCount) || 0
+        }));
 
-            const activeResults = await runQuery(activeDb, activeQuery, manufacturers.map(m => m.value));
-            const activeCountMap = new Map(activeResults.map(row => [row.manufacturer, row.active_count]));
+        console.log('Successfully formatted manufacturers data');
 
-            const response = manufacturers.map(m => ({
-                ...m,
-                count: Number(m.count) || 0,
-                activeCount: activeCountMap.get(m.value) || 0,
-            }));
-
-            response.sort((a, b) => b.activeCount - a.activeCount || b.count - a.count);
-
-            return res.status(200).json({ manufacturers: response });
-        } catch {
-            return res.status(200).json({ manufacturers });
-        }
+        return res.status(200).json({ manufacturers: formattedManufacturers });
+        
     } catch (error) {
-        return res.status(500).json({ error: 'Failed to fetch manufacturers', message: (error as Error).message, manufacturers: [] });
+        console.error('Detailed error in manufacturers API:', {
+            error,
+            message: error instanceof Error ? error.message : 'Unknown error',
+            stack: error instanceof Error ? error.stack : undefined
+        });
+
+        errorHandler.handleError(
+            ErrorType.DATA,
+            'Failed to fetch manufacturers',
+            error instanceof Error ? error : new Error('Unknown error')
+        );
+        
+        return res.status(500).json({ 
+            error: 'Failed to fetch manufacturers',
+            message: process.env.NODE_ENV === 'development' 
+                ? (error instanceof Error ? error.message : 'Unknown error') 
+                : 'Internal server error'
+        });
     }
 }

@@ -1,6 +1,6 @@
-// utils/position-interpolation/interpolator.ts
-import type { Aircraft } from '@/types/base';
-import { type Position } from './types';
+// utils/position-interpolation.ts
+import type { Aircraft, PositionData } from '@/types/base';
+import type { Position } from '@/utils/position-interpolation';
 
 class PositionInterpolator {
     private static instance: PositionInterpolator;
@@ -19,7 +19,7 @@ class PositionInterpolator {
 
     updatePosition(aircraft: Aircraft) {
         const history = this.positions.get(aircraft.icao24) || [];
-        
+
         history.push({
             latitude: aircraft.latitude,
             longitude: aircraft.longitude,
@@ -41,16 +41,13 @@ class PositionInterpolator {
         const history = this.positions.get(icao24);
         if (!history || history.length < 2) return null;
 
-        // Find surrounding positions
         const latest = history[history.length - 1];
         if (timestamp - latest.timestamp > this.maxPredictionTime) return null;
 
-        // If timestamp is beyond latest, extrapolate
         if (timestamp > latest.timestamp) {
             return this.extrapolatePosition(latest, timestamp);
         }
 
-        // Find positions surrounding the requested timestamp
         let before = latest;
         let after = latest;
         for (let i = history.length - 2; i >= 0; i--) {
@@ -61,7 +58,6 @@ class PositionInterpolator {
             }
         }
 
-        // Interpolate between positions
         const fraction = (timestamp - before.timestamp) / (after.timestamp - before.timestamp);
         return {
             latitude: this.lerp(before.latitude, after.latitude, fraction),
@@ -74,8 +70,8 @@ class PositionInterpolator {
     }
 
     private extrapolatePosition(position: Position, timestamp: number): Position {
-        const dt = (timestamp - position.timestamp) / 1000; // seconds
-        const distance = position.velocity * dt; // meters
+        const dt = (timestamp - position.timestamp) / 1000;
+        const distance = position.velocity * dt;
 
         const { latitude, longitude } = this.calculateNewPosition(
             position.latitude,
@@ -100,7 +96,6 @@ class PositionInterpolator {
 
     private interpolateHeading(start: number, end: number, fraction: number): number {
         let diff = end - start;
-        // Handle wrapping around 360 degrees
         if (diff > 180) diff -= 360;
         if (diff < -180) diff += 360;
         let result = start + diff * fraction;
@@ -110,10 +105,9 @@ class PositionInterpolator {
     }
 
     private calculateNewPosition(lat: number, lon: number, heading: number, distance: number): Position {
-        // Use Haversine formula to calculate new position
-        const R = 6371000; // Earth's radius in meters
-        const d = distance / R; // angular distance
-        const bearing = heading * Math.PI / 180; // Convert heading to radians
+        const R = 6371000;
+        const d = distance / R;
+        const bearing = heading * Math.PI / 180;
 
         const lat1 = lat * Math.PI / 180;
         const lon1 = lon * Math.PI / 180;
@@ -150,14 +144,37 @@ class PositionInterpolator {
             }
         });
     }
+}
 
-    getHistoryLength(icao24: string): number {
-        return this.positions.get(icao24)?.length || 0;
-    }
+// Standalone utility function for simple interpolation
+export function interpolatePositions(
+    positions: Aircraft[] | PositionData[],
+    deltaTime: number
+): Aircraft[] {
+    if (positions.length < 2) return positions as Aircraft[];
 
-    getAllPositions(): Map<string, Position[]> {
-        return new Map(this.positions);
-    }
+    return positions.map(position => {
+        const {
+            latitude = 0,
+            longitude = 0,
+            altitude = 0,
+            velocity = 0,
+            heading = 0,
+            manufacturer = 'Unknown',
+            model = 'Unknown'
+        } = position as Aircraft;
+
+        const interpolationFactor = deltaTime / 1000;
+
+        return {
+            ...position,
+            manufacturer,
+            model,
+            latitude: latitude + (velocity * Math.cos(heading * Math.PI / 180) * interpolationFactor),
+            longitude: longitude + (velocity * Math.sin(heading * Math.PI / 180) * interpolationFactor),
+            altitude
+        } as Aircraft;
+    });
 }
 
 export const positionInterpolator = PositionInterpolator.getInstance();
