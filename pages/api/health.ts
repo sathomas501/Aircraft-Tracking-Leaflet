@@ -1,13 +1,16 @@
 // pages/api/health.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { getDb } from '@/lib/db/connection';
+import { getActiveDb } from '@/lib/db/databaseManager';
+
+const db = await getActiveDb();
+
 
 export default async function handler(
     req: NextApiRequest,
     res: NextApiResponse
 ) {
     try {
-        const db = await getDb();
+        const db = await getActiveDb();
         await db.get('SELECT 1');
         res.status(200).json({ status: 'healthy', message: 'Database connection successful' });
     } catch (error) {

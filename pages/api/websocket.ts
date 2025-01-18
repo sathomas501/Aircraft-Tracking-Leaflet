@@ -1,83 +1,20 @@
-// pages/api/websocket.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
-import type { Socket } from 'net';
-import type { Server as HTTPServer } from 'http';
-import * as WebSocket from 'ws';
-import { openSkyService } from '@/lib/api/opensky';
+import WebSocket from 'ws';
+import { OpenSkyManager } from '@/lib/services/openSkyService';
 
-interface CustomServer extends HTTPServer {
-  ws?: WebSocket.Server;
-}
+const openSkyService = OpenSkyManager.getInstance();
 
-interface CustomSocket extends Socket {
-  server: CustomServer;
-}
+export default function handler(req: NextApiRequest, res: NextApiResponse): void {
+    const { action } = req.query;
 
-interface CustomResponse extends NextApiResponse {
-  socket: CustomSocket;
-}
-
-// Create WebSocket server type
-type WSClient = WebSocket.WebSocket;
-type WSServer = WebSocket.Server;
-
-const wsServer: WSServer = new WebSocket.Server({ noServer: true });
-
-let wsClients = new Set<WSClient>();
-
-wsServer.on('connection', (ws: WSClient) => {
-  wsClients.add(ws);
-
-  ws.on('message', (message: WebSocket.RawData) => {
-    try {
-      const data = JSON.parse(message.toString());
-      console.log('Received:', data);
-    } catch (err) {
-      console.error('Failed to parse message:', err);
+    if (action === 'subscribe') {
+        const client = new WebSocket('ws://example.com'); // Ensure compatibility with the ws module
+        openSkyService.addClient(client);
+        res.status(200).send('Subscribed');
+    } else if (action === 'cleanup') {
+        openSkyService.cleanup();
+        res.status(200).send('Cleaned up');
+    } else {
+        res.status(400).send('Unknown action');
     }
-  });
-
-  ws.on('close', () => {
-    wsClients.delete(ws);
-  });
-
-  ws.on('error', (error) => {
-    console.error('WebSocket error:', error);
-    wsClients.delete(ws);
-  });
-});
-
-// Broadcast function for sending updates to all clients
-function broadcast(data: any) {
-  const message = JSON.stringify(data);
-  wsClients.forEach((client) => {
-    if (client.readyState === WebSocket.OPEN) {
-      client.send(message);
-    }
-  });
 }
-
-export default function handler(
-  req: NextApiRequest,
-  res: CustomResponse
-) {
-  if (!res.socket.server.ws) {
-    // Initialize WebSocket server
-    res.socket.server.ws = wsServer;
-
-    // Set up position updates interval
-    setInterval(async () => {
-      try {
-        const positions = await openSkyService.getPositions();
-        broadcast({ type: 'positions', data: positions });
-      } catch (error) {
-        console.error('Failed to fetch positions:', error);
-      }
-    }, 5000); // Update every 5 seconds
-  }
-
-  res.end();
-}
-
-// Export WebSocket types
-export type { WSClient, WSServer };

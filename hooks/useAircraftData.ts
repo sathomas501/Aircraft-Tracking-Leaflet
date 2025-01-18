@@ -93,7 +93,7 @@ export const useAircraftData = (manufacturer: string, nNumber: string, model: st
 // Base manufacturers query
 export const useManufacturers = () => {
   return useQuery<AircraftOption[]>({
-    queryKey: ['manufacturers'],
+    queryKey: ['manufacturer'],
     queryFn: async () => {
       console.log('useManufacturers: Fetching manufacturers');
       const response = await fetch('/api/manufacturers');
@@ -119,7 +119,7 @@ export const useManufacturers = () => {
 // Type-filtered manufacturers query
 export const useManufacturersByType = (type: string) => {
   return useQuery<AircraftOption[]>({
-    queryKey: ['manufacturers', 'by-type', type],
+    queryKey: ['manufacturer', 'by-type', type],
     queryFn: async () => {
       if (!type) {
         return [];

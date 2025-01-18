@@ -1,4 +1,4 @@
-# Ignore Next.js build and cache files
+del# Ignore Next.js build and cache files
 .next/
 
 # Ignore other system-specific files
@@ -16,3 +16,4 @@ node_modules
 
 # .gitignore
 data/active_status.db
+node_modules

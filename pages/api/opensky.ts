@@ -1,56 +1,56 @@
-// pages/api/opensky.ts
-import type { NextApiRequest, NextApiResponse } from 'next';
-import WebSocket from 'ws';
-import type { OpenSkyService } from '@/lib/services/opensky-integrated/types';
-import { openSkyService } from '@/lib/services/opensky-integrated/service';
-let wsUpgradeHandlerInstalled = false;
+import { NextApiRequest, NextApiResponse } from 'next';
+import { OpenSkyManager } from '@/lib/services/openSkyService';
 
-function handleWebSocket(server: any) {
-    if (wsUpgradeHandlerInstalled) return;
-    wsUpgradeHandlerInstalled = true;
+const openSkyService = OpenSkyManager.getInstance();
 
-    const wss = new WebSocket.Server({ noServer: true });
+function handleWebSocket(server: any): void {
+    server.on('connection', (wsClient: any) => {
+        (openSkyService as any).addClient(wsClient);
 
-    server.on('upgrade', (request: any, socket: any, head: any) => {
-        if (request.url === '/api/opensky') {
-            wss.handleUpgrade(request, socket, head, (ws) => {
-                console.log('New WebSocket client connected');
-                (openSkyService as OpenSkyService).addClient(ws);
+        wsClient.on('close', () => {
+            console.log('WebSocket client disconnected');
+            (openSkyService as any).removeClient(wsClient);
+        });
 
-                ws.on('close', () => {
-                    console.log('WebSocket client disconnected');
-                    (openSkyService as OpenSkyService).removeClient(ws);
-                });
-            });
-        }
+        const pingInterval = setInterval(() => {
+            if (wsClient.isAlive === false) {
+                wsClient.terminate();
+                clearInterval(pingInterval);
+                return;
+            }
+            wsClient.isAlive = false;
+            wsClient.ping();
+        }, 30000);
+
+        wsClient.on('close', () => {
+            clearInterval(pingInterval);
+        });
     });
 }
 
 export default async function handler(
     req: NextApiRequest,
     res: NextApiResponse
-) {
-    if (req.method === 'GET' && (req as any).socket?.server) {
-        handleWebSocket((req as any).socket.server);
+): Promise<void> {
+    const server = (req as any).socket?.server;
+    const upgradeHeader = req.headers.upgrade?.toLowerCase();
+
+    if (server && upgradeHeader === 'websocket') {
+        handleWebSocket(server);
+        res.end();
+        return;
     }
 
     const { icao24s } = req.query;
-    
+
     if (!icao24s) {
         return res.status(400).json({ error: 'Missing icao24s parameter' });
     }
 
     try {
-        const icaoList = typeof icao24s === 'string' 
-            ? icao24s.split(',')
-            : Array.isArray(icao24s) 
-                ? icao24s 
-                : [icao24s];
+        const icaoList = Array.isArray(icao24s) ? icao24s : icao24s.split(',');
 
-        console.log('Fetching positions for', icaoList.length, 'aircraft');
         const positions = await openSkyService.getAircraft(icaoList);
-        
-        console.log('Retrieved positions for', positions.length, 'aircraft');
         res.status(200).json({ aircraft: positions });
     } catch (error) {
         console.error('OpenSky API error:', error);

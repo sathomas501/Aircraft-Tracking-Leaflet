@@ -1,22 +1,71 @@
 // lib/services/opensky-integrated.ts
-import { enhancedCache } from './enhanced-cache';
-import { openSkyAuth } from './opensky-auth';
-import { errorHandler, ErrorType } from './error-handler';
+import { enhancedCache } from '@/lib/services/managers/enhanced-cache';
+import { openSkyAuth } from '../opensky-auth';
+import { errorHandler, ErrorType } from '../error-handler';
 import { positionInterpolator } from '@/utils/position-interpolation';
 import type { Aircraft } from '@/types/base';
+import type { PositionData } from '@/types/base';
+import type { IOpenSkyService } from '@/lib/services/opensky-integrated/types';
+import type { WebSocketClient } from '@/types/websocket';
 
-class OpenSkyIntegrated {
+
+function toAircraft(position: PositionData): Aircraft {
+    return {
+        ...position, // Spread properties from PositionData
+        "N-NUMBER": '', // Default or actual value
+        manufacturer: '', // Default or actual value
+        model: '', // Default or actual value
+        NAME: '', // Default or actual value
+        CITY: '', // Default or actual value
+        STATE: '', // Default or actual value
+        isTracked: true, // Default or actual value
+        altitude: position.altitude ?? 0, // Ensure altitude is a number
+        heading:  position.heading ?? 0,
+        velocity: position.velocity ?? 0,
+    };
+}
+
+
+class OpenSkyIntegrated implements IOpenSkyService {
+    // Class implementation here...
+
     private static instance: OpenSkyIntegrated;
     private ws: WebSocket | null = null;
     private reconnectTimeout: NodeJS.Timeout | null = null;
     private updateInterval: NodeJS.Timeout | null = null;
     private subscribers = new Set<(data: Aircraft[]) => void>();
-
+    private clients: Set<WebSocketClient> = new Set(); // Add this line to define the clients property
     private readonly UPDATE_INTERVAL = 1000; // 1 second updates for interpolation
     private readonly WS_RECONNECT_DELAY = 5000; // 5 seconds
+    private positions: Map<string, PositionData> = new Map();
 
     private constructor() {
         this.startUpdateLoop();
+    }
+
+    public async getPositionsMap(): Promise<Map<string, PositionData>> {
+        return this.positions;
+    }
+    
+    public async getPositions(): Promise<PositionData[]> {
+        return Array.from(this.positions.values()); // Convert Map values to an array
+
+    }
+
+    getAuthStatus(): { authenticated: boolean; username: string | null } {
+        const isAuthenticated = openSkyAuth.isAuthenticated();
+        const username = isAuthenticated ? openSkyAuth.getUsername() : null;
+        return { authenticated: isAuthenticated, username };
+    }
+
+    addClient(client: WebSocketClient): void {
+        this.clients.add(client);
+        console.log('Client added:', client);
+    }
+
+    removeClient(client: WebSocketClient): void {
+        this.clients.delete(client);
+        console.log('Client removed:', client);
     }
 
     static getInstance(): OpenSkyIntegrated {
@@ -70,23 +119,16 @@ class OpenSkyIntegrated {
 
     private handleWebSocketMessage(event: MessageEvent) {
         try {
-            const data = JSON.parse(event.data);
-            if (Array.isArray(data)) {
-                // Update cache and interpolator
-                data.forEach(aircraft => {
-                    enhancedCache.set(aircraft.icao24, aircraft);
-                    positionInterpolator.updatePosition(aircraft);
-                });
-
-                // Notify subscribers
-                this.notifySubscribers();
-            }
+            const data: PositionData[] = JSON.parse(event.data); // Assume WebSocket data matches PositionData[]
+            const aircraftList: Aircraft[] = data.map(toAircraft); // Convert PositionData[] to Aircraft[]
+    
+            this.notifySubscribers(aircraftList); // Pass Aircraft[] to subscribers
         } catch (error) {
             console.error('Error processing WebSocket message:', error);
-            errorHandler.handleError(ErrorType.DATA, 'Invalid data received');
         }
     }
-
+    
+    
     private scheduleReconnect() {
         if (this.reconnectTimeout) return;
 
@@ -98,40 +140,36 @@ class OpenSkyIntegrated {
 
     private startUpdateLoop() {
         if (this.updateInterval) return;
-
+    
         this.updateInterval = setInterval(() => {
-            this.notifySubscribers();
+            const now = Date.now();
+            const aircraftList: Aircraft[] = [];
+    
+            // Populate aircraftList from the cache with interpolation
+            enhancedCache.getAllAircraft().forEach((aircraft) => {
+                const interpolated = positionInterpolator.interpolatePosition(aircraft.icao24, now);
+                if (interpolated) {
+                    aircraftList.push({ ...aircraft, ...interpolated });
+                } else {
+                    aircraftList.push(aircraft);
+                }
+            });
+    
+            this.notifySubscribers(aircraftList); // Pass Aircraft[] to subscribers
         }, this.UPDATE_INTERVAL);
     }
+    
 
-    private notifySubscribers() {
-        const now = Date.now();
-        const aircraftList: Aircraft[] = [];
-
-        // Get all cached aircraft
-        enhancedCache.getAllAircraft().forEach(aircraft => {
-            // Try to get interpolated position
-            const interpolated = positionInterpolator.interpolatePosition(aircraft.icao24, now);
-            if (interpolated) {
-                aircraftList.push({
-                    ...aircraft,
-                    ...interpolated
-                });
-            } else {
-                aircraftList.push(aircraft);
-            }
-        });
-
-        // Notify subscribers
-        this.subscribers.forEach(subscriber => {
+    private notifySubscribers(data: Aircraft[]): void {
+        this.subscribers.forEach((callback) => {
             try {
-                subscriber(aircraftList);
+                callback(data); // Call each subscriber with Aircraft[]
             } catch (error) {
-                console.error('Error in subscriber:', error);
+                console.error('Error in subscriber callback:', error);
             }
         });
     }
-
+    
     async getAircraft(icao24List: string[]): Promise<Aircraft[]> {
         try {
             // Try WebSocket first
@@ -163,6 +201,8 @@ class OpenSkyIntegrated {
         }
     }
 
+
+    
     subscribe(callback: (data: Aircraft[]) => void): () => void {
         this.subscribers.add(callback);
         return () => this.subscribers.delete(callback);
