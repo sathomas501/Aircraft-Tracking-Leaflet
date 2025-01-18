@@ -1,9 +1,8 @@
 // utils/aircraftServices.ts
 import axios from 'axios';
 import { getActiveIcao24ByManufacturer } from '@/lib/db/queries';
-import { openSkyService } from '@/lib/api/opensky';
-import type { SelectOption } from '@/types/base';
-import type { PositionData } from '@/types/api/opensky';
+import { openSkyService } from '@/lib/services/openSkyService';
+import type { SelectOption, PositionData } from '@/types/base';
 
 interface ManufacturerRow {
     manufacturer: string;

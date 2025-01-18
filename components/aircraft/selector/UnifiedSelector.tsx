@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
+// components/aircraft/selector/UnifiedSelector.tsx
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { ChevronDown, X, Search, Plane } from 'lucide-react';
 import type { SelectOption } from '@/types/base';
 import type { Aircraft } from '@/types/base';
@@ -10,6 +11,8 @@ interface UnifiedSelectorProps {
   selectedManufacturer: string;
   selectedModel: string;
   onAircraftUpdate: React.Dispatch<React.SetStateAction<Aircraft[]>>;
+  modelCounts?: Map<string, number>;
+  totalActive?: number;
 }
 
 const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
@@ -17,7 +20,9 @@ const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
   onModelSelect,
   selectedManufacturer,
   selectedModel,
-  onAircraftUpdate
+  onAircraftUpdate,
+  modelCounts = new Map(),
+  totalActive = 0
 }) => {
   const [manufacturers, setManufacturers] = useState<SelectOption[]>([]);
   const [models, setModels] = useState<SelectOption[]>([]);
@@ -38,30 +43,36 @@ const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
   }, [manufacturers, searchTerm]);
 
   // Fetch manufacturers
-  useEffect(() => {
-    const fetchManufacturers = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        
-        const response = await fetch('/api/manufacturers');
-        
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
+const fetchManufacturers = useCallback(async () => {
+  try {
+    setLoading(true);
+    setError(null);
+    
+    const response = await fetch('/api/manufacturers');
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
 
-        const data = await response.json();
-        setManufacturers(data.manufacturers || []);
-      } catch (err) {
-        console.error('Error fetching manufacturers:', err);
-        setError('Failed to load manufacturers');
-      } finally {
-        setLoading(false);
-      }
-    };
+    const data = await response.json();
+    
+    if (!data.manufacturers) {
+      throw new Error('No manufacturers data received');
+    }
 
-    fetchManufacturers();
-  }, []);
+    setManufacturers(data.manufacturers);
+  } catch (err) {
+    console.error('Error fetching manufacturers:', err);
+    setError('Failed to load manufacturers. Please try again.');
+  } finally {
+    setLoading(false);
+  }
+}, []);
+
+// Use effect for initial load
+useEffect(() => {
+  fetchManufacturers();
+}, [fetchManufacturers]);
 
   // Fetch models when manufacturer changes
   useEffect(() => {
@@ -116,39 +127,65 @@ const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
     try {
       setLoading(true);
       setError(null);
-
-      // Start tracking the manufacturer
+  
+      // Step 1: Update UI state immediately
+      await onManufacturerSelect(selectedMfr);
+      setSearchTerm(selectedMfr);
+      setIsManufacturerOpen(false);
+  
+      // Step 2: Start tracking process
       const response = await fetch('/api/aircraft/track-manufacturer', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ manufacturer: selectedMfr }),
+        body: JSON.stringify({ 
+          manufacturer: selectedMfr,
+          model: selectedModel // Include selected model if any
+        }),
       });
-
-      if (!response.ok) {
-        throw new Error(`Failed to track manufacturer: ${response.statusText}`);
-      }
-
+  
       const data = await response.json();
-      
-      // Update the manufacturer selection
-      await onManufacturerSelect(selectedMfr);
-      setSearchTerm(selectedMfr);
-      setIsManufacturerOpen(false);
-
-      // Update the manufacturers list with new active counts
+  
+      if (!response.ok) {
+        if (response.status === 404) {
+          setError(data.message || 'No aircraft found for this manufacturer');
+          // Still update the manufacturer list to show zero active
+          setManufacturers(prev => 
+            prev.map(m => 
+              m.value === selectedMfr 
+                ? { ...m, activeCount: 0 }
+                : m
+            )
+          );
+          return;
+        }
+        throw new Error(data.message || 'Failed to track manufacturer');
+      }
+  
+      // Step 3: Update UI with results
       setManufacturers(prev => 
         prev.map(m => 
           m.value === selectedMfr 
-            ? { ...m, activeCount: data.activeCount }
+            ? { 
+                ...m, 
+                activeCount: data.activeCount,
+                totalCount: data.totalCount
+              }
             : m
         )
       );
-
+  
+      // Update aircraft positions if any are active
+      if (data.positions && data.positions.length > 0) {
+        onAircraftUpdate(data.positions);
+      } else {
+        setError('No currently active aircraft found for this manufacturer');
+      }
+  
     } catch (err) {
       console.error('Error selecting manufacturer:', err);
-      setError('Failed to select manufacturer');
+      setError(err instanceof Error ? err.message : 'Failed to select manufacturer');
     } finally {
       setLoading(false);
     }
@@ -264,13 +301,16 @@ const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
                     disabled={!selectedManufacturer}
                   >
                     <option value="">
-                      {selectedManufacturer ? 'Select Model' : 'Select a manufacturer first'}
+                      {selectedManufacturer ? `All Models (${totalActive} active)` : 'Select a manufacturer first'}
                     </option>
-                    {models.map((model) => (
-                      <option key={model.value} value={model.value}>
-                        {model.label} ({model.activeCount?.toLocaleString() || 0} active / {model.count?.toLocaleString() || 0} total)
-                      </option>
-                    ))}
+                    {models.map((model) => {
+                      const activeCount = modelCounts.get(model.value) || 0;
+                      return (
+                        <option key={model.value} value={model.value}>
+                          {model.label} ({activeCount} active / {model.count?.toLocaleString() || 0} total)
+                        </option>
+                      );
+                    })}
                   </select>
                   <ChevronDown className="absolute right-2 top-3 text-gray-500" size={16} />
                 </div>

@@ -1,3 +1,21 @@
 // lib/services/opensky-integrated/index.ts
-export * from './types';
+
+// Export all service types
+export type {
+    IOpenSkyService,
+    OpenSkyIntegrated,
+    OpenSkyService,
+} from './types';
+
+// Export the main service instance
 export { openSkyService } from './service';
+
+// Export error types specifically related to OpenSky
+export { errorHandler } from '../error-handler';
+
+// Re-export commonly used types from their correct locations
+export type { Aircraft, PositionData} from '@/types/base';
+export type { WebSocketClient } from '@/types/websocket';
+export type { 
+    ExtendedAircraft
+} from '@/types/opensky';

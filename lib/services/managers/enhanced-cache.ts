@@ -34,6 +34,20 @@ class EnhancedCache {
         });
     }
 
+    update(aircraft: Aircraft[]): void {
+        const now = Date.now();
+        aircraft.forEach(plane => {
+            this.cache.set(plane.icao24, {
+                data: plane,
+                timestamp: now
+            });
+        });
+    }
+
+    getLatestData(): Aircraft[] {
+        return this.getAllAircraft();
+    }
+
     getAllAircraft(): Aircraft[] {
         const now = Date.now();
         const aircraft: Aircraft[] = [];

@@ -1,6 +1,6 @@
 //lib/db/migrations
 
-import { db, runQuery, getQuery } from '../connection';
+import { runQuery, getQuery } from '../databaseManager';
 
 async function columnExists(table: string, column: string): Promise<boolean> {
     const query = `
