@@ -1,6 +1,9 @@
-//lib/db/migrations
-
+// lib/db/migrations/active-aircraft.ts
 import { runQuery, getQuery } from '../databaseManager';
+
+interface PragmaResult {
+    count: number;
+}
 
 async function columnExists(table: string, column: string): Promise<boolean> {
     const query = `
@@ -8,8 +11,8 @@ async function columnExists(table: string, column: string): Promise<boolean> {
         FROM pragma_table_info(?)
         WHERE name = ?;
     `;
-    const result = await getQuery(query, [table, column]);
-    return result?.count > 0;
+    const result = await getQuery<PragmaResult>(query, [table, column]);
+    return (result?.count ?? 0) > 0;
 }
 
 export async function addActiveAircraftColumns() {
