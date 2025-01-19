@@ -55,6 +55,7 @@ export interface ActiveAircraftRecord extends AircraftStatus {
     manufacturer: string;
     model?: string;
     is_active: boolean;
+    // updated_at is inherited from AircraftStatus as string | undefined
 }
 
 /**
@@ -67,3 +68,4 @@ export interface QueryParams {
     limit?: number;
     offset?: number;
 }
+
