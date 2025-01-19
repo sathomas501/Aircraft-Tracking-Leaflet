@@ -22,23 +22,26 @@ export const AircraftDisplay: React.FC<AircraftDisplayProps> = ({
    value !== undefined && value !== '' ? value : 'N/A';
 
  const renderAircraftInfo = (plane: Aircraft, compact = true) => (
-   <div className="text-sm">
-     {(plane.manufacturer || plane.model) && (
-       <div className="font-semibold">
-         {formatValue(plane['N-NUMBER'])}
-         <br />
-         {formatValue(plane.manufacturer)} {formatValue(plane.model)}
-       </div>
-     )}
-     {plane.NAME && <div>{formatValue(plane.NAME)}</div>}
-     {plane.operator && <div>Operator: {formatValue(plane.operator)}</div>}
-     {(plane.CITY || plane.STATE) && (
-       <div>{formatValue(plane.CITY)}, {formatValue(plane.STATE)}</div>
-     )}
-     {plane.altitude && <div>Altitude: {formatValue(plane.altitude)} ft</div>}
-     {plane.velocity && <div>Velocity: {formatValue(plane.velocity)} knots</div>}
-   </div>
- );
+  <div className="text-sm">
+    {(plane.manufacturer || plane.model) && (
+      <div className="font-semibold">
+        {formatValue(plane['N-NUMBER'])}
+        <br />
+        {formatValue(plane.manufacturer)} {formatValue(plane.model)}
+      </div>
+    )}
+    {plane.NAME && <div>{formatValue(plane.NAME)}</div>}
+    {plane.operator && <div>Operator: {formatValue(plane.operator)}</div>}
+    {(plane.CITY || plane.STATE) && (
+      <div>
+        Location: {formatValue(plane.CITY)}, {formatValue(plane.STATE)}
+      </div>
+    )}
+    {plane.altitude && <div>Altitude: {formatValue(plane.altitude)} ft</div>}
+    {plane.velocity && <div>Velocity: {formatValue(plane.velocity)} knots</div>}
+  </div>
+);
+
 
  const handleManufacturerSelect = useCallback((manufacturer: string) => {
    onManufacturerChange?.(manufacturer);
