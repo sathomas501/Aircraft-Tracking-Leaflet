@@ -1,32 +1,27 @@
-// components/aircraft/tracking/Map/LeafletMap/components/AircraftMarker.tsx
 import React from 'react';
 import { Marker, Popup } from 'react-leaflet';
 import L from 'leaflet';
 import { AircraftDisplay } from '@/components/aircraft/AircraftDisplay';
-import type { PositionData } from '@/types/base';
-import { mapPositionDataToAircraft } from '@/utils/adapters';
+import type { Aircraft } from '@/types/base';
 
 interface AircraftMarkerProps {
-  id: string;
-  position: PositionData;
+  aircraft: Aircraft; // Use Aircraft instead of PositionData
 }
 
-export const AircraftMarker: React.FC<AircraftMarkerProps> = ({ id, position }) => {
-  if (!position.latitude || !position.longitude) return null;
-
-  const aircraftData = mapPositionDataToAircraft(position);
+export const AircraftMarker: React.FC<AircraftMarkerProps> = ({ aircraft }) => {
+  if (!aircraft.latitude || !aircraft.longitude) return null;
 
   return (
     <Marker
-      key={id}
-      position={[position.latitude, position.longitude]}
+      key={aircraft.icao24}
+      position={[aircraft.latitude, aircraft.longitude]}
       icon={L.divIcon({
         className: 'aircraft-marker',
         html: `
           <div class="aircraft-icon">
             <img 
-              src="${position.on_ground ? '/aircraft-pin.png' : '/aircraft-pin-blue.png'}"
-              style="transform: rotate(${position.heading || 0}deg)"
+              src="${aircraft.on_ground ? '/aircraft-pin.png' : '/aircraft-pin-blue.png'}"
+              style="transform: rotate(${aircraft.heading || 0}deg);"
               alt="Aircraft marker"
             />
           </div>
@@ -37,9 +32,11 @@ export const AircraftMarker: React.FC<AircraftMarkerProps> = ({ id, position }) 
     >
       <Popup>
         <div className="min-w-[200px]">
-          <AircraftDisplay aircraft={aircraftData} displayMode="popup" />
+          <AircraftDisplay aircraft={aircraft} displayMode="popup" />
         </div>
       </Popup>
     </Marker>
   );
 };
+
+export default AircraftMarker;
