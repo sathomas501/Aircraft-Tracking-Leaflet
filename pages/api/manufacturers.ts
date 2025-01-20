@@ -1,13 +1,7 @@
 // pages/api/manufacturers.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { getActiveDb, runQuery } from '@/lib/db/databaseManager';
+import { getActiveDb } from '@/lib/db/databaseManager';
 import { errorHandler, ErrorType } from '@/lib/services/error-handler';
-
-interface ManufacturerData {
-    name: string;
-    count: number;
-    activeCount: number;
-}
 
 interface ManufacturerResponse {
     value: string;
@@ -16,64 +10,17 @@ interface ManufacturerResponse {
     activeCount: number;
 }
 
+// Define the type for the database query result
+interface ManufacturerData {
+    name: string;      // Manufacturer name
+    count: number;     // Count of aircraft
+    activeCount: number; // Active aircraft count
+}
+
 export default async function handler(
     req: NextApiRequest, 
     res: NextApiResponse<{ manufacturers: ManufacturerResponse[] } | { error: string; message?: string }>
 ) {
-    let retryCount = 0;
-    const maxRetries = 3;
-    const retryDelay = 1000; // 1 second
-
-    const attemptQuery = async (): Promise<ManufacturerData[]> => {
-        try {
-            console.log(`Query attempt ${retryCount + 1} of ${maxRetries}`);
-            
-            // Get database connection
-            const db = await getActiveDb();
-            console.log('Database connection established');
-
-            // Configure busy timeout for this connection
-            await db.exec('PRAGMA busy_timeout = 30000;'); // 30 seconds
-            
-            // Main query with optimized conditions
-            const manufacturers = await db.all<ManufacturerData[]>(`
-                SELECT 
-                    manufacturer as name,
-                    COUNT(*) as count,
-                    SUM(CASE 
-                        WHEN is_active = 1 
-                        AND last_contact >= unixepoch('now') - 7200 
-                        THEN 1 
-                        ELSE 0 
-                    END) as activeCount
-                FROM aircraft
-                WHERE 
-                    manufacturer IS NOT NULL
-                    AND manufacturer != ''
-                    AND LENGTH(TRIM(manufacturer)) > 1
-                GROUP BY manufacturer
-                HAVING count >= 10
-                ORDER BY count DESC
-                LIMIT 50
-            `);
-
-            console.log(`Found ${manufacturers.length} manufacturers`);
-            return manufacturers;
-            
-        } catch (error) {
-            if (error instanceof Error && 
-                error.message.includes('SQLITE_BUSY') && 
-                retryCount < maxRetries) {
-                
-                retryCount++;
-                console.log(`Database busy, retrying in ${retryDelay}ms... (Attempt ${retryCount} of ${maxRetries})`);
-                await new Promise(resolve => setTimeout(resolve, retryDelay));
-                return attemptQuery();
-            }
-            throw error;
-        }
-    };
-
     try {
         if (req.method !== 'GET') {
             res.setHeader('Allow', ['GET']);
@@ -85,13 +32,32 @@ export default async function handler(
 
         console.log('Starting manufacturers fetch...');
         
-        const manufacturers = await attemptQuery();
+        const db = await getActiveDb();
+        console.log('Database connection established');
+
+        const manufacturers = await db.all<ManufacturerData[]>(`
+            SELECT 
+                manufacturer as name,
+                COUNT(*) as count,
+                0 as activeCount  -- Default to 0 since static DB doesn't track active status
+            FROM aircraft
+            WHERE 
+                manufacturer IS NOT NULL
+                AND manufacturer != ''
+                AND LENGTH(TRIM(manufacturer)) > 1
+            GROUP BY manufacturer
+            HAVING count >= 10
+            ORDER BY count DESC
+            LIMIT 50
+        `);
+
+        console.log(`Found ${manufacturers.length} manufacturers`);
 
         if (!Array.isArray(manufacturers)) {
             throw new Error('Invalid response from database');
         }
 
-        const formattedManufacturers = manufacturers.map((m: ManufacturerData) => ({
+        const formattedManufacturers = manufacturers.map(m => ({
             value: m.name,
             label: m.name,
             count: Number(m.count) || 0,
@@ -107,7 +73,7 @@ export default async function handler(
             error,
             message: error instanceof Error ? error.message : 'Unknown error',
             stack: error instanceof Error ? error.stack : undefined,
-            retryAttempts: retryCount
+            retryAttempts: 0
         });
 
         errorHandler.handleError(

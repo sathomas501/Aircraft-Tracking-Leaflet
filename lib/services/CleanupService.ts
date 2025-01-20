@@ -63,7 +63,7 @@ export class CleanupService {
 
             try {
                 const result = await db.run(`
-                    DELETE FROM active_aircraft 
+                    DELETE FROM active_tracking 
                     WHERE last_contact < ?
                 `, [staleThreshold]);
 
@@ -73,9 +73,9 @@ export class CleanupService {
 
                 if (!this.isShuttingDown) {
                     const orphanResult = await db.run(`
-                        DELETE FROM active_aircraft
+                        DELETE FROM active_tracking
                         WHERE icao24 NOT IN (
-                            SELECT icao24 FROM active_aircraft
+                            SELECT icao24 FROM active_tracking
                             WHERE last_contact >= ?
                         )
                     `, [staleThreshold]);

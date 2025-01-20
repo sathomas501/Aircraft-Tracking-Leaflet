@@ -1,4 +1,4 @@
-import { NextApiRequest, NextApiResponse } from 'next';
+import type { NextApiRequest, NextApiResponse } from 'next';
 import { OpenSkyManager } from '@/lib/services/openSkyService';
 
 const openSkyService = OpenSkyManager.getInstance();
@@ -28,30 +28,27 @@ function handleWebSocket(server: any): void {
     });
 }
 
-export default async function handler(
-    req: NextApiRequest,
-    res: NextApiResponse
-): Promise<void> {
-    const server = (req as any).socket?.server;
-    const upgradeHeader = req.headers.upgrade?.toLowerCase();
 
-    if (server && upgradeHeader === 'websocket') {
-        handleWebSocket(server);
-        res.end();
-        return;
-    }
-
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
     const { icao24s } = req.query;
 
-    if (!icao24s) {
-        return res.status(400).json({ error: 'Missing icao24s parameter' });
+    if (!icao24s || (typeof icao24s !== 'string' && !Array.isArray(icao24s))) {
+        return res.status(400).json({ error: 'Missing or invalid icao24s parameter' });
     }
 
     try {
+        // Ensure icaoList is an array
         const icaoList = Array.isArray(icao24s) ? icao24s : icao24s.split(',');
 
-        const positions = await openSkyService.getAircraft(icaoList);
-        res.status(200).json({ aircraft: positions });
+        // Get OpenSkyManager instance
+        const openSkyManager = OpenSkyManager.getInstance();
+
+        // Handle each ICAO24 separately if `getAircraft` supports only single string arguments
+        const positions = await Promise.all(
+            icaoList.map((icao24) => openSkyManager.getAircraft(icao24))
+        );
+
+        res.status(200).json({ aircraft: positions.filter(Boolean) }); // Filter out null/undefined
     } catch (error) {
         console.error('OpenSky API error:', error);
         res.status(500).json({ error: 'Failed to fetch from OpenSky' });

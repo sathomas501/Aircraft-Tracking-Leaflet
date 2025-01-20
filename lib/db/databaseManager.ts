@@ -1,12 +1,51 @@
 // lib/db/databaseManager.ts
-import sqlite3 from 'sqlite3';
+
 import { open, Database } from 'sqlite';
 import path from 'path';
 import { AircraftStatus } from '@/types/database';
 
+
+let sqlite3: typeof import('sqlite3');
+if (typeof window === 'undefined') {
+    sqlite3 = require('sqlite3');
+}
+
+export async function getDatabase(): Promise<Database> {
+    return await open({
+        filename: './path/to/database.db',
+        driver: sqlite3!.Database,
+    });
+}
+
+export const STATIC_SCHEMA = `
+    CREATE TABLE IF NOT EXISTS aircraft (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        icao24 TEXT UNIQUE,
+        "N-NUMBER" TEXT,
+        manufacturer TEXT,
+        model TEXT,
+        operator TEXT,
+        NAME TEXT,
+        CITY TEXT,
+        STATE TEXT,
+        aircraft_type TEXT,
+        owner_type TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- Optimize indexes for common queries
+    CREATE INDEX IF NOT EXISTS idx_aircraft_icao24 ON aircraft(icao24);
+    CREATE INDEX IF NOT EXISTS idx_aircraft_manufacturer ON aircraft(manufacturer);
+    CREATE INDEX IF NOT EXISTS idx_aircraft_model ON aircraft(model);
+    CREATE INDEX IF NOT EXISTS idx_aircraft_type ON aircraft(aircraft_type, owner_type);
+    CREATE INDEX IF NOT EXISTS idx_aircraft_operator ON aircraft(operator);
+`;
+
 class DatabaseManager {
     private static instance: DatabaseManager;
     private db: Database | null = null;
+    private isInitialized: boolean = false;
 
     private constructor() {}
 
@@ -25,12 +64,51 @@ class DatabaseManager {
                 driver: sqlite3.Database,
             });
 
-            // Configure SQLite settings
-            await this.db.exec('PRAGMA journal_mode = WAL;');
-            await this.db.exec('PRAGMA busy_timeout = 30000;');
-            await this.db.exec('PRAGMA synchronous = NORMAL;');
+            if (!this.isInitialized) {
+                await this.initializeDatabase();
+            }
         }
         return this.db;
+    }
+
+    private async initializeDatabase(): Promise<void> {
+        if (!this.db) return;
+
+        try {
+            // Configure SQLite for better performance
+            await this.db.exec(`
+                PRAGMA journal_mode = WAL;
+                PRAGMA busy_timeout = 30000;
+                PRAGMA synchronous = NORMAL;
+                PRAGMA temp_store = MEMORY;
+                PRAGMA mmap_size = 30000000000;
+                PRAGMA page_size = 4096;
+                PRAGMA cache_size = -2000;
+            `);
+
+            // Initialize schema
+            await this.db.exec(STATIC_SCHEMA);
+
+            // Create triggers for updated_at
+            await this.db.exec(`
+                CREATE TRIGGER IF NOT EXISTS update_aircraft_timestamp 
+                AFTER UPDATE ON aircraft
+                BEGIN
+                    UPDATE aircraft 
+                    SET updated_at = CURRENT_TIMESTAMP 
+                    WHERE id = NEW.id;
+                END;
+            `);
+
+            // Analyze tables for query optimization
+            await this.db.exec('ANALYZE;');
+
+            this.isInitialized = true;
+            console.log('Database initialized successfully');
+        } catch (error) {
+            console.error('Error initializing database:', error);
+            throw error;
+        }
     }
 
     public async getDb(): Promise<Database> {
@@ -52,42 +130,39 @@ class DatabaseManager {
         return db.all(query, params) as Promise<T[]>;
     }
 
-    public async updateAircraftStatus(icao24: string, status: AircraftStatus): Promise<void> {
+    public async vacuum(): Promise<void> {
         const db = await this.getDb();
-        try {
-            const query = `
-                UPDATE aircraft
-                SET 
-                    active = 1,
-                    last_seen = CURRENT_TIMESTAMP,
-                    latitude = COALESCE(?, latitude),
-                    longitude = COALESCE(?, longitude),
-                    altitude = COALESCE(?, altitude),
-                    velocity = COALESCE(?, velocity),
-                    heading = COALESCE(?, heading)
-                WHERE icao24 = ?
-            `;
+        await db.exec('VACUUM;');
+        console.log('Database vacuumed successfully');
+    }
 
-            const params = [
-                status.latitude,
-                status.longitude,
-                status.altitude,
-                status.velocity,
-                status.heading,
-                icao24
-            ];
+    public async optimize(): Promise<void> {
+        const db = await this.getDb();
+        await db.exec(`
+            ANALYZE;
+            PRAGMA optimize;
+        `);
+        console.log('Database optimized successfully');
+    }
 
-            await db.run(query, params);
-        } catch (error) {
-            console.error(`Error updating aircraft ${icao24}:`, error);
-            throw error;
-        }
+    public async getTableStats(): Promise<any> {
+        const db = await this.getDb();
+        const stats = await db.all(`
+            SELECT 
+                name as table_name,
+                (SELECT COUNT(*) FROM aircraft) as row_count,
+                ROUND((SELECT SUM(pgsize) FROM dbstat WHERE name = 'aircraft') / 1024.0 / 1024.0, 2) as size_mb
+            FROM sqlite_master 
+            WHERE type='table' AND name='aircraft';
+        `);
+        return stats;
     }
 
     public async closeConnection(): Promise<void> {
         if (this.db) {
             await this.db.close();
             this.db = null;
+            this.isInitialized = false;
         }
     }
 }
@@ -103,8 +178,8 @@ export const getQuery = <T>(query: string, params: any[] = []) =>
     databaseManagerInstance.getQuery<T>(query, params);
 export const allQuery = <T>(query: string, params: any[] = []) => 
     databaseManagerInstance.allQuery<T>(query, params);
-export const updateAircraftStatus = (icao24: string, status: AircraftStatus) => 
-    databaseManagerInstance.updateAircraftStatus(icao24, status);
+export const optimizeDb = () => databaseManagerInstance.optimize();
+export const vacuumDb = () => databaseManagerInstance.vacuum();
+export const getDbStats = () => databaseManagerInstance.getTableStats();
 
-// Export the types
 export type { Database };

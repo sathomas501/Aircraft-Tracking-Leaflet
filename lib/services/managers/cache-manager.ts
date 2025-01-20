@@ -43,6 +43,28 @@ export class CacheManager<T> {
     delete(key: string): void {
         this.cache.del(key);
     }
+
+ /**
+     * Invalidate cache entries based on a predicate function.
+     * @param predicate - A function to test each key. Keys matching the predicate are deleted.
+     */
+ public invalidate(predicate: (key: string) => boolean): void {
+    const keys = this.cache.keys(); // Get all keys in the cache
+    keys.forEach(key => {
+        if (predicate(key)) {
+            this.cache.del(key); // Delete the key if the predicate matches
+        }
+    });
+}
+
+/**
+ * Get the size of the cache (number of entries).
+ * @returns The number of entries in the cache.
+ */
+public size(): number {
+    return this.cache.keys().length; // NodeCache provides a method to get all keys
+}
 }
 
 export default CacheManager;
+
