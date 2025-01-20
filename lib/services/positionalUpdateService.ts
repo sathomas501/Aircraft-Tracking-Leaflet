@@ -129,12 +129,32 @@ export class PositionUpdateService {
         this.reconnectTimeout = setTimeout(() => {
             this.setupWebSocket();
         }, delay);
+
+        
+        async function setupWebSocket() {
+            console.log('[WebSocket] Authenticating with OpenSky...');
+            
+            const isAuthenticated = await openSkyAuth.authenticate();
+        
+            if (!isAuthenticated) {
+                console.error('[WebSocket] Authentication failed');
+                errorHandler.handleError(ErrorType.AUTH, 'Failed to authenticate with OpenSky');
+                return;
+            }
+        
+            console.log('[WebSocket] Authentication successful, establishing connection...');
+            // Proceed with WebSocket setup...
+        }
+        
+        
     }
+
+    
 
     private processStates(states: any[]): void {
         const currentTime = Math.floor(Date.now() / 1000);
-        let updatedPositions = false;
-
+        const updatedPositions: Position[] = [];
+    
         states.forEach(state => {
             if (state && state[0] && state[5] && state[6]) {
                 const position: Position = {
@@ -148,14 +168,14 @@ export class PositionUpdateService {
                     last_contact: state[4] || currentTime
                 };
                 this.positions.set(position.icao24, position);
-                updatedPositions = true;
+                updatedPositions.push(position);
             }
         });
-
-        if (updatedPositions && this.updateCallback) {
-            this.updateCallback(Array.from(this.positions.values()));
+    
+        if (updatedPositions.length > 0 && this.updateCallback) {
+            this.updateCallback(updatedPositions); // Batch updates to listeners
         }
-    }
+    }    
 
     public subscribe(callback: (positions: Position[]) => void): () => void {
         this.updateCallback = callback;
@@ -173,7 +193,10 @@ export class PositionUpdateService {
 
     public async start(): Promise<void> {
         if (!this.isConnected) {
+            console.log('[WebSocket] Starting connection...');
             await this.setupWebSocket();
+        } else {
+            console.log('[WebSocket] Already connected.');
         }
     }
 
@@ -201,7 +224,14 @@ export class PositionUpdateService {
         return Array.from(this.positions.values());
     }
 
+    public async reconnect(): Promise<void> {
+        console.log('[WebSocket] Reconnecting...');
+        this.stop(); // Ensure previous connection is closed
+        await this.start();
+    }
+
     public clearPositions(): void {
+        console.log('[WebSocket] Clearing positions...');
         this.positions.clear();
         if (this.updateCallback) {
             this.updateCallback([]);

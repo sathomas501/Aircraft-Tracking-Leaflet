@@ -1,6 +1,6 @@
 // pages/api/manufacturers.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { getActiveDb } from '@/lib/db/databaseManager';
+import { getDatabase } from '@/lib/db/databaseManager';
 import { errorHandler, ErrorType } from '@/lib/services/error-handler';
 
 interface ManufacturerResponse {
@@ -32,7 +32,7 @@ export default async function handler(
 
         console.log('Starting manufacturers fetch...');
         
-        const db = await getActiveDb();
+        const db = await getDatabase();
         console.log('Database connection established');
 
         const manufacturers = await db.all<ManufacturerData[]>(`

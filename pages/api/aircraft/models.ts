@@ -1,10 +1,10 @@
 // pages/api/aircraft/models.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { getActiveDb  } from '@/lib/db/databaseManager';
+import { getDatabase } from '@/lib/db/databaseManager';
 import type { SelectOption } from '@/types/base';
 import type { ModelsResponse } from '@/types/api/common';
 
-const db = await getActiveDb();
+const db = await getDatabase();
 
 export default async function handler(
   req: NextApiRequest,
@@ -20,7 +20,7 @@ export default async function handler(
   }
 
   try {
-    const db = await getActiveDb();
+    const db = await getDatabase();
     
     // Simple query to get all models for the manufacturer
     const query = `

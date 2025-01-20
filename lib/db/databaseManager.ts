@@ -10,12 +10,6 @@ if (typeof window === 'undefined') {
     sqlite3 = require('sqlite3');
 }
 
-export async function getDatabase(): Promise<Database> {
-    return await open({
-        filename: './path/to/database.db',
-        driver: sqlite3!.Database,
-    });
-}
 
 export const STATIC_SCHEMA = `
     CREATE TABLE IF NOT EXISTS aircraft (
@@ -58,7 +52,7 @@ class DatabaseManager {
 
     private async initializeConnection(): Promise<Database> {
         if (!this.db) {
-            const dbPath = path.join(process.cwd(), 'lib', 'db', 'aircraft.db');
+            const dbPath = path.join(process.cwd(), 'lib', 'db', 'static.db');
             this.db = await open({
                 filename: dbPath,
                 driver: sqlite3.Database,
@@ -171,7 +165,7 @@ class DatabaseManager {
 const databaseManagerInstance = DatabaseManager.getInstance();
 
 // Export the instance methods
-export const getActiveDb = () => databaseManagerInstance.getDb();
+export const getDatabase = () => databaseManagerInstance.getDb();
 export const runQuery = <T>(query: string, params: any[] = []) => 
     databaseManagerInstance.runQuery<T>(query, params);
 export const getQuery = <T>(query: string, params: any[] = []) => 

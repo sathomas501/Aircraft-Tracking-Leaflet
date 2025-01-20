@@ -1,4 +1,4 @@
-📂 aircraft-tracking
+📂 
 ├── 📄 .dockerignore
 ├── 📄 .env
 ├── 📄 .gitattributes
@@ -56,6 +56,8 @@
 ├── 📂 data
 │   ├── 📄 active_status.db
 │   └── 📄 aircraft.db
+├── 📄 docker-compose.debug.yml
+├── 📄 docker-compose.yml
 ├── 📄 graph.svg
 ├── 📂 hooks
 │   ├── 📄 useAircraftData.ts
@@ -73,22 +75,30 @@
 │   │   ├── 📄 opensky.ts
 │   │   └── 📄 utils.ts
 │   ├── 📂 db
-│   │   ├── 📄 activeConnection.ts
-│   │   ├── 📄 aircraft.db
-│   │   ├── 📄 connection.ts
+│   │   ├── 📄 aircraft.db-shm
+│   │   ├── 📄 aircraft.db-wal
+│   │   ├── 📄 aircraft1.db
 │   │   ├── 📄 constants.ts
+│   │   ├── 📄 databaseManager.ts
+│   │   ├── 📄 initTrackingDB.ts
 │   │   ├── 📂 migrations
-│   │   │   └── 📄 active-aircraft.ts
-│   │   └── 📄 queries.ts
+│   │   │   ├── 📄 active-aircraft.ts
+│   │   │   └── 📄 sync-aircraft-data.ts
+│   │   ├── 📄 queries.ts
+│   │   ├── 📄 static.db
+│   │   ├── 📄 static.db-shm
+│   │   ├── 📄 static.db-wal
+│   │   ├── 📄 tracking.db
+│   │   ├── 📄 tracking.db-shm
+│   │   ├── 📄 tracking.db-wal
+│   │   └── 📄 trackingDatabaseManager.ts
 │   ├── 📂 middleware
 │   │   └── 📄 error-handler.ts
 │   ├── 📂 services
 │   │   ├── 📄 CleanupService.ts
-│   │   ├── 📄 aircraft-cache.ts
+│   │   ├── 📄 IOpenSkyServices.ts
 │   │   ├── 📄 aircraft-tracker.ts
-│   │   ├── 📄 cache-manager.ts
-│   │   ├── 📄 cache-preloader.ts
-│   │   ├── 📄 enhanced-cache.ts
+│   │   ├── 📄 datLifecycleManager.ts
 │   │   ├── 📂 error-handler
 │   │   │   ├── 📄 api-error.ts
 │   │   │   ├── 📄 hook.ts
@@ -96,6 +106,11 @@
 │   │   │   ├── 📄 types.ts
 │   │   │   └── 📄 utils.ts
 │   │   ├── 📄 error-handler.ts
+│   │   ├── 📂 managers
+│   │   │   ├── 📄 aircraft-cache.ts
+│   │   │   ├── 📄 cache-manager.ts
+│   │   │   ├── 📄 cache-preloader.ts
+│   │   │   └── 📄 enhanced-cache.ts
 │   │   ├── 📄 manufacturerTrackingService.ts
 │   │   ├── 📄 openSkyService.ts
 │   │   ├── 📄 openSkySyncService.ts
@@ -112,6 +127,7 @@
 │   │   │   ├── 📄 service.ts
 │   │   │   └── 📄 types.ts
 │   │   ├── 📄 opensky-validation.ts
+│   │   ├── 📄 positionalUpdateService.ts
 │   │   ├── 📄 rate-limiter.ts
 │   │   ├── 📄 regionFilterService.ts
 │   │   ├── 📄 types.ts
@@ -126,6 +142,8 @@
 ├── 📂 pages
 │   ├── 📄 _app.tsx
 │   ├── 📄 _documents.tsx
+│   ├── 📂 admin
+│   │   └── 📄 db-maintenance.tsx
 │   ├── 📂 api
 │   │   ├── 📂 aircraft
 │   │   │   ├── 📄 icao24s.ts
@@ -136,22 +154,29 @@
 │   │   ├── 📄 health.ts
 │   │   ├── 📄 icao24-verify.ts
 │   │   ├── 📄 manufacturers.ts
-│   │   ├── 📂 opensky
-│   │   │   └── 📄 positions.ts
 │   │   ├── 📄 opensky-test.ts
 │   │   ├── 📄 opensky.ts
 │   │   ├── 📄 ping.js
 │   │   ├── 📄 positions.ts
+│   │   ├── 📄 sync-aircraft-data.ts
 │   │   └── 📄 websocket.ts
 │   ├── 📄 index.tsx
 │   └── 📄 map.tsx
 ├── 📄 pnpm-lock.yaml
 ├── 📄 postcss.config.js
 ├── 📂 public
-│   └── 📄 icons8-favicon-80.png
+│   ├── 📄 icons8-air-balloon-32.png
+│   ├── 📄 icons8-autopilot-48.png
+│   ├── 📄 icons8-favicon-80.png
+│   ├── 📄 icons8-helicopter-64.png
+│   ├── 📄 icons8-police-helicopter-64.png
+│   └── 📄 marker-icon-2x.png
 ├── 📄 requirements.txt
+├── 📂 server
+│   └── 📄 init.ts
 ├── 📂 styles
 │   ├── 📄 @tailwinds.css
+│   ├── 📄 AircraftMarker.module.css
 │   ├── 📄 globals.css
 │   ├── 📄 leaflet.css
 │   └── 📄 utils.ts
@@ -185,6 +210,8 @@
 │   └── 📄 websocket.ts
 └── 📂 utils
     ├── 📄 adapters.ts
+    ├── 📄 aircraft-helpers.ts
+    ├── 📄 aircraft-icons.ts
     ├── 📄 aircraftServices.ts
     ├── 📄 cn.ts
     ├── 📄 errors.ts

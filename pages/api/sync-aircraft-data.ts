@@ -1,6 +1,6 @@
 // pages/api/sync-aircraft-data.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { getActiveDb } from '@/lib/db/databaseManager';
+import { getDatabase } from '@/lib/db/databaseManager';
 import { errorHandler, ErrorType } from '@/lib/services/error-handler';
 
 export default async function handler(
@@ -16,7 +16,7 @@ export default async function handler(
 
     try {
         console.log('Starting aircraft data sync...');
-        const db = await getActiveDb();
+        const db = await getDatabase();
 
         // First, clear the aircraft table
         await db.run('DELETE FROM aircraft');

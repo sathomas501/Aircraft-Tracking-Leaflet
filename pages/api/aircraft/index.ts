@@ -1,4 +1,5 @@
 import { NextApiRequest, NextApiResponse } from 'next';
+
 import path from 'path';
 import { open, Database } from 'sqlite';
 
@@ -15,7 +16,7 @@ export async function getDatabase(): Promise<Database> {
 }
 
 // Define database path
-const dbPath = path.join(process.cwd(), 'lib', 'aircraft.db');
+const dbPath = path.join(process.cwd(), 'lib', 'static.db');
 
 // Database service functions
 async function fetchManufacturers(activeOnly: boolean = false): Promise<string[]> {

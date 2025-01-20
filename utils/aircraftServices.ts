@@ -1,7 +1,7 @@
 // utils/aircraftServices.ts
 import axios from 'axios';
 import { getActiveIcao24ByManufacturer } from '@/lib/db/queries';
-import { openSkyService } from '@/lib/services/openSkyService';
+import { openSkyManager } from '@/lib/services/openSkyService';
 import type { SelectOption, PositionData } from '@/types/base';
 
 interface ManufacturerRow {
@@ -73,7 +73,7 @@ export const fetchModels = async (manufacturer: string, activeOnly: boolean = fa
 
 export const fetchAircraftPositions = async (icao24List: string[]): Promise<PositionData[]> => {
     try {
-        return await openSkyService.getPositions(icao24List);
+        return await openSkyManager.fetchPositions(icao24List);
     } catch (error) {
         console.error('Error fetching aircraft positions:', error);
         return [];
