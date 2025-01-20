@@ -54,10 +54,14 @@ export function MapWrapper() {
     // All useMemo hooks
     const filteredAircraft = useMemo(() => {
         if (!selectedModel) {
+            console.log('Filtered aircraft without model filter:', aircraft); // Debugging statement
             return aircraft;
         }
-        return aircraft.filter(plane => plane.model === selectedModel);
+        const filtered = aircraft.filter((plane) => plane.model === selectedModel);
+        console.log('Filtered aircraft with model filter:', filtered); // Debugging statement
+        return filtered;
     }, [aircraft, selectedModel]);
+    
 
     const modelCounts = useMemo(() => {
         const counts = new Map();
@@ -71,29 +75,58 @@ export function MapWrapper() {
     }, [aircraft]);
 
     // All useEffect hooks
+
     useEffect(() => {
-        setIsMapReady(true);
+        setIsMapReady(true); // Single instance of this hook
     }, []);
+    
+    useEffect(() => {
+        if (!selectedManufacturer) return;
+    
+        const pollInterval = setInterval(async () => {
+            try {
+                const response = await fetch(`/api/aircraft/active-positions?manufacturer=${selectedManufacturer}`);
+                if (!response.ok) throw new Error('Failed to fetch positions');
+    
+                const data = await response.json();
+                console.log('Fetched data for positions:', data); // Debugging statement
+    
+                if (data.success) {
+                    setAircraft(data.positions);
+                    setActiveCounts((prev) => ({
+                        ...prev,
+                        active: data.activeCount,
+                    }));
+                }
+            } catch (error) {
+                console.error('Error polling positions:', error); // Debugging statement
+            }
+        }, 30000);
+    
+        return () => clearInterval(pollInterval);
+    }, [selectedManufacturer]);
+    
+    
 
     useEffect(() => {
         if (!icao24List.length) return;
-
+    
         const unsubscribe = openSkyIntegrated.subscribe((updatedAircraft) => {
+            console.log('Updated aircraft received:', updatedAircraft); // Debugging statement
             setAircraft(updatedAircraft);
             setIsLoading(false);
-            setActiveCounts(prev => ({
+            setActiveCounts((prev) => ({
                 ...prev,
-                active: updatedAircraft.length
+                active: updatedAircraft.length,
             }));
         });
-
     
-    // Initial fetch
-    openSkyIntegrated.getAircraft(icao24List);
-
-    return () => unsubscribe();
-}, [icao24List]);
-
+        openSkyIntegrated.getAircraft(icao24List); // Initial fetch
+        console.log('Initial fetch for ICAO24 list:', icao24List); // Debugging statement
+    
+        return () => unsubscribe();
+    }, [icao24List]);
+    
 const [trackingStatus, setTrackingStatus] = useState<'idle' | 'loading' | 'complete' | 'error'>('idle');
 
 
@@ -101,14 +134,16 @@ const [trackingStatus, setTrackingStatus] = useState<'idle' | 'loading' | 'compl
 const handleManufacturerSelect = useCallback(async (manufacturer: string) => {
     setIsLoading(true);
     setError(null);
-    
+
+    console.log('Manufacturer selected for tracking:', manufacturer); // Debugging statement
+
     try {
         const response = await fetch('/api/aircraft/track-manufacturer', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ manufacturer })
+            body: JSON.stringify({ manufacturer }),
         });
 
         if (!response.ok) {
@@ -116,20 +151,21 @@ const handleManufacturerSelect = useCallback(async (manufacturer: string) => {
         }
 
         const result = await response.json();
-        
+        console.log('Track manufacturer response:', result); // Debugging statement
+
         if (result.success) {
             setSelectedManufacturer(manufacturer);
             if (result.activeCount !== undefined) {
-                setManufacturers(prev => 
-                    prev.map((m: Manufacturer) => 
-                        m.value === manufacturer 
+                setManufacturers((prev) =>
+                    prev.map((m: Manufacturer) =>
+                        m.value === manufacturer
                             ? { ...m, activeCount: result.activeCount }
                             : m
                     )
                 );
                 setActiveCounts({
                     active: result.activeCount,
-                    total: result.totalCount || 0
+                    total: result.totalCount || 0,
                 });
             }
             if (result.icao24s) {
@@ -139,12 +175,13 @@ const handleManufacturerSelect = useCallback(async (manufacturer: string) => {
             throw new Error(result.message || 'Failed to track manufacturer');
         }
     } catch (err) {
-        errorHandler.handleError(ErrorType.DATA, 'Failed to track manufacturer');
+        console.error('Error tracking manufacturer:', err); // Debugging statement
         setError(err instanceof Error ? err.message : 'Failed to track manufacturer');
     } finally {
         setIsLoading(false);
     }
 }, []);
+
 
 const handleModelSelect = useCallback((model: string) => {
     setSelectedModel(model);
@@ -154,9 +191,6 @@ const toggleSelector = useCallback(() => {
     setIsSelectorOpen(prev => !prev);
 }, []);
 
-    useEffect(() => {
-        setIsMapReady(true);
-    }, []);
 
     // Update getErrorMessage to handle null values safely
     const getErrorMessage = (
@@ -190,6 +224,7 @@ const toggleSelector = useCallback(() => {
     }
 
     const errorMessage = getErrorMessage(rateLimitError, authError, wsError, networkError);
+
 
     return (
         <div className="relative w-full h-screen bg-gray-100">

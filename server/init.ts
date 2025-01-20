@@ -1,5 +1,8 @@
-// server/init.ts
 import { CleanupService } from '../lib/services/CleanupService';
+import { trackingDb } from '../lib/db/trackingDatabaseManager';
+
+console.log('[Init] Tracking database and cleanup services initialized.');
+
 
 if (typeof window === 'undefined') {
     const cleanupService = CleanupService.getInstance();
@@ -9,8 +12,13 @@ if (typeof window === 'undefined') {
         console.log(`\nReceived ${signal}. Starting graceful shutdown...`);
         
         try {
+            // Stop cleanup services
             await cleanupService.stop();
             console.log('Cleanup service stopped');
+
+            // Close the tracking database
+            await trackingDb.close();
+            console.log('Tracking database closed');
 
             process.exit(0);
         } catch (error) {
@@ -32,6 +40,17 @@ if (typeof window === 'undefined') {
             process.exit(1);
         }, FORCE_SHUTDOWN_TIMEOUT).unref();
     });
+
+    // Initialize the tracking database
+    (async () => {
+        try {
+            await trackingDb.initialize();
+            console.log('Tracking database initialized');
+        } catch (error) {
+            console.error('Error initializing tracking database:', error);
+            process.exit(1);
+        }
+    })();
 }
 
 // Export something to prevent module parse errors

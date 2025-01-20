@@ -1,6 +1,18 @@
 import { NextApiRequest, NextApiResponse } from 'next';
-import sqlite3 from 'sqlite3';
 import path from 'path';
+import { open, Database } from 'sqlite';
+
+let sqlite3: typeof import('sqlite3');
+if (typeof window === 'undefined') {
+    sqlite3 = require('sqlite3');
+}
+
+export async function getDatabase(): Promise<Database> {
+    return await open({
+        filename: './path/to/database.db',
+        driver: sqlite3!.Database,
+    });
+}
 
 // Define database path
 const dbPath = path.join(process.cwd(), 'lib', 'aircraft.db');

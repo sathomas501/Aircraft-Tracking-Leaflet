@@ -12,6 +12,8 @@ export interface AircraftStatus {
     on_ground?: boolean;
     last_contact?: number;
     updated_at?: string;
+    owner_type?: string;
+    aircraft_type?: string;
 }
 
 /**
@@ -42,7 +44,8 @@ export interface AircraftRecord {
     NAME: string;
     CITY: string;
     STATE: string;
-    TYPE_AIRCRAFT?: string;
+    owner_type?: string;
+    aircraft_type?: string;
     created_at?: string;
     is_active?: boolean;
 }

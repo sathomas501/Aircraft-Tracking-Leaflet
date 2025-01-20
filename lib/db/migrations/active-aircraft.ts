@@ -1,73 +1,61 @@
-// lib/db/migrations/active-aircraft.ts
-import { runQuery, getQuery } from '../databaseManager';
 
-interface PragmaResult {
-    count: number;
+import { trackingDb } from '../trackingDatabaseManager';
+import { open, Database } from 'sqlite';
+
+let sqlite3: typeof import('sqlite3');
+if (typeof window === 'undefined') {
+    sqlite3 = require('sqlite3');
 }
 
-async function columnExists(table: string, column: string): Promise<boolean> {
+export async function getDatabase(): Promise<Database> {
+    return await open({
+        filename: './path/to/database.db',
+        driver: sqlite3!.Database,
+    });
+}
+const STATIC_DB_PATH = './static.db'; // Path to the static database
+
+/**
+ * Get a list of `icao24` codes for a specific manufacturer.
+ * @param manufacturer - The manufacturer name to filter by.
+ * @param model - (Optional) The model name to filter by.
+ */
+export async function getIcao24s(manufacturer: string, model?: string): Promise<string[]> {
+    const db = await open({ filename: STATIC_DB_PATH, driver: sqlite3.Database });
+
     const query = `
-        SELECT COUNT(*) as count
-        FROM pragma_table_info(?)
-        WHERE name = ?;
+        SELECT icao24
+        FROM aircraft
+        WHERE manufacturer = ?
+        ${model ? 'AND model = ?' : ''}
     `;
-    const result = await getQuery<PragmaResult>(query, [table, column]);
-    return (result?.count ?? 0) > 0;
+
+    const rows = await db.all(query, model ? [manufacturer, model] : [manufacturer]);
+    return rows.map((row) => row.icao24);
 }
 
-export async function addActiveAircraftColumns() {
-    try {
-        // Define columns to add
-        const columns = [
-            { name: 'active', type: 'BOOLEAN DEFAULT 0' },
-            { name: 'last_seen', type: 'TIMESTAMP' },
-            { name: 'latitude', type: 'REAL' },
-            { name: 'longitude', type: 'REAL' },
-            { name: 'altitude', type: 'REAL' },
-            { name: 'velocity', type: 'REAL' },
-            { name: 'heading', type: 'REAL' },
-        ];
+/**
+ * Get combined static and live data for active aircraft.
+ * @param manufacturer - The manufacturer name to filter by.
+ */
+export async function getCombinedAircraftData(manufacturer: string): Promise<any[]> {
+    const staticDb = await open({ filename: STATIC_DB_PATH, driver: sqlite3.Database });
 
-        // Add columns if they don't exist
-        for (const { name, type } of columns) {
-            const exists = await columnExists('aircraft', name);
-            if (!exists) {
-                await runQuery(`ALTER TABLE aircraft ADD COLUMN ${name} ${type}`);
-                console.log(`Added column: ${name}`);
-            }
-        }
+    // Fetch static data
+    const staticData = await staticDb.all(`
+        SELECT icao24, manufacturer, model
+        FROM aircraft
+        WHERE manufacturer = ?
+    `, [manufacturer]);
 
-        // Create indexes
-        const indexes = [
-            { name: 'idx_aircraft_active', query: 'CREATE INDEX IF NOT EXISTS idx_aircraft_active ON aircraft(active)' },
-            { name: 'idx_aircraft_manufacturer_active', query: 'CREATE INDEX IF NOT EXISTS idx_aircraft_manufacturer_active ON aircraft(manufacturer, active)' },
-            { name: 'idx_aircraft_last_seen', query: 'CREATE INDEX IF NOT EXISTS idx_aircraft_last_seen ON aircraft(last_seen)' },
-            { name: 'idx_aircraft_model_active', query: 'CREATE INDEX IF NOT EXISTS idx_aircraft_model_active ON aircraft(model, active)' },
-        ];
+    // Fetch live data from the tracking database
+    const liveData = await trackingDb.getActiveAircraft(manufacturer);
 
-        for (const { name, query } of indexes) {
-            await runQuery(query);
-            console.log(`Index created or already exists: ${name}`);
-        }
+    // Combine static and live data
+    const combinedData = liveData.map((live) => {
+        const staticInfo = staticData.find((s) => s.icao24 === live.icao24) || {};
+        return { ...staticInfo, ...live };
+    });
 
-        console.log('Columns and indexes added successfully.');
-    } catch (err) {
-        console.error('Error adding columns or indexes:', err);
-    }
-}
-
-export async function cleanup() {
-    try {
-        const query = `
-            UPDATE aircraft
-            SET active = 0, 
-                last_seen = NULL
-            WHERE last_seen < datetime('now', '-2 hours')
-            OR last_seen IS NULL;
-        `;
-        await runQuery(query);
-        console.log('Cleanup completed successfully.');
-    } catch (err) {
-        console.error('Error during cleanup:', err);
-    }
+    return combinedData;
 }

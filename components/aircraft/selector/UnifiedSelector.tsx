@@ -57,29 +57,37 @@ const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
 
   const handleManufacturerSelect = async (selectedMfr: string) => {
     try {
+        console.log('Selected Manufacturer:', selectedMfr);
         setLoading(true);
         setError(null);
 
         // Check if data is already cached
         if (activeAircraftCache[selectedMfr]) {
             const cachedData = activeAircraftCache[selectedMfr];
+            console.log('Using Cached Data:', cachedData);
             setModels(cachedData.models || []);
             onAircraftUpdate(cachedData.positions || []);
             return;
         }
 
         // Fetch active aircraft from the server
+        const payload = { manufacturer: selectedMfr };
+        console.log('Request Payload:', payload);
+
         const response = await fetch(`/api/aircraft/track-manufacturer`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ manufacturer: selectedMfr }),
+            body: JSON.stringify(payload),
         });
 
         const data = await response.json();
 
         if (!response.ok) {
+            console.error('Error Response from Server:', data);
             throw new Error(data.message || 'Failed to fetch aircraft data.');
         }
+
+        console.log('Server Response:', data);
 
         // Update the cache with active aircraft data
         setActiveAircraftCache((prev) => ({
@@ -93,17 +101,20 @@ const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
         // Update the dropdown and state
         setModels(data.models || []);
         onAircraftUpdate(data.positions || []);
-
     } catch (err) {
-    console.error('Error selecting manufacturer:', err);
+        console.error('Error selecting manufacturer:', err);
 
-    if (err instanceof Error) {
-        setError(err.message || 'An unexpected error occurred.');
-    } else {
-        setError('An unexpected error occurred.');
+        if (err instanceof Error) {
+            setError(err.message || 'An unexpected error occurred.');
+        } else {
+            setError('An unexpected error occurred.');
+        }
+    } finally {
+        setLoading(false);
     }
-}
 };
+
+
 
   // Fetch manufacturers
 const fetchManufacturers = useCallback(async () => {

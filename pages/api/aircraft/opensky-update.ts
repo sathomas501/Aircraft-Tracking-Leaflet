@@ -3,6 +3,8 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { useOpenSkyWebSocket } from '@/hooks/useOpenSkyWebSocket';
 import { runQuery } from '@/lib/db/databaseManager';
+import { trackingDb } from '@/lib/db/trackingDatabaseManager';
+
 
 // Local in-memory cache
 const cache: Map<string, any> = new Map();
@@ -38,16 +40,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 }
 
+
 async function processStates(states: any[]): Promise<string> {
     try {
         console.log('[DEBUG] Processing states:', states);
 
-        for (const state of states) {
-            cache.set(state.icao24, state); // Update cache with new states
-            console.log('[DEBUG] Updating state for ICAO24:', state.icao24);
-
-            await updateActiveAircraft(state); // Update active aircraft in the database
-        }
+        // Upsert live data into the tracking database
+        await trackingDb.upsertActiveAircraft(states);
 
         console.log(`[DEBUG] Updated ${states.length} aircraft states from request body.`);
         return `Updated ${states.length} aircraft states`;
@@ -56,7 +55,6 @@ async function processStates(states: any[]): Promise<string> {
         throw new Error('Failed to process aircraft states.');
     }
 }
-
 
 async function updateActiveAircraft(state: any): Promise<void> {
     await runQuery(

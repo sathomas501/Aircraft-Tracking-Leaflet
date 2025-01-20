@@ -57,10 +57,13 @@ export interface Aircraft {
   NAME: string;
   CITY: string;
   STATE: string;
+  OWNER_TYPE: string;
+  TYPE_AIRCRAFT: string;
 
   // Tracking state
   isTracked: boolean;
   
+  //Optonal fields
   registration?: string;
   manufacturerName?: string;
   owner?: string;
@@ -144,22 +147,24 @@ export function positionDataToAircraftPosition(data: PositionData): AircraftPosi
 
 export function mapPositionDataToAircraft(positionData: PositionData[]): Aircraft[] {
   return positionData.map((data) => ({
-    icao24: data.icao24,
-    "N-NUMBER": "",
-    manufacturer: "Unknown",
-    model: "Unknown",
-    operator: "Unknown",
-    latitude: data.latitude,
-    longitude: data.longitude,
-    altitude: data.altitude ?? -1, // Replace `undefined` with a fallback value
-    heading: data.heading,
-    velocity: data.velocity ?? 0, // Replace `undefined` with a fallback value
-    on_ground: data.on_ground,
-    last_contact: data.last_contact,
-    NAME: "",
-    CITY: "",
-    STATE: "",
-    isTracked: true
+      icao24: data.icao24,
+      "N-NUMBER": "",
+      manufacturer: "Unknown",
+      model: "Unknown",
+      operator: "Unknown",
+      latitude: data.latitude,
+      longitude: data.longitude,
+      altitude: data.altitude ?? -1,
+      heading: data.heading,
+      velocity: data.velocity ?? 0,
+      on_ground: data.on_ground,
+      last_contact: data.last_contact,
+      NAME: "",
+      CITY: "",
+      STATE: "",
+      TYPE_AIRCRAFT: "Unknown",  // Added default
+      OWNER_TYPE: "Unknown",     // Added default
+      isTracked: true
   }));
 }
 

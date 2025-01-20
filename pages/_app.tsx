@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '@/styles/globals.css';
 import 'leaflet/dist/leaflet.css';
 import '@/styles/leaflet.css';
+import '@/server/init'; // Ensure init.ts runs
 
 const queryClient = new QueryClient({
   defaultOptions: {
