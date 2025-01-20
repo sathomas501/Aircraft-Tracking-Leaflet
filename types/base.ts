@@ -26,10 +26,13 @@ export interface PositionData {
   latitude: number;  // Changed from optional to required
   longitude: number; // Changed from optional to required
   velocity?: number;  // Changed from optional to required
-  heading: number;   // Changed from optional to required
+  heading?: number;   // Changed from optional to required
   altitude?: number;  // Changed from optional to required
   on_ground: boolean;
   last_contact: number;
+  model?: string;
+  manufacturer?: string;
+  last_seen?: number;  // Adding this for tracking last update time
 }
 
 /**
@@ -117,6 +120,10 @@ export type AircraftPositionFromAircraft = Pick<
   'latitude' | 'longitude' | 'altitude' | 'heading' | 'velocity' | 'on_ground'
 >;
 
+export interface AircraftState extends PositionData {
+  last_seen: number;  // Required in AircraftState
+}
+
 /**
  * Helper function to convert Aircraft to AircraftPosition
  */
@@ -155,15 +162,15 @@ export function mapPositionDataToAircraft(positionData: PositionData[]): Aircraf
       latitude: data.latitude,
       longitude: data.longitude,
       altitude: data.altitude ?? -1,
-      heading: data.heading,
+      heading: data.heading ?? 0,  // Provide default value for heading
       velocity: data.velocity ?? 0,
       on_ground: data.on_ground,
       last_contact: data.last_contact,
       NAME: "",
       CITY: "",
       STATE: "",
-      TYPE_AIRCRAFT: "Unknown",  // Added default
-      OWNER_TYPE: "Unknown",     // Added default
+      TYPE_AIRCRAFT: "Unknown",
+      OWNER_TYPE: "Unknown",
       isTracked: true
   }));
 }

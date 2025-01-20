@@ -62,7 +62,7 @@ function handler(req, res) {
                                 pagination: { total: 0, page: page, pageSize: pageSize, totalPages: 0 }
                             })];
                     }
-                    dbPath = path_1["default"].join(process.cwd(), 'lib', 'aircraft.db');
+                    dbPath = path_1["default"].join(process.cwd(), 'lib', 'static.db');
                     baseQuery = "\n  SELECT a.icao24, a.manufacturer, a.model, a.owner, a.name, a.city, a.state, a.manufacturer_icao\n  FROM aircraft a\n  WHERE a.manufacturer = ?\n  " + (model ? 'AND a.model = ?' : '') + "\n  LIMIT ? OFFSET ?\n";
                     _a.label = 1;
                 case 1:

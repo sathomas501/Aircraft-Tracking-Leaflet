@@ -7,13 +7,13 @@ if (typeof window === 'undefined') {
     sqlite3 = require('sqlite3');
 }
 
-export async function getDatabase(): Promise<Database> {
+export async function getActiveDatabase(): Promise<Database> {
     return await open({
-        filename: './path/to/database.db',
+        filename: './lib/db/tracking.db',
         driver: sqlite3!.Database,
     });
 }
-const STATIC_DB_PATH = './static.db'; // Path to the static database
+const STATIC_DB_PATH = '.lib/db/static.db'; // Path to the static database
 
 /**
  * Get a list of `icao24` codes for a specific manufacturer.

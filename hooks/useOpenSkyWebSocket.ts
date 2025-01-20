@@ -1,5 +1,6 @@
 import { useEffect, useCallback, useRef, useState } from 'react';
 
+// Define types for aircraft and connection status
 interface Aircraft {
     icao24: string;
     latitude: number;
@@ -7,7 +8,9 @@ interface Aircraft {
     altitude?: number;
     velocity?: number;
     heading?: number;
-    model?: string; // Optional, provide a fallback where needed
+    model?: string;
+    manufacturer?: string;
+    lastUpdate: number;
 }
 
 interface CachedRegionData {
@@ -15,24 +18,25 @@ interface CachedRegionData {
     aircraft: Aircraft[];
 }
 
+export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
+
 interface UseWebSocketOptions {
     onData?: (data: Aircraft[]) => void;
     onError?: (error: Error) => void;
     onStatusChange?: (status: ConnectionStatus) => void;
-    credentials?: {
-        username: string;
-        password: string;
-    };
+    icao24List?: string[];
+    manufacturer?: string;
+    interpolate?: boolean;
 }
 
-export type ConnectionStatus =
-    | 'disconnected'
-    | 'connecting'
-    | 'authenticating'
-    | 'connected'
-    | 'error';
-
-export function useOpenSkyWebSocket(options: UseWebSocketOptions = {}) {
+export function useOpenSkyWebSocket({
+    onData,
+    onError,
+    onStatusChange,
+    icao24List = [],
+    manufacturer,
+    interpolate = true,
+}: UseWebSocketOptions = {}) {
     const wsRef = useRef<WebSocket | null>(null);
     const interpolationFrameRef = useRef<number>();
     const [status, setStatus] = useState<ConnectionStatus>('disconnected');
@@ -40,52 +44,130 @@ export function useOpenSkyWebSocket(options: UseWebSocketOptions = {}) {
 
     // Internal caching logic
     const cache = useRef<Map<string, Aircraft>>(new Map());
-    const regionData = useRef<Map<string, CachedRegionData>>(new Map());
 
+    // Update aircraft data from WebSocket messages
     const updateFromWebSocket = useCallback((data: Aircraft[]) => {
+        const timestamp = Date.now();
+
         data.forEach((aircraft) => {
-            cache.current.set(aircraft.icao24, aircraft);
+            if (aircraft.icao24) {
+                cache.current.set(aircraft.icao24, { ...aircraft, lastUpdate: timestamp });
+            }
         });
-    }, []);
 
-    const getLatestData = useCallback(() => {
-        return { aircraft: Array.from(cache.current.values()) };
-    }, []);
+        if (onData) {
+            onData(data);
+        }
+    }, [onData]);
 
-    const startPositionInterpolation = useCallback(() => {
-        if (interpolationFrameRef.current) {
-            cancelAnimationFrame(interpolationFrameRef.current);
+    // Interpolate aircraft positions based on velocity and heading
+    const interpolatePositions = useCallback(() => {
+        if (!interpolate) return;
+
+        const now = Date.now();
+        const deltaTime = (now - (cache.current.get('lastUpdate')?.lastUpdate ?? now)) / 1000; // seconds
+
+        const interpolated = Array.from(cache.current.values()).map((aircraft) => {
+            if (!aircraft.velocity || !aircraft.heading) return aircraft;
+
+            const distance = (aircraft.velocity * deltaTime) / 3600; // Convert to degrees
+            const headingRad = (aircraft.heading * Math.PI) / 180;
+
+            return {
+                ...aircraft,
+                latitude: aircraft.latitude + distance * Math.cos(headingRad),
+                longitude: aircraft.longitude + distance * Math.sin(headingRad),
+                lastUpdate: now,
+            };
+        });
+
+        if (onData) {
+            onData(interpolated);
         }
 
-        let lastUpdate = Date.now();
+        interpolationFrameRef.current = requestAnimationFrame(interpolatePositions);
+    }, [interpolate, onData]);
 
-        const interpolate = () => {
-            const now = Date.now();
-            const deltaTime = now - lastUpdate;
-            lastUpdate = now;
+    // Handle WebSocket connection
+    const setupWebSocket = useCallback(() => {
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${protocol}//${window.location.host}/api/websocket`;
 
-            const cachedData = getLatestData();
-            if (cachedData && cachedData.aircraft.length > 0) {
-                const interpolated = cachedData.aircraft.map((aircraft) => ({
-                    ...aircraft,
-                    model: aircraft.model || 'Unknown', // Ensure model is a string
-                }));
-                options.onData?.(interpolated);
+        const ws = new WebSocket(wsUrl);
+        wsRef.current = ws;
+
+        setStatus('connecting');
+        onStatusChange?.('connecting');
+
+        ws.onopen = () => {
+            setStatus('connected');
+            onStatusChange?.('connected');
+
+            ws.send(JSON.stringify({ type: 'subscribe', data: { icao24List, manufacturer } }));
+
+            if (interpolate) {
+                interpolatePositions();
             }
-
-            interpolationFrameRef.current = requestAnimationFrame(interpolate);
         };
 
-        interpolationFrameRef.current = requestAnimationFrame(interpolate);
-    }, [getLatestData, options]);
+        ws.onmessage = (event) => {
+            try {
+                const messageData = JSON.parse(event.data);
+                updateFromWebSocket(messageData);
+            } catch (err) {
+                console.error('[WebSocket] Error parsing message:', err);
+                setError(new Error('Error parsing WebSocket message'));
+                onError?.(err as Error);
+            }
+        };
 
-    // Additional WebSocket logic here...
+        ws.onerror = (err) => {
+            console.error('[WebSocket] Error:', err);
+            setError(new Error('WebSocket error'));
+            setStatus('error');
+            onStatusChange?.('error');
+        };
+
+        ws.onclose = () => {
+            console.warn('[WebSocket] Connection closed');
+            setStatus('disconnected');
+            onStatusChange?.('disconnected');
+
+            if (interpolationFrameRef.current) {
+                cancelAnimationFrame(interpolationFrameRef.current);
+            }
+        };
+
+        return () => {
+            ws.close();
+            if (interpolationFrameRef.current) {
+                cancelAnimationFrame(interpolationFrameRef.current);
+            }
+        };
+    }, [icao24List, manufacturer, interpolate, interpolatePositions, onStatusChange, onError]);
+
+    // Manage WebSocket connection lifecycle
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+
+        const cleanup = setupWebSocket();
+
+        return cleanup;
+    }, [setupWebSocket]);
 
     return {
         status,
         error,
-        disconnect: () => {}, // Define disconnect logic
-        reconnect: () => {}, // Define reconnect logic
-        isAuthenticated: status === 'connected' && !!options.credentials,
+        disconnect: useCallback(() => {
+            if (wsRef.current) {
+                wsRef.current.close();
+                setStatus('disconnected');
+            }
+        }, []),
+        reconnect: useCallback(() => {
+            if (wsRef.current?.readyState === WebSocket.CLOSED) {
+                setupWebSocket();
+            }
+        }, [setupWebSocket]),
     };
 }

@@ -1,66 +1,93 @@
-// hooks/useOpenskyPositions.ts
 import { useState, useCallback, useRef, useEffect } from 'react';
-import type { PositionData } from '@/types/base';
-import { openSkyService } from '@/lib/services/openSkyService';
+import { useOpenSkyWebSocket, ConnectionStatus } from './useOpenSkyWebSocket';
 
-interface UseOpenSkyPositionsProps {
-  pollInterval?: number;
-  icao24s?: string[];
+interface PositionData {
+    icao24: string;
+    latitude: number;
+    longitude: number;
+    altitude?: number;
+    velocity?: number;
+    heading?: number;
+    lastUpdate: number;
+    manufacturer?: string;
 }
 
-export function useOpenSkyPositions({ 
-  pollInterval = 15000,
-  icao24s 
+interface UseOpenSkyPositionsProps {
+    pollInterval?: number;
+    icao24s?: string[];
+    manufacturer?: string;
+    useWebSocket?: boolean;
+}
+
+export function useOpenSkyPositions({
+    pollInterval = 15000,
+    icao24s = [],
+    manufacturer,
+    useWebSocket = true,
 }: UseOpenSkyPositionsProps = {}) {
-  const [positions, setPositions] = useState<Record<string, PositionData>>({});
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<Error | null>(null);
-  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const [positions, setPositions] = useState<Record<string, PositionData>>({});
+    const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState<Error | null>(null);
+    const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('disconnected');
 
-  const fetchPositions = useCallback(async () => {
-    if (!icao24s || icao24s.length === 0) {
-      setError(new Error('No valid ICAO24 codes provided.'));
-      setIsLoading(false);
-      return; // Exit early if `icao24s` is undefined or empty
-    }
-  
-    try {
-      const newPositions = await openSkyService.getPositions(icao24s);
-      setPositions((prev) => {
-        const updatedPositions: Record<string, PositionData> = { ...prev };
-        newPositions.forEach((pos) => {
-          if (pos.icao24) {
-            updatedPositions[pos.icao24] = pos;
-          }
-        });
-        return updatedPositions;
-      });
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err : new Error('Failed to fetch positions'));
-    } finally {
-      setIsLoading(false);
-    }
-  }, [icao24s]);
-  
+    const fetchPositions = useCallback(async () => {
+        try {
+            const response = await fetch('/api/positions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ icao24s, manufacturer }),
+            });
+            const data: PositionData[] = await response.json();
 
-  useEffect(() => {
-    fetchPositions();
-    
-    const pollPositions = () => {
-      timeoutRef.current = setTimeout(() => {
-        fetchPositions().then(() => pollPositions());
-      }, pollInterval);
-    };
+            const updated = data.reduce((acc, aircraft) => {
+                acc[aircraft.icao24] = aircraft;
+                return acc;
+            }, {} as Record<string, PositionData>);
 
-    pollPositions();
+            setPositions(updated);
+            setIsLoading(false);
+        } catch (err) {
+            console.error('[Polling] Fetch error:', err);
+            setError(err instanceof Error ? err : new Error('Failed to fetch positions'));
+            setIsLoading(false);
+        }
+    }, [icao24s, manufacturer]);
 
-    return () => {
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
-      }
-    };
-  }, [fetchPositions, pollInterval]);
+    const ws = useWebSocket
+        ? useOpenSkyWebSocket({
+              icao24List: icao24s,
+              manufacturer,
+              onData: (aircraftData) => {
+                  const updated = aircraftData.reduce((acc, aircraft) => {
+                      acc[aircraft.icao24] = aircraft;
+                      return acc;
+                  }, {} as Record<string, PositionData>);
 
-  return { positions, isLoading, error };
+                  setPositions(updated);
+                  setIsLoading(false);
+              },
+              onError: setError,
+              onStatusChange: setConnectionStatus,
+          })
+        : null;
+
+    useEffect(() => {
+        if (connectionStatus === 'connected' || !useWebSocket) return;
+
+        const poll = async () => {
+            await fetchPositions();
+            timeoutRef.current = setTimeout(poll, pollInterval);
+        };
+
+        poll();
+
+        return () => {
+            if (timeoutRef.current) {
+                clearTimeout(timeoutRef.current);
+            }
+        };
+    }, [fetchPositions, pollInterval, useWebSocket, connectionStatus]);
+
+    return { positions, isLoading, error, connectionStatus };
 }

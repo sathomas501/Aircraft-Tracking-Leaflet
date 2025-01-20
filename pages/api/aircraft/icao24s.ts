@@ -1,8 +1,8 @@
 // pages/api/aircraft/icao24s.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { getActiveDb } from '@/lib/db/databaseManager';
+import { getDatabase } from '@/lib/db/databaseManager';
 
-const db = await getActiveDb();
+const db = await getDatabase();
 
 interface Icao24Response {
     icao24List: string[];
@@ -15,7 +15,7 @@ export default async function handler(
     res: NextApiResponse
 ) {
     try {
-        const db = await getActiveDb();
+        const db = await getDatabase();
         const { manufacturer, model } = req.query;
 
         if (!manufacturer) {

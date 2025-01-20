@@ -1,106 +1,145 @@
+import { NextApiRequest, NextApiResponse } from 'next';
+import { getActiveDb } from '@/lib/db/trackingDatabaseManager';
+import { Database } from 'sqlite';
 
-// pages/api/aircraft/opensky-update.ts
-import type { NextApiRequest, NextApiResponse } from 'next';
-import { useOpenSkyWebSocket } from '@/hooks/useOpenSkyWebSocket';
-import { runQuery } from '@/lib/db/databaseManager';
-import { trackingDb } from '@/lib/db/trackingDatabaseManager';
+// Define our own interface for SQLite run result
+interface SQLiteRunResult {
+    changes: number;
+    lastID: number;
+}
 
+interface OpenSkyState {
+    icao24: string;
+    callsign?: string;
+    origin_country?: string;
+    time_position?: number;
+    last_contact: number;
+    longitude: number;
+    latitude: number;
+    altitude?: number;
+    on_ground: boolean;
+    velocity?: number;
+    heading?: number;
+    vertical_rate?: number;
+    sensors?: number[];
+    geo_altitude?: number;
+    squawk?: string;
+    spi?: boolean;
+    position_source?: number;
+}
 
-// Local in-memory cache
-const cache: Map<string, any> = new Map();
+async function withDatabase<T>(
+    operation: (db: Database) => Promise<T>
+): Promise<T | null> {
+    const db = await getActiveDb();
+    if (!db) {
+        throw new Error('Failed to connect to database');
+    }
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+    try {
+        return await operation(db);
+    } catch (error) {
+        console.error('Database operation failed:', error);
+        throw error;
+    } finally {
+        try {
+            await db.close();
+        } catch (error) {
+            console.error('Error closing database connection:', error);
+        }
+    }
+}
+
+async function updatePositions(positions: OpenSkyState[]): Promise<number> {
+    return await withDatabase(async (db) => {
+        await db.run('BEGIN TRANSACTION');
+
+        try {
+            let updatedCount = 0;
+
+            for (const position of positions) {
+                if (!position.icao24) continue;
+
+                const result = await db.run(`
+                    INSERT INTO active_tracking (
+                        icao24,
+                        last_contact,
+                        latitude,
+                        longitude,
+                        altitude,
+                        velocity,
+                        heading,
+                        on_ground,
+                        last_seen
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                    ON CONFLICT(icao24) DO UPDATE SET
+                        last_contact = excluded.last_contact,
+                        latitude = excluded.latitude,
+                        longitude = excluded.longitude,
+                        altitude = excluded.altitude,
+                        velocity = excluded.velocity,
+                        heading = excluded.heading,
+                        on_ground = excluded.on_ground,
+                        last_seen = CURRENT_TIMESTAMP;
+                `, [
+                    position.icao24,
+                    position.last_contact,
+                    position.latitude,
+                    position.longitude,
+                    position.altitude,
+                    position.velocity,
+                    position.heading,
+                    position.on_ground ? 1 : 0
+                ]) as unknown as SQLiteRunResult;
+
+                if (result?.changes > 0) {
+                    updatedCount++;
+                }
+            }
+
+            await db.run('COMMIT');
+            return updatedCount;
+        } catch (error) {
+            await db.run('ROLLBACK');
+            throw error;
+        }
+    }) ?? 0;
+}
+
+export default async function handler(
+    req: NextApiRequest,
+    res: NextApiResponse
+) {
     if (req.method !== 'POST') {
-        return res.status(405).json({
-            error: 'Method not allowed',
-            message: 'Only POST requests are allowed',
+        return res.status(405).json({ 
+            success: false, 
+            message: 'Method not allowed' 
         });
     }
 
     try {
         const { states } = req.body;
 
-        if (Array.isArray(states) && states.length > 0) {
-            const message = await processStates(states);
-            return res.status(200).json({ success: true, message });
+        if (!Array.isArray(states)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid request body: states must be an array'
+            });
         }
 
-        await startWebSocketUpdates();
+        const updatedCount = await updatePositions(states);
+
         return res.status(200).json({
             success: true,
-            message: 'Live updates started via WebSocket',
+            message: `Updated ${updatedCount} aircraft positions`,
+            updatedCount
         });
+
     } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : 'Internal server error';
-        console.error('Error in OpenSky update handler:', errorMessage);
+        console.error('[OpenSky Update] Error:', error);
         return res.status(500).json({
-            error: 'Failed to update aircraft states',
-            message: process.env.NODE_ENV === 'development' ? errorMessage : 'Internal server error',
+            success: false,
+            message: error instanceof Error ? error.message : 'Internal server error'
         });
-    }
-}
-
-
-async function processStates(states: any[]): Promise<string> {
-    try {
-        console.log('[DEBUG] Processing states:', states);
-
-        // Upsert live data into the tracking database
-        await trackingDb.upsertActiveAircraft(states);
-
-        console.log(`[DEBUG] Updated ${states.length} aircraft states from request body.`);
-        return `Updated ${states.length} aircraft states`;
-    } catch (error) {
-        console.error('[DEBUG] Error processing states:', error);
-        throw new Error('Failed to process aircraft states.');
-    }
-}
-
-async function updateActiveAircraft(state: any): Promise<void> {
-    await runQuery(
-        `
-        UPDATE aircraft
-        SET 
-            active = 1,
-            last_seen = datetime('now'),
-            latitude = ?,
-            longitude = ?,
-            altitude = ?,
-            velocity = ?,
-            heading = ?
-        WHERE icao24 = ?
-        `,
-        [
-            state.latitude || null,
-            state.longitude || null,
-            state.altitude || null,
-            state.velocity || null,
-            state.heading || null,
-            state.icao24,
-        ]
-    );
-}
-
-async function startWebSocketUpdates(): Promise<void> {
-    try {
-        const { disconnect } = useOpenSkyWebSocket({
-            onData: (data) => {
-                data.forEach(async (aircraft) => {
-                    cache.set(aircraft.icao24, aircraft); // Update cache from WebSocket
-                    await updateActiveAircraft(aircraft); // Update active aircraft in the database
-                });
-                console.log(`Live Update: Updated ${data.length} aircraft states via WebSocket.`);
-            },
-            onError: (error) => {
-                const errorMessage = error instanceof Error ? error.message : 'Unknown WebSocket error';
-                console.error('WebSocket Error:', errorMessage);
-            },
-        });
-
-        // Optional: Use `disconnect` if needed for cleanup
-    } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : 'Failed to start WebSocket updates';
-        console.error('Error starting WebSocket updates:', errorMessage);
-        throw new Error(errorMessage);
     }
 }

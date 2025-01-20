@@ -8,7 +8,8 @@ node_modules/
 
 # Ignore large database files
 lib/MASTER.txt
-lib/db/aircraft.db
+lib/db/static.db
+lib/db/tracking.db
 
 # Ignore large binary files
 node_modules/@next/swc-win32-x64-msvc/next-swc.win32-x64-msvc.node

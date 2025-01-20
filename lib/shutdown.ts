@@ -1,8 +1,9 @@
 // lib/shutdown.ts
 import { openSkyService } from './services/opensky/service';
 import { CleanupService } from './services/CleanupService';  // Fixed casing
-import DatabaseManager from './db/databaseManager';
-import { getActiveDb } from './db/databaseManager';
+import { getDatabase } from './db/databaseManager';
+import Database from 'better-sqlite3';
+import { DB } from './db/constants';
 
 let isShuttingDown = false;
 
@@ -35,12 +36,9 @@ async function shutdownHandler(signal: string) {
 
         // 3. Close database connections
         console.log('Closing database connections...');
-        const activeDb = await getActiveDb();
+        const activeDb = await getDatabase();
         await activeDb.close();
         console.log('Active database connection closed');
-
-        await DatabaseManager.closeDb();
-        console.log('Main database connection closed');
 
         console.log('Shutdown complete');
         process.exit(0);
