@@ -2,7 +2,6 @@
 export * from './service';
 export type {
     IOpenSkyService,
-    WebSocketClient,
     OpenSkyState,
     OpenSkyConfig,
     PositionUpdateCallback,

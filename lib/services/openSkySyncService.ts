@@ -1,5 +1,5 @@
 import { getActiveDb } from '@/lib/db/trackingDatabaseManager';
-import { openSkyManager } from '@/lib/services/openSkyService';
+import { openSkyManager } from '@/lib/services/opensky/service';
 import type { PositionData } from '@/types/base';
 import type { Database } from 'sqlite';
 
@@ -121,18 +121,8 @@ export class OpenSkySyncService {
 
     public async syncActiveAircraft(): Promise<void> {
         if (!this.isServer) return;
-
-        const trackedAircraft = await this.withDatabase(async (db) => {
-            return await db.all<{ icao24: string }[]>(`
-                SELECT DISTINCT icao24 
-                FROM aircraft 
-                WHERE icao24 IS NOT NULL 
-                AND LENGTH(TRIM(icao24)) > 0
-            `);
-        }, false);  // Don't use transaction for read-only operation
-
+    
         try {
-            // Get tracked aircraft ICAO24 codes
             const trackedAircraft = await this.withDatabase(async (db) => {
                 return await db.all<{ icao24: string }[]>(`
                     SELECT DISTINCT icao24 
@@ -141,31 +131,35 @@ export class OpenSkySyncService {
                     AND LENGTH(TRIM(icao24)) > 0
                 `);
             }, false);
-            
+    
             if (!trackedAircraft) {
                 console.error('[OpenSky Sync] Failed to fetch tracked aircraft');
                 return;
             }
-            
+    
             const icao24s = trackedAircraft.map((a) => a.icao24);
             if (icao24s.length === 0) {
                 console.log('[OpenSky Sync] No aircraft to track');
                 return;
             }
-
-            // Fetch positions from OpenSky
-            const positions = await openSkyManager.fetchPositions(icao24s);
-if (positions.length > 0) {
-    await this.updateActiveAircraft(positions);
-} else {
-    console.log('[OpenSky Sync] No active positions received');
-}
+    
+            console.log(`[OpenSky Sync] Syncing ${icao24s.length} aircraft positions.`);
+    
+            const positions = await openSkyManager.getPositions(icao24s).catch((error) => {
+                console.error('[OpenSky Sync] Error fetching positions:', error.message || error);
+                return [];
+            });
+    
+            if (positions.length > 0) {
+                await this.updateActiveAircraft(positions);
+            } else {
+                console.log('[OpenSky Sync] No active positions received');
+            }
         } catch (error) {
             console.error('[OpenSky Sync] Error during sync:', error);
         }
-
-
     }
+    
 
     public async startSync(): Promise<void> {
         if (!this.isServer) return;

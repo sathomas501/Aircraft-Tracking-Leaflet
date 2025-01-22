@@ -1,4 +1,5 @@
 // lib/services/error-handler/index.ts
+export * from './types';  // Export everything from types
 import { ErrorType, ErrorDetails, ErrorState, ErrorMessages, AppError } from './types';
 import { getErrorTypeAndMessage } from './utils';
 
@@ -25,6 +26,24 @@ class ErrorHandler {
         }
         return ErrorHandler.instance;
     }
+
+    addHandler(type: ErrorType, handler: (error: ErrorDetails) => void) {
+        const handlers = this.state.handlers.get(type) || new Set();
+        handlers.add(handler);
+        this.state.handlers.set(type, handlers);
+    }
+
+    removeHandler(type: ErrorType, handler: (error: ErrorDetails) => void) {
+        const handlers = this.state.handlers.get(type);
+        if (handlers) {
+            handlers.delete(handler);
+            if (handlers.size === 0) {
+                this.state.handlers.delete(type);
+            }
+        }
+    }
+
+
 
     private notifyHandlers(type: ErrorType, details: ErrorDetails) {
         const handlers = this.state.handlers.get(type);
@@ -100,4 +119,3 @@ class ErrorHandler {
 }
 
 export const errorHandler = ErrorHandler.getInstance();
-export { ErrorType, type ErrorDetails, type AppError, ErrorMessages };

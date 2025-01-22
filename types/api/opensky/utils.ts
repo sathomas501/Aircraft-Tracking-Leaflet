@@ -51,6 +51,8 @@ export const OpenSkyUtils = {
       manufacturer: aircraft.manufacturer ?? "",
       model: aircraft.model ?? "",
       operator: aircraft.operator ?? "",
+      OWNER_TYPE: aircraft.OWNER_TYPE ?? "",
+      TYPE_AIRCRAFT: aircraft.TYPE_AIRCRAFT ?? "",
       NAME: aircraft.NAME ?? "",
       CITY: aircraft.CITY ?? "",
       STATE: aircraft.STATE ?? "",

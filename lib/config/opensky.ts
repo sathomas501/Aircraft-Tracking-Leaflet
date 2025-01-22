@@ -181,3 +181,36 @@ export const OPENSKY_CONFIG = {
     }
   }
 } as const;
+
+export const OPENSKY_API_CONFIG = {
+  BASE_URL: 'https://opensky-network.org/api', // API Base URL
+  ENDPOINTS: {
+    ALL_STATES: '/states/all', // Endpoint for fetching aircraft positions
+  },
+  HEADERS: {
+    'Content-Type': 'application/json',
+  },
+  AUTH: {
+    USERNAME: process.env.OPEN_SKY_USER || '', // Optional: OpenSky username
+    PASSWORD: process.env.OPEN_SKY_PASS || '', // Optional: OpenSky password
+  },
+  CACHE: {
+    TTL: {
+      POSITION: 15, // Cache TTL for positions in seconds
+    },
+  },
+  RATE_LIMITS: {
+    REQUESTS_PER_MINUTE: 100, // Adjust based on API limits
+    REQUESTS_PER_DAY: 10000, // Adjust based on API limits
+    BATCH_SIZE: 100, // Maximum number of ICAO24s per request
+  },
+  PARSER: {
+    INDICES: {
+      ICAO24: 0,
+      LATITUDE: 1,
+      LONGITUDE: 2,
+      BARO_ALTITUDE: 7,
+      VELOCITY: 9,
+    },
+  },
+};

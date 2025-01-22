@@ -9,7 +9,7 @@ export interface IOpenSkyService {
     removeClient(client: WebSocket): void;
     getAircraft(icao24List: string[]): Promise<ExtendedAircraft[]>;
     subscribe(callback: (data: ExtendedAircraft[]) => void): () => void;
-    getPositions(): Promise<PositionData[]>;
+    getPositions(icao24List?: string[]): Promise<PositionData[]>;  // Made parameter optional
     getPositionsMap(): Promise<Map<string, PositionData>>;
     cleanup(): Promise<void>;
 }

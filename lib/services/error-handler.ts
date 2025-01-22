@@ -6,10 +6,12 @@
 export enum ErrorType {
     NETWORK = 'NETWORK',
     AUTH = 'AUTH',
+    AUTH_REQUIRED = 'AUTH_REQUIRED', // Add this line
     RATE_LIMIT = 'RATE_LIMIT',
     DATA = 'DATA',
     WEBSOCKET = 'WEBSOCKET'
 }
+
 
 /**
  * Error details including retry information
@@ -22,6 +24,7 @@ interface ErrorDetails {
     context?: any;
     retryCount?: number;
     resolved?: boolean;
+    code?: number;
 }
 
 interface ErrorState {
@@ -189,6 +192,18 @@ class ErrorHandler {
             nextRetry: retryStatus.nextRetry,
             clear: () => this.clearError(type)
         };
+    }
+
+    create(type: ErrorType, message: string, context?: any): ErrorDetails {
+        const details: ErrorDetails = {
+            type,
+            message,
+            timestamp: Date.now(),
+            context,
+            retryCount: 0,
+            resolved: false,
+        };
+        return details;
     }
 }
 

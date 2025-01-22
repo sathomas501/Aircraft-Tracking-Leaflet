@@ -4,11 +4,10 @@
 export type {
     IOpenSkyService,
     OpenSkyIntegrated,
-    OpenSkyService,
 } from './types';
 
 // Export the main service instance
-export { openSkyService } from './service';
+export { OpenSkyIntegratedService } from './service';
 
 // Export error types specifically related to OpenSky
 export { errorHandler } from '../error-handler';

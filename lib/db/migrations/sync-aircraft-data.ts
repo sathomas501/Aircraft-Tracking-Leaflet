@@ -1,6 +1,6 @@
 // lib/db/migrations/sync-aircraft-data.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { getActiveDb } from '@/lib/db/databaseManager';
+import { getDatabase } from '@/lib/db/databaseManager';
 import { errorHandler, ErrorType } from '@/lib/services/error-handler';
 
 export default async function handler(
@@ -16,7 +16,7 @@ export default async function handler(
 
     try {
         console.log('Starting aircraft data sync...');
-        const db = await getActiveDb();
+        const db = await getDatabase();
 
         // First, clear the aircraft table
         await db.run('DELETE FROM aircraft');
@@ -113,7 +113,7 @@ export default async function handler(
 
 // Also export the verification function to use separately if needed
 export async function verifySync() {
-    const db = await getActiveDb();
+    const db = await getDatabase();
     
     const sourceCount = await db.get('SELECT COUNT(*) as count FROM aircraft_data');
     const targetCount = await db.get('SELECT COUNT(*) as count FROM aircraft');

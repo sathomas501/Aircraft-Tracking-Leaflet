@@ -18,6 +18,8 @@ function toAircraft(position: PositionData): Aircraft {
         NAME: '', // Default or actual value
         CITY: '', // Default or actual value
         STATE: '', // Default or actual value
+        OWNER_TYPE: '', // Default or actual value
+        TYPE_AIRCRAFT: '', // Default or actual value
         isTracked: true, // Default or actual value
         altitude: position.altitude ?? 0, // Ensure altitude is a number
         heading:  position.heading ?? 0,
@@ -77,15 +79,15 @@ class OpenSkyIntegrated implements IOpenSkyService {
 
     private async initWebSocket() {
         if (this.ws) return;
-
         try {
             // Check authentication first
-            const isAuthenticated = await openSkyAuth.authenticate();
+            const isAuthenticated = await openSkyAuth.authenticate({
+                useEnvCredentials: true
+            });
             if (!isAuthenticated) {
                 errorHandler.handleError(ErrorType.AUTH, 'OpenSky authentication failed');
                 return;
             }
-
             const protocol = typeof window !== 'undefined' && window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             const host = typeof window !== 'undefined' ? window.location.host : 'localhost:3000';
             const wsUrl = `${protocol}//${host}/api/opensky`;

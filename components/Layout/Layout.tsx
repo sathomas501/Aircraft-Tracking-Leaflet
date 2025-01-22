@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import LoadingSpinner from './../shared/LoadingSpinner';
+import {LoadingSpinner} from './../shared/LoadingSpinner/LoadingSpinner';
 
 interface LayoutProps {
   children: React.ReactNode;

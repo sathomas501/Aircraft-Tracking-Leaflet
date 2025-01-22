@@ -1,20 +1,39 @@
-import type { NextApiRequest, NextApiResponse } from 'next';
 import WebSocket from 'ws';
-import { OpenSkyManager } from '@/lib/services/openSkyService';
+import type { WebSocketClient } from '@/types/websocket';
 
-const openSkyService = OpenSkyManager.getInstance();
+export class EnhancedWebSocket extends WebSocket implements WebSocketClient {
+    isAlive: boolean = true;
+    
+    constructor(url: string, protocols?: string | string[]) {
+        super(url, protocols);
+        
+        // Set up ping/pong handling
+        this.on('pong', () => {
+            this.isAlive = true;
+        });
 
-export default function handler(req: NextApiRequest, res: NextApiResponse): void {
-    const { action } = req.query;
+        this.on('close', () => {
+            this.isAlive = false;
+        });
 
-    if (action === 'subscribe') {
-        const client = new WebSocket('ws://example.com'); // Ensure compatibility with the ws module
-        openSkyService.addClient(client);
-        res.status(200).send('Subscribed');
-    } else if (action === 'cleanup') {
-        openSkyService.cleanup();
-        res.status(200).send('Cleaned up');
-    } else {
-        res.status(400).send('Unknown action');
+        this.on('error', () => {
+            this.isAlive = false;
+        });
+    }
+
+    // Method to check connection status
+    checkAlive(): boolean {
+        if (this.readyState === WebSocket.OPEN) {
+            return this.isAlive;
+        }
+        return false;
+    }
+
+    // Method to ping the connection
+    ping(): void {
+        if (this.readyState === WebSocket.OPEN) {
+            this.isAlive = false;  // Will be set to true when pong is received
+            super.ping();
+        }
     }
 }
