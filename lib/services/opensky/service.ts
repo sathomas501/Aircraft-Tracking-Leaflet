@@ -1,5 +1,5 @@
 // lib/services/opensky/service.ts
-import type { Aircraft, PositionData } from '@/types/base';
+import type {PositionData } from '@/types/base';
 import { positionToAircraft } from './utils';
 import WebSocket from 'ws';
 import { errorHandler, ErrorType } from '../error-handler';
@@ -179,33 +179,54 @@ export class OpenSkyManager implements IOpenSkyService {
         });
     }
 
-    public static getInstance(config?: OpenSkyConfig): OpenSkyManager {
-        if (!OpenSkyManager.instance) {
-            OpenSkyManager.instance = new OpenSkyManager(config);
-        }
-        return OpenSkyManager.instance;
-    }
-
     // Update the getPositions method in OpenSkyService
-public async getPositions(icao24List: string[]): Promise<PositionData[]> {
-    try {
-        const response = await fetch('/api/opensky/positions', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ icao24List })
-        });
+    public async getPositions(icao24List?: string[]): Promise<PositionData[]> {
+        try {
+            // If no icao24List provided, use the subscribed ones
+            const targetIcao24s = icao24List || Array.from(this.subscribedIcao24s);
+            
+            if (targetIcao24s.length === 0) {
+                return [];
+            }
 
-        if (!response.ok) {
-            const error = await response.text();
-            throw new Error(`Failed to fetch positions: ${error}`);
+            const response = await fetch('/api/opensky/positions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ icao24List: targetIcao24s })
+            });
+
+            if (!response.ok) {
+                const error = await response.text();
+                throw new Error(`Failed to fetch positions: ${error}`);
+            }
+
+            return await response.json();
+        } catch (error) {
+            errorHandler.handleError(ErrorType.NETWORK, 'Failed to fetch positions');
+            throw error;
         }
-
-        return await response.json();
-    } catch (error) {
-        errorHandler.handleError(ErrorType.NETWORK, 'Failed to fetch positions');
-        throw error;
     }
+
+    public async getPositionsMap(): Promise<Map<string, PositionData>> {
+        const positions = await this.getPositions();
+        return new Map(positions.map(pos => [pos.icao24, pos]));
+    }
+
+ // Singleton instance getter
+ public static getInstance(config: OpenSkyConfig = {
+    username: process.env.OPENSKY_USERNAME || 'defaultUsername',
+    password: process.env.OPENSKY_PASSWORD || 'defaultPassword',
+    enableWebSocket: true,
+    syncInterval: 15000,
+    reconnectAttempts: 5,
+    reconnectDelay: 2000,
+}): OpenSkyManager {
+    if (!OpenSkyManager.instance) {
+        OpenSkyManager.instance = new OpenSkyManager(config);
+    }
+    return OpenSkyManager.instance;
 }
+
 
     public async subscribeToAircraft(icao24s: string[]): Promise<void> {
         icao24s.forEach(icao24 => this.subscribedIcao24s.add(icao24));
@@ -283,3 +304,12 @@ export const openSkyService = OpenSkyManager.getInstance({
     password: process.env.OPENSKY_PASSWORD,
     enableWebSocket: true
 });
+
+const defaultConfig: OpenSkyConfig = {
+    // Add your default config here
+};
+
+export const openSkyManager = OpenSkyManager.getInstance(defaultConfig);
+
+// Also export the class itself
+export default OpenSkyManager;

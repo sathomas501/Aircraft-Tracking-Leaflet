@@ -1,16 +1,16 @@
 // pages/api/icao24-verify.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { getActiveDb } from '@/lib/db/databaseManager';
+import { getDatabase } from '@/lib/db/databaseManager';
 import axios from 'axios';
 
-const db = await getActiveDb();
+const db = await getDatabase();
 
 export default async function handler(
     req: NextApiRequest,
     res: NextApiResponse
 ) {
     try {
-        const db = await getActiveDb();
+        const db = await getDatabase();
         
         // First, let's check all available manufacturers
         const manufacturersQuery = `

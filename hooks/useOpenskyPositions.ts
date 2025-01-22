@@ -55,22 +55,25 @@ export function useOpenSkyPositions({
     }, [icao24s, manufacturer]);
 
     const ws = useWebSocket
-        ? useOpenSkyWebSocket({
-              icao24List: icao24s,
-              manufacturer,
-              onData: (aircraftData) => {
-                  const updated = aircraftData.reduce((acc, aircraft) => {
-                      acc[aircraft.icao24] = aircraft;
-                      return acc;
-                  }, {} as Record<string, PositionData>);
-
-                  setPositions(updated);
-                  setIsLoading(false);
-              },
-              onError: setError,
-              onStatusChange: setConnectionStatus,
-          })
-        : null;
+    ? useOpenSkyWebSocket({
+          icao24List: icao24s,
+          manufacturer,
+          onData: (aircraftData) => {
+              const updated = aircraftData.reduce((acc, aircraft) => {
+                  // Use last_contact from the aircraft data as lastUpdate
+                  acc[aircraft.icao24] = {
+                      ...aircraft,
+                      lastUpdate: aircraft.last_contact * 1000 // Convert to milliseconds if needed
+                  };
+                  return acc;
+              }, {} as Record<string, PositionData>);
+              setPositions(updated);
+              setIsLoading(false);
+          },
+          onError: setError,
+          onStatusChange: setConnectionStatus,
+      })
+    : null;
 
     useEffect(() => {
         if (connectionStatus === 'connected' || !useWebSocket) return;

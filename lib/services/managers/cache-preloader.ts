@@ -1,16 +1,17 @@
-
-// lib/services/cache-preloader.ts
+// lib/services/managers/cache-preloader.ts
 import { aircraftCache } from './aircraft-cache';
-import { errorHandler, ErrorType } from './error-handler';
+import { errorHandler, ErrorType } from '../error-handler';
+
+interface Region {
+    lamin: number;
+    lomin: number;
+    lamax: number;
+    lomax: number;
+    description: string;
+}
 
 interface PreloadConfig {
-    regions?: {
-        lamin: number;
-        lomin: number;
-        lamax: number;
-        lomax: number;
-        description: string;
-    }[];
+    regions?: Region[];
     manufacturers?: string[];
     maxAircraftPerRegion?: number;
 }
@@ -60,10 +61,11 @@ class CachePreloaderService {
                     await this.preloadRegion(region, config.maxAircraftPerRegion);
                     this.updateProgress(((i + 1) / totalRegions) * 100);
                 } catch (error) {
-                    errorHandler.handleError(error, {
-                        type: ErrorType.DATA_ERROR,
-                        message: `Failed to preload region: ${region.description}`
-                    });
+                    errorHandler.handleError(
+                        ErrorType.DATA,
+                        error instanceof Error ? error : new Error('Unknown error occurred'),
+                        { region: region.description }
+                    );
                 }
 
                 if (i < totalRegions - 1) {
@@ -80,7 +82,7 @@ class CachePreloaderService {
         }
     }
 
-    private async preloadRegion(region: PreloadConfig['regions'][0], maxAircraft: number = 500): Promise<void> {
+    private async preloadRegion(region: Region, maxAircraft: number = 500): Promise<void> {
         try {
             const response = await fetch('/api/opensky', {
                 method: 'POST',
@@ -95,7 +97,8 @@ class CachePreloaderService {
             const data = await response.json();
             aircraftCache.updateFromRest(region.description, data);
         } catch (error) {
-            throw new Error(`Preloading failed for region ${region.description}: ${error.message}`);
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            throw new Error(`Preloading failed for region ${region.description}: ${errorMessage}`);
         }
     }
 
@@ -114,10 +117,11 @@ class CachePreloaderService {
                     }
                 }
             } catch (error) {
-                errorHandler.handleError(error, {
-                    type: ErrorType.DATA_ERROR,
-                    message: `Failed to preload manufacturer: ${manufacturer}`
-                });
+                errorHandler.handleError(
+                    ErrorType.DATA,
+                    error instanceof Error ? error : new Error('Unknown error occurred'),
+                    { manufacturer }
+                );
             }
             await this.delay(10000); // Rate limit
         }
@@ -127,12 +131,12 @@ class CachePreloaderService {
         return new Promise(resolve => setTimeout(resolve, ms));
     }
 
-    onProgress(listener: (progress: number) => void) {
+    onProgress(listener: (progress: number) => void): () => void {
         this.progressListeners.add(listener);
         return () => this.progressListeners.delete(listener);
     }
 
-    private updateProgress(progress: number) {
+    private updateProgress(progress: number): void {
         this.preloadProgress = progress;
         this.progressListeners.forEach(listener => listener(progress));
     }

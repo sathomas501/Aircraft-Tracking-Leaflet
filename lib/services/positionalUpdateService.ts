@@ -1,7 +1,8 @@
-// lib/services/positionUpdateService.ts
-import WebSocket from 'ws';
-import { openSkyAuth } from './opensky-auth';
+// position-update-service.ts
+import { WebSocketService, WebSocketConfig } from '@/lib/services/websocket/websocket-service';
 import { errorHandler, ErrorType } from './error-handler';
+import { PositionServiceFactory } from './position-service-factory';
+
 
 interface Position {
     icao24: string;
@@ -14,17 +15,23 @@ interface Position {
     last_contact: number;
 }
 
+
+
 export class PositionUpdateService {
     private static instance: PositionUpdateService;
-    private ws: WebSocket | null = null;
+    private wsService: WebSocketService;
     private positions: Map<string, Position> = new Map();
-    private isConnected = false;
-    private reconnectAttempts = 0;
-    private readonly MAX_RECONNECT_ATTEMPTS = 3;
-    private reconnectTimeout: NodeJS.Timeout | null = null;
     private updateCallback: ((positions: Position[]) => void) | null = null;
-    
-    private constructor() {}
+
+    private constructor() {
+        const config: WebSocketConfig = {
+            url: 'wss://opensky-network.org/api/states/all/ws',
+            reconnectAttempts: 3,
+            reconnectDelay: 5000,
+            authRequired: true
+        };
+        this.wsService = new WebSocketService(config);
+    }
 
     public static getInstance(): PositionUpdateService {
         if (!PositionUpdateService.instance) {
@@ -33,128 +40,20 @@ export class PositionUpdateService {
         return PositionUpdateService.instance;
     }
 
-    private async setupWebSocket(): Promise<void> {
-        if (this.ws) {
-            this.ws.close();
-            this.ws = null;
-        }
-
-        // Authenticate first
-        console.log('[WebSocket] Authenticating with OpenSky...');
-        const isAuthenticated = await openSkyAuth.authenticate();
-        
-        if (!isAuthenticated) {
-            console.error('[WebSocket] Authentication failed');
-            errorHandler.handleError(ErrorType.AUTH, 'Failed to authenticate with OpenSky');
-            return;
-        }
-
-        console.log('[WebSocket] Authentication successful, establishing connection...');
-
-        const wsUrl = 'wss://opensky-network.org/api/states/all/ws';
-        const headers = openSkyAuth.getAuthHeaders();
-
-        try {
-            this.ws = new WebSocket(wsUrl, {
-                headers,
-                handshakeTimeout: 10000
-            });
-
-            this.ws.on('open', () => {
-                console.log('[WebSocket] Connected successfully');
-                this.isConnected = true;
-                this.reconnectAttempts = 0;
-            });
-
-            this.ws.on('message', (data: WebSocket.Data) => {
-                try {
-                    const states = JSON.parse(data.toString());
-                    if (states && states.states) {
-                        this.processStates(states.states);
-                    }
-                } catch (error) {
-                    console.error('[WebSocket] Error processing message:', error);
-                }
-            });
-
-            this.ws.on('close', (code: number, reason: string) => {
-                console.log('[WebSocket] Connection closed:', { code, reason });
-                this.isConnected = false;
-                
-                if (code === 1006 || code === 1015) {
-                    // Connection error or TLS handshake error
-                    openSkyAuth.reset(); // Reset auth state
-                }
-                
-                this.handleReconnect();
-            });
-
-            this.ws.on('error', (error) => {
-                console.error('[WebSocket] Connection error:', error);
-                this.isConnected = false;
-                
-                if (error.message.includes('403')) {
-                    openSkyAuth.reset(); // Reset auth on forbidden
-                }
-                
-                this.handleReconnect();
-            });
-
-        } catch (error) {
-            console.error('[WebSocket] Setup error:', error);
-            this.handleReconnect();
+    private handleMessage(data: any): void {
+        if (data && data.states) {
+            this.processStates(data.states);
         }
     }
 
-    private handleReconnect(): void {
-        if (this.reconnectTimeout) {
-            clearTimeout(this.reconnectTimeout);
-            this.reconnectTimeout = null;
-        }
-
-        if (this.reconnectAttempts >= this.MAX_RECONNECT_ATTEMPTS) {
-            console.error('[WebSocket] Max reconnection attempts reached');
-            errorHandler.handleError(
-                ErrorType.WEBSOCKET, 
-                'Failed to establish WebSocket connection after multiple attempts'
-            );
-            return;
-        }
-
-        this.reconnectAttempts++;
-        const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000);
-        
-        console.log(`[WebSocket] Attempting to reconnect (${this.reconnectAttempts}/${this.MAX_RECONNECT_ATTEMPTS}) in ${delay}ms`);
-        
-        this.reconnectTimeout = setTimeout(() => {
-            this.setupWebSocket();
-        }, delay);
-
-        
-        async function setupWebSocket() {
-            console.log('[WebSocket] Authenticating with OpenSky...');
-            
-            const isAuthenticated = await openSkyAuth.authenticate();
-        
-            if (!isAuthenticated) {
-                console.error('[WebSocket] Authentication failed');
-                errorHandler.handleError(ErrorType.AUTH, 'Failed to authenticate with OpenSky');
-                return;
-            }
-        
-            console.log('[WebSocket] Authentication successful, establishing connection...');
-            // Proceed with WebSocket setup...
-        }
-        
-        
+    private handleError(error: Error): void {
+        errorHandler.handleError(ErrorType.WEBSOCKET, error.message);
     }
-
-    
 
     private processStates(states: any[]): void {
         const currentTime = Math.floor(Date.now() / 1000);
         const updatedPositions: Position[] = [];
-    
+
         states.forEach(state => {
             if (state && state[0] && state[5] && state[6]) {
                 const position: Position = {
@@ -171,67 +70,48 @@ export class PositionUpdateService {
                 updatedPositions.push(position);
             }
         });
-    
+
         if (updatedPositions.length > 0 && this.updateCallback) {
-            this.updateCallback(updatedPositions); // Batch updates to listeners
+            this.updateCallback(updatedPositions);
         }
-    }    
+    }
 
     public subscribe(callback: (positions: Position[]) => void): () => void {
         this.updateCallback = callback;
         
-        // Send initial positions if we have any
         if (this.positions.size > 0) {
             callback(Array.from(this.positions.values()));
         }
 
-        // Return unsubscribe function
         return () => {
             this.updateCallback = null;
         };
     }
 
     public async start(): Promise<void> {
-        if (!this.isConnected) {
-            console.log('[WebSocket] Starting connection...');
-            await this.setupWebSocket();
-        } else {
-            console.log('[WebSocket] Already connected.');
+        if (!this.wsService.isActive()) {
+            await this.wsService.connect(
+                this.handleMessage.bind(this),
+                this.handleError.bind(this)
+            );
         }
     }
 
     public stop(): void {
-        if (this.reconnectTimeout) {
-            clearTimeout(this.reconnectTimeout);
-            this.reconnectTimeout = null;
-        }
-        
-        if (this.ws) {
-            this.ws.close();
-            this.ws = null;
-        }
-        
-        this.isConnected = false;
+        this.wsService.disconnect();
         this.positions.clear();
         this.updateCallback = null;
     }
 
     public isActive(): boolean {
-        return this.isConnected;
+        return this.wsService.isActive();
     }
 
     public getCurrentPositions(): Position[] {
         return Array.from(this.positions.values());
     }
 
-    public async reconnect(): Promise<void> {
-        console.log('[WebSocket] Reconnecting...');
-        this.stop(); // Ensure previous connection is closed
-        await this.start();
-    }
-
     public clearPositions(): void {
-        console.log('[WebSocket] Clearing positions...');
         this.positions.clear();
         if (this.updateCallback) {
             this.updateCallback([]);

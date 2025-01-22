@@ -54,3 +54,12 @@ export interface AircraftMessage {
     CITY?: string;
     STATE?: string;
 }
+
+export interface OpenSkyPositionData {
+    // Define the properties of the OpenSky position data
+    icao24: string;
+    latitude: number;
+    longitude: number;
+    altitude: number | null;
+    velocity: number | null;
+}

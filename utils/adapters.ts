@@ -13,6 +13,8 @@ export const mapPositionDataToAircraft = (position: PositionData): Aircraft => (
   manufacturer: '',
   model: '',
   operator: '',
+  OWNER_TYPE: '',
+  TYPE_AIRCRAFT: '',
   NAME: '',
   CITY: '',
   STATE: '',

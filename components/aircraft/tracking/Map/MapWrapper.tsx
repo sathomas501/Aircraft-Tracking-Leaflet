@@ -8,6 +8,7 @@ import type { Aircraft } from '@/types/base';
 import { openSkyIntegrated } from '@/lib/services/opensky-integrated/opensky-integrated';
 import { errorHandler, ErrorType } from '@/lib/services/error-handler';
 
+// Dynamic imports
 const MapComponent = dynamic(() => import('./MapComponent'), {
     loading: () => <LoadingSpinner message="Loading map..." />,
     ssr: false,
@@ -18,6 +19,7 @@ const UnifiedSelector = dynamic(() => import('@/components/aircraft/selector/Uni
     ssr: false,
 });
 
+// Types
 interface ActiveCounts {
     active: number;
     total: number;
@@ -27,14 +29,11 @@ interface Manufacturer {
     label: string;
     activeCount?: number;
 }
+
 export function MapWrapper() {
-    // All state hooks
-    const [selectedManufacturer, setSelectedManufacturer] = useState<string>(
-        AIRCRAFT.DEFAULT_STATE.selectedManufacturer
-    );
-    const [selectedModel, setSelectedModel] = useState<string>(
-        AIRCRAFT.DEFAULT_STATE.selectedModel
-    );
+    // State hooks
+    const [selectedManufacturer, setSelectedManufacturer] = useState<string>(AIRCRAFT.DEFAULT_STATE.selectedManufacturer);
+    const [selectedModel, setSelectedModel] = useState<string>(AIRCRAFT.DEFAULT_STATE.selectedModel);
     const [manufacturers, setManufacturers] = useState<Manufacturer[]>([]);
     const [aircraft, setAircraft] = useState<Aircraft[]>([]);
     const [icao24List, setIcao24List] = useState<string[]>([]);
@@ -43,7 +42,7 @@ export function MapWrapper() {
     const [isLoading, setIsLoading] = useState(false);
     const [activeCounts, setActiveCounts] = useState<ActiveCounts>({ active: 0, total: 0 });
     const [error, setError] = useState<string | null>(null);
-
+    const [trackingStatus, setTrackingStatus] = useState<'idle' | 'loading' | 'complete' | 'error'>('idle');
 
     // Error handlers
     const networkError = errorHandler.useErrorHandler(ErrorType.NETWORK);
@@ -51,21 +50,15 @@ export function MapWrapper() {
     const rateLimitError = errorHandler.useErrorHandler(ErrorType.RATE_LIMIT);
     const authError = errorHandler.useErrorHandler(ErrorType.AUTH);
 
-    // All useMemo hooks
+    // Memoized values
     const filteredAircraft = useMemo(() => {
-        if (!selectedModel) {
-            console.log('Filtered aircraft without model filter:', aircraft); // Debugging statement
-            return aircraft;
-        }
-        const filtered = aircraft.filter((plane) => plane.model === selectedModel);
-        console.log('Filtered aircraft with model filter:', filtered); // Debugging statement
-        return filtered;
+        if (!selectedModel) return aircraft;
+        return aircraft.filter((plane) => plane.model === selectedModel);
     }, [aircraft, selectedModel]);
-    
 
     const modelCounts = useMemo(() => {
         const counts = new Map();
-        aircraft.forEach(plane => {
+        aircraft.forEach((plane) => {
             if (plane.model) {
                 const current = counts.get(plane.model) || 0;
                 counts.set(plane.model, current + 1);
@@ -74,144 +67,73 @@ export function MapWrapper() {
         return counts;
     }, [aircraft]);
 
-    // All useEffect hooks
+    // Callback functions
+    const handleManufacturerSelect = useCallback(async (manufacturer: string) => {
+        setIsLoading(true);
+        setError(null);
+        setTrackingStatus('loading');
 
-    useEffect(() => {
-        setIsMapReady(true); // Single instance of this hook
-    }, []);
-    
-    useEffect(() => {
-        if (!selectedManufacturer) return;
-    
-        const pollInterval = setInterval(async () => {
-            try {
-                const response = await fetch(`/api/aircraft/active-positions?manufacturer=${selectedManufacturer}`);
-                if (!response.ok) throw new Error('Failed to fetch positions');
-    
-                const data = await response.json();
-                console.log('Fetched data for positions:', data); // Debugging statement
-    
-                if (data.success) {
-                    setAircraft(data.positions);
-                    setActiveCounts((prev) => ({
-                        ...prev,
-                        active: data.activeCount,
-                    }));
-                }
-            } catch (error) {
-                console.error('Error polling positions:', error); // Debugging statement
+        try {
+            const response = await fetch('/api/aircraft/track-manufacturer', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ manufacturer }),
+            });
+
+            if (!response.ok) throw new Error(`Failed to track manufacturer: ${response.statusText}`);
+
+            const result = await response.json();
+
+            if (result.success) {
+                setSelectedManufacturer(manufacturer);
+                setManufacturers((prev) =>
+                    prev.map((m) => (m.value === manufacturer ? { ...m, activeCount: result.activeCount } : m))
+                );
+                setActiveCounts({ active: result.activeCount, total: result.totalCount || 0 });
+                setIcao24List(result.icao24s || []);
+                setTrackingStatus('complete');
+            } else {
+                throw new Error(result.message || 'Failed to track manufacturer');
             }
-        }, 30000);
-    
-        return () => clearInterval(pollInterval);
-    }, [selectedManufacturer]);
-    
-    
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Failed to track manufacturer');
+            setTrackingStatus('error');
+        } finally {
+            setIsLoading(false);
+        }
+    }, []);
+
+    const handleModelSelect = useCallback((model: string) => {
+        setSelectedModel(model);
+    }, []);
+
+    const toggleSelector = useCallback(() => {
+        setIsSelectorOpen((prev) => !prev);
+    }, []);
+
+    // Effects
+    useEffect(() => {
+        setIsMapReady(true);
+    }, []);
 
     useEffect(() => {
         if (!icao24List.length) return;
-    
+
         const unsubscribe = openSkyIntegrated.subscribe((updatedAircraft) => {
-            console.log('Updated aircraft received:', updatedAircraft); // Debugging statement
             setAircraft(updatedAircraft);
             setIsLoading(false);
-            setActiveCounts((prev) => ({
-                ...prev,
-                active: updatedAircraft.length,
-            }));
+            setActiveCounts((prev) => ({ ...prev, active: updatedAircraft.length }));
         });
-    
-        openSkyIntegrated.getAircraft(icao24List); // Initial fetch
-        console.log('Initial fetch for ICAO24 list:', icao24List); // Debugging statement
-    
+
+        openSkyIntegrated.getAircraft(icao24List);
         return () => unsubscribe();
     }, [icao24List]);
-    
-const [trackingStatus, setTrackingStatus] = useState<'idle' | 'loading' | 'complete' | 'error'>('idle');
 
-
-// All callback functions
-const handleManufacturerSelect = useCallback(async (manufacturer: string) => {
-    setIsLoading(true);
-    setError(null);
-
-    console.log('Manufacturer selected for tracking:', manufacturer); // Debugging statement
-
-    try {
-        const response = await fetch('/api/aircraft/track-manufacturer', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ manufacturer }),
-        });
-
-        if (!response.ok) {
-            throw new Error(`Failed to track manufacturer: ${response.statusText}`);
-        }
-
-        const result = await response.json();
-        console.log('Track manufacturer response:', result); // Debugging statement
-
-        if (result.success) {
-            setSelectedManufacturer(manufacturer);
-            if (result.activeCount !== undefined) {
-                setManufacturers((prev) =>
-                    prev.map((m: Manufacturer) =>
-                        m.value === manufacturer
-                            ? { ...m, activeCount: result.activeCount }
-                            : m
-                    )
-                );
-                setActiveCounts({
-                    active: result.activeCount,
-                    total: result.totalCount || 0,
-                });
-            }
-            if (result.icao24s) {
-                setIcao24List(result.icao24s);
-            }
-        } else {
-            throw new Error(result.message || 'Failed to track manufacturer');
-        }
-    } catch (err) {
-        console.error('Error tracking manufacturer:', err); // Debugging statement
-        setError(err instanceof Error ? err.message : 'Failed to track manufacturer');
-    } finally {
-        setIsLoading(false);
-    }
-}, []);
-
-
-const handleModelSelect = useCallback((model: string) => {
-    setSelectedModel(model);
-}, []);
-
-const toggleSelector = useCallback(() => {
-    setIsSelectorOpen(prev => !prev);
-}, []);
-
-
-    // Update getErrorMessage to handle null values safely
-    const getErrorMessage = (
-        rateLimitError: ReturnType<typeof errorHandler.useErrorHandler>,
-        authError: ReturnType<typeof errorHandler.useErrorHandler>,
-        wsError: ReturnType<typeof errorHandler.useErrorHandler>,
-        networkError: ReturnType<typeof errorHandler.useErrorHandler>
-    ): string | null => {
-        if (rateLimitError?.error) {
-            return `Rate limit: ${rateLimitError.error.message}`;
-        }
-        if (authError?.error) {
-            return 'Authentication failed. Some features may be limited.';
-        }
-        if ((wsError?.error && networkError?.error) || 
-            (wsError?.error && networkError?.isRetrying)) {
-            return 'Connection lost. Retrying...';
-        }
-        if (wsError?.error) {
-            return 'Real-time updates temporarily unavailable';
-        }
+    const getErrorMessage = (): string | null => {
+        if (rateLimitError?.error) return `Rate limit: ${rateLimitError.error.message}`;
+        if (authError?.error) return 'Authentication failed. Some features may be limited.';
+        if (wsError?.error && networkError?.error) return 'Connection lost. Retrying...';
+        if (wsError?.error) return 'Real-time updates temporarily unavailable';
         return null;
     };
 
@@ -223,85 +145,31 @@ const toggleSelector = useCallback(() => {
         );
     }
 
-    const errorMessage = getErrorMessage(rateLimitError, authError, wsError, networkError);
-
+    const errorMessage = getErrorMessage();
 
     return (
         <div className="relative w-full h-screen bg-gray-100">
             <div className="absolute inset-0">
                 <MapComponent aircraft={filteredAircraft} />
             </div>
-
-            <div className="absolute top-4 left-4 z-[1000] flex items-start space-x-3">
-                <button
-                    onClick={toggleSelector}
-                    className="bg-white p-2 rounded-full shadow-lg hover:bg-gray-100 transition-colors duration-200"
-                    title={isSelectorOpen ? 'Hide selector' : 'Show selector'}
-                >
+            <div className="absolute top-4 left-4 z-[1000]">
+                <button onClick={toggleSelector} className="bg-white p-2 rounded shadow">
                     <Menu size={24} />
                 </button>
-
                 {isSelectorOpen && (
-    <UnifiedSelector
-        selectedType=""
-        onManufacturerSelect={handleManufacturerSelect}
-        onModelSelect={handleModelSelect}
-        selectedManufacturer={selectedManufacturer}
-        selectedModel={selectedModel}
-        onAircraftUpdate={setAircraft}
-        modelCounts={modelCounts} // Add this prop
-        totalActive={aircraft.length} // Add this prop
-    />
-)}
+                    <UnifiedSelector
+                    selectedType=""
+                    onManufacturerSelect={handleManufacturerSelect}
+                    onModelSelect={handleModelSelect}
+                    selectedManufacturer={selectedManufacturer}
+                    selectedModel={selectedModel}
+                    onAircraftUpdate={setAircraft}
+                    modelCounts={modelCounts}
+                    totalActive={aircraft.length}
+                />
+                )}
             </div>
-
-            {isLoading && (
-                <div className="absolute top-4 right-4 z-[1000]">
-                    <LoadingSpinner message="Fetching aircraft data..." />
-                </div>
-            )}
-
-
-
-            {errorMessage && (
-                <div className="absolute top-4 right-4 z-[1000] bg-red-100 text-red-700 px-4 py-2 rounded-lg">
-                    {errorMessage}
-                </div>
-            )}
-
-            {!isLoading && !errorMessage && filteredAircraft.length > 0 && (
-                <div className="absolute top-4 right-4 z-[1000] bg-green-100 text-green-700 px-4 py-2 rounded-lg">
-                    {filteredAircraft.length} active aircraft
-                    {selectedModel && ` (${selectedModel})`}
-                </div>
-            )}
-
-{isLoading && (
-                <div className="absolute top-4 right-4 z-[1000] bg-white p-4 rounded-lg shadow-lg">
-                    <div className="flex items-center space-x-3">
-                        <LoadingSpinner />
-                        <div>
-                            <p className="font-medium">Tracking {selectedManufacturer}</p>
-                            <p className="text-sm text-gray-500">Getting active aircraft positions...</p>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {!isLoading && trackingStatus === 'complete' && !errorMessage && filteredAircraft.length > 0 && (
-                <div className="absolute top-4 right-4 z-[1000] bg-green-100 text-green-700 px-4 py-2 rounded-lg">
-                    {filteredAircraft.length} active aircraft
-                    {selectedModel && ` (${selectedModel})`}
-                </div>
-            )}
-
-            {trackingStatus === 'error' && (
-                <div className="absolute top-4 right-4 z-[1000] bg-red-100 text-red-700 px-4 py-2 rounded-lg">
-                    Failed to track aircraft. Please try again.
-                </div>
-            )}
+            {errorMessage && <div>{errorMessage}</div>}
         </div>
-
-        
     );
 }

@@ -1,5 +1,6 @@
 // types/base.ts
-
+import { OpenSkyState } from '@/types/api/opensky';
+import { OpenSkyError, OpenSkyErrorCode } from '@/lib/services/opensky-errors';
 /**
  * Base position interface with latitude and longitude
  */
@@ -216,3 +217,41 @@ export function normalizeTimestamp(timestamp: number | undefined): number {
   }
   return Math.floor(timestamp);
 }
+
+export function mapStateToPosition(state: OpenSkyState): PositionData {
+  // Validate required fields
+  if (state.latitude === undefined || state.longitude === undefined || 
+      state.last_contact === undefined) {
+      throw new OpenSkyError(
+          'Missing required position data',
+          OpenSkyErrorCode.INVALID_DATA
+      );
+  }
+
+  return {
+      icao24: state.icao24,
+      latitude: state.latitude,
+      longitude: state.longitude,
+      altitude: state.baro_altitude ?? 0,  // Default to 0 if undefined
+      velocity: state.velocity ?? 0,       // Default to 0 if undefined
+      heading: state.true_track ?? 0,      // Default to 0 if undefined
+      on_ground: state.on_ground ?? false, // Default to false if undefined
+      last_contact: state.last_contact
+  };
+}
+
+export type TrackingStatusType = 'idle' | 'loading' | 'complete' | 'error';
+
+
+export interface IActiveCounts {
+  active: number;
+  total: number;
+}
+
+export interface IManufacturer {
+  value: string;
+  label: string;
+  activeCount?: number;
+}
+
+

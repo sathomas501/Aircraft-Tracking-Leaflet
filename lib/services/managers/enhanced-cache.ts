@@ -1,10 +1,12 @@
-// lib/services/enhanced-cache.ts
+// lib/services/managers/enhanced-cache.ts
 import type { Aircraft } from '@/types/base';
 
 class EnhancedCache {
     private static instance: EnhancedCache;
     private cache: Map<string, { data: Aircraft; timestamp: number }> = new Map();
     private readonly TTL = 30000; // 30 seconds
+    private updateListeners: Set<(data: Aircraft[]) => void> = new Set();
+    private isUpdating = false;
 
     private constructor() {}
 
@@ -28,10 +30,15 @@ class EnhancedCache {
     }
 
     set(icao24: string, data: Aircraft): void {
+        if (this.isUpdating) return;
+        
+        this.isUpdating = true;
         this.cache.set(icao24, {
             data,
             timestamp: Date.now()
         });
+        this.notifyUpdateListeners([data]);
+        this.isUpdating = false;
     }
 
     update(aircraft: Aircraft[]): void {
@@ -42,6 +49,20 @@ class EnhancedCache {
                 timestamp: now
             });
         });
+        this.notifyUpdateListeners(aircraft);
+    }
+
+    delete(icao24: string): void {
+        this.cache.delete(icao24);
+    }
+
+    onUpdate(listener: (data: Aircraft[]) => void): () => void {
+        this.updateListeners.add(listener);
+        return () => this.updateListeners.delete(listener);
+    }
+
+    private notifyUpdateListeners(aircraft: Aircraft[]): void {
+        this.updateListeners.forEach(listener => listener(aircraft));
     }
 
     getLatestData(): Aircraft[] {

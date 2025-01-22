@@ -1,35 +1,57 @@
 // lib/services/error-handler/hook.ts
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { ErrorType, type ErrorDetails } from '@/lib/services/error-handler/types';
 import { errorHandler } from './index';
-import type { ErrorType, ErrorDetails } from './types';
 
-interface ErrorHookResult {
-    error: ErrorDetails | null;
-    isRetrying: boolean;
-    nextRetry: number | null;
-    clear: () => void;
+interface ErrorState {
+    current: ErrorDetails | null;
+    history: Map<ErrorType, ErrorDetails>;
 }
 
-export function useErrorHandler(type: ErrorType): ErrorHookResult | null {
-    const [error, setError] = useState<ErrorDetails | null>(errorHandler.getError(type));
-    const [retryStatus, setRetryStatus] = useState(errorHandler.getRetryStatus(type));
+export function useErrorHandler() {
+    const [errorState, setErrorState] = useState<ErrorState>({
+        current: null,
+        history: new Map()
+    });
 
     useEffect(() => {
-        // Subscribe to error updates
-        const unsubscribe = errorHandler.subscribe(type, (newError) => {
-            setError(newError);
-            setRetryStatus(errorHandler.getRetryStatus(type));
+        const handleError = (error: ErrorDetails) => {
+            setErrorState(prev => ({
+                current: error,
+                history: new Map(prev.history).set(error.type, error)
+            }));
+        };
+
+        // Subscribe to all error types using the error handler instance
+        const types = Object.values(ErrorType);
+        types.forEach(type => {
+            errorHandler.addHandler(type, handleError);
         });
 
-        return unsubscribe;
-    }, [type]);
+        // Cleanup subscriptions
+        return () => {
+            types.forEach(type => {
+                errorHandler.removeHandler(type, handleError);
+            });
+        };
+    }, []);
 
-    if (typeof window === 'undefined') return null;
+    const clearError = (type: ErrorType) => {
+        setErrorState(prev => {
+            const newHistory = new Map(prev.history);
+            newHistory.delete(type);
+            return {
+                current: prev.current?.type === type ? null : prev.current,
+                history: newHistory
+            };
+        });
+    };
 
     return {
-        error,
-        isRetrying: retryStatus.retrying,
-        nextRetry: retryStatus.nextRetry,
-        clear: () => errorHandler.clearError(type)
+        currentError: errorState.current,
+        errorHistory: errorState.history,
+        clearError,
+        hasError: (type: ErrorType) => errorState.history.has(type),
+        getError: (type: ErrorType) => errorState.history.get(type)
     };
 }

@@ -1,236 +1,188 @@
-import axios from 'axios';
+import { RateLimiter } from './rate-limiter';
+import CacheManager from '@/lib/services/managers/cache-manager';
+import { OPENSKY_API_CONFIG } from '@/lib/config/opensky';
+import { wsAuth } from '@/lib/services/websocket/websocket-auth';
+import { WebSocketHandler } from '@/lib/services/websocket/ws-handler';
 import WebSocket from 'ws';
-import { EventEmitter } from 'events';
-import { errorHandler, ErrorType } from './error-handler';
-import type { PositionData } from '@/types/base';
+import { ExtendedAircraft } from '@/lib/services/opensky-integrated';
+import { IOpenSkyService, PositionData, PositionUpdateCallback, OpenSkyState } from '@/types/opensky/index';
+import type { WebSocketClient } from '@/types/websocket';
 
-const OPENSKY_BASE_URL = 'https://opensky-network.org/api';
-const OPENSKY_WS_URL = 'wss://opensky-network.org/api/websocket';
-const OPENSKY_USERNAME = process.env.OPENSKY_USERNAME;
-const OPENSKY_PASSWORD = process.env.OPENSKY_PASSWORD;
+export class OpenSkyWebSocket implements IOpenSkyService {
+    private socket: WebSocket | null = null;
+    private wsHandler: WebSocketHandler;
+    private cache: CacheManager<PositionData>;
+    private rateLimiter: RateLimiter;
+    private username: string | null = null;
+    private positionCallbacks: Set<PositionUpdateCallback> = new Set();
+    private lastUpdate: number = Date.now();
 
-export class OpenSkyManager extends EventEmitter {
-    private static instance: OpenSkyManager;
-    private lastRequestTime: number = 0;
-    private readonly MIN_REQUEST_INTERVAL = 5000; // 5 seconds between requests
-    private clients: Set<WebSocket> = new Set();
-    private ws: WebSocket | null = null;
-    private wsReconnectTimeout: NodeJS.Timeout | null = null;
-    private wsHeartbeatInterval: NodeJS.Timeout | null = null;
-    private activeSubscriptions: Set<string> = new Set();
-
-    private constructor() {
-        super();
+    constructor() {
+        this.wsHandler = new WebSocketHandler(this);
+        this.subscriptions = new Map();
+        this.username = OPENSKY_API_CONFIG.AUTH.USERNAME;
+        this.cache = new CacheManager<PositionData>(OPENSKY_API_CONFIG.CACHE.TTL.POSITION);
+        this.rateLimiter = new RateLimiter({
+            requestsPerMinute: OPENSKY_API_CONFIG.RATE_LIMITS.REQUESTS_PER_MINUTE,
+            requestsPerDay: OPENSKY_API_CONFIG.RATE_LIMITS.REQUESTS_PER_DAY,
+        });
     }
 
-    public static getInstance(): OpenSkyManager {
-        if (!OpenSkyManager.instance) {
-            OpenSkyManager.instance = new OpenSkyManager();
+    async getAircraft(icao24List: string[]): Promise<ExtendedAircraft[]> {
+        if (!(await this.rateLimiter.tryAcquire())) {
+            throw new Error('Rate limit exceeded. Please wait before retrying.');
         }
-        return OpenSkyManager.instance;
-    }
 
-    private getAuthHeaders() {
-        if (OPENSKY_USERNAME && OPENSKY_PASSWORD) {
-            const auth = Buffer.from(`${OPENSKY_USERNAME}:${OPENSKY_PASSWORD}`).toString('base64');
-            return { Authorization: `Basic ${auth}` };
-        }
-        return {};
-    }
+        const headers = wsAuth.getAuthHeaders();
+        const results: ExtendedAircraft[] = [];
 
-    private async enforceRateLimit(): Promise<void> {
-        const now = Date.now();
-        const timeSinceLastRequest = now - this.lastRequestTime;
-        if (timeSinceLastRequest < this.MIN_REQUEST_INTERVAL) {
-            await new Promise((resolve) =>
-                setTimeout(resolve, this.MIN_REQUEST_INTERVAL - timeSinceLastRequest)
-            );
-        }
-        this.lastRequestTime = Date.now();
-    }
-
-    // WebSocket Client Management
-    public addClient(client: WebSocket): void {
-        this.clients.add(client);
-        client.on('close', () => this.removeClient(client));
-        
-        // If this is our first client, initialize WebSocket connection
-        if (this.clients.size === 1) {
-            this.initializeWebSocket();
-        }
-    }
-
-    public removeClient(client: WebSocket): void {
-        this.clients.delete(client);
-        
-        // If no more clients, clean up WebSocket connection
-        if (this.clients.size === 0) {
-            this.cleanup();
-        }
-    }
-
-    private async initializeWebSocket(): Promise<void> {
-        if (this.ws) return;
-
-        try {
-            this.ws = new WebSocket(OPENSKY_WS_URL);
-
-            this.ws.on('open', () => {
-                console.log('[OpenSky WS] Connected');
-                this.setupHeartbeat();
-                this.authenticate();
-            });
-
-            this.ws.on('message', (data: WebSocket.Data) => {
-                try {
-                    const message = JSON.parse(data.toString());
-                    this.handleWebSocketMessage(message);
-                } catch (error) {
-                    console.error('[OpenSky WS] Error parsing message:', error);
+        for (const icao24 of icao24List) {
+            try {
+                const response = await fetch(
+                    `${OPENSKY_API_CONFIG.BASE_URL}/extended/${icao24}`,
+                    { headers }
+                );
+                if (response.ok) {
+                    const data = await response.json();
+                    results.push(data);
                 }
-            });
-
-            this.ws.on('close', () => {
-                console.log('[OpenSky WS] Connection closed');
-                this.handleWebSocketDisconnect();
-            });
-
-            this.ws.on('error', (error) => {
-                console.error('[OpenSky WS] Error:', error);
-                this.handleWebSocketDisconnect();
-            });
-
-        } catch (error) {
-            console.error('[OpenSky WS] Failed to initialize:', error);
-            this.handleWebSocketDisconnect();
-        }
-    }
-
-    private setupHeartbeat(): void {
-        if (this.wsHeartbeatInterval) {
-            clearInterval(this.wsHeartbeatInterval);
-        }
-
-        this.wsHeartbeatInterval = setInterval(() => {
-            if (this.ws?.readyState === WebSocket.OPEN) {
-                this.ws.send(JSON.stringify({ type: 'ping' }));
+            } catch (error) {
+                console.error('Error fetching aircraft:', error);
             }
-        }, 30000);
+        }
+
+        return results;
     }
 
-    private authenticate(): void {
-        if (!this.ws || !OPENSKY_USERNAME || !OPENSKY_PASSWORD) return;
+    getAuthStatus(): boolean {
+        // Implementation
+        return true;
+    }
 
-        const auth = Buffer.from(`${OPENSKY_USERNAME}:${OPENSKY_PASSWORD}`).toString('base64');
-        this.ws.send(JSON.stringify({
-            type: 'auth',
-            data: { auth }
+    connect(): void {
+        // Implementation for WebSocket connection
+    }
+
+    private subscriptions: Map<string, (data: any) => void>;
+
+    // Subscribe to a topic
+    subscribe(topic: string, callback: (data: any) => void): void {
+        console.log(`Subscribed to topic: ${topic}`);
+        this.subscriptions.set(topic, callback);
+    }
+
+    // Unsubscribe from a topic
+    unsubscribe(topic: string): void {
+        if (this.subscriptions.has(topic)) {
+            console.log(`Unsubscribed from topic: ${topic}`);
+            this.subscriptions.delete(topic);
+        } else {
+            console.warn(`No subscription found for topic: ${topic}`);
+        }
+    }
+
+    // Example method to trigger callbacks
+    notifySubscribers(topic: string, data: any): void {
+        const callback = this.subscriptions.get(topic);
+        if (callback) {
+            callback(data);
+        }
+    }
+
+    async getPositions(icao24List?: string[]): Promise<PositionData[]> {
+        if (!(await this.rateLimiter.tryAcquire())) {
+            throw new Error('Rate limit exceeded. Please wait before retrying.');
+        }
+
+        const headers = wsAuth.getAuthHeaders();
+        try {
+            const url = icao24List?.length 
+                ? `${OPENSKY_API_CONFIG.BASE_URL}/states/all?icao24=${icao24List.join(',')}`
+                : `${OPENSKY_API_CONFIG.BASE_URL}/states/all`;
+
+            const response = await fetch(url, { headers });
+            if (!response.ok) return [];
+            const data = await response.json();
+            return this.parsePositionData(data.states);
+        } catch (error) {
+            console.error('Error fetching positions:', error);
+            return [];
+        }
+    }
+
+    async subscribeToAircraft(icao24s: string[]): Promise<void> {
+        if (this.socket?.readyState === WebSocket.OPEN) {
+            this.socket.send(JSON.stringify({ 
+                type: 'subscribe', 
+                data: { icao24s }
+            }));
+        }
+    }
+
+    unsubscribeFromAircraft(icao24s: string[]): void {
+        if (this.socket?.readyState === WebSocket.OPEN) {
+            this.socket.send(JSON.stringify({
+                type: 'unsubscribe',
+                data: { icao24s }
+            }));
+        }
+    }
+
+    addClient(client: WebSocketClient): void {
+        this.wsHandler.addClient(client);
+    }
+
+    removeClient(client: WebSocketClient): void {
+        this.wsHandler.removeClient(client);
+    }
+
+    onPositionUpdate(callback: PositionUpdateCallback): void {
+        this.positionCallbacks.add(callback);
+    }
+
+    removePositionUpdateCallback(callback: PositionUpdateCallback): void {
+        this.positionCallbacks.delete(callback);
+    }
+
+    getState(): OpenSkyState {
+        return {
+            authenticated: wsAuth.isAuthenticated(),
+            username: this.username,
+            connected: this.socket?.readyState === WebSocket.OPEN,
+            lastUpdate: this.lastUpdate
+        };
+    }
+
+    private parsePositionData(states: any[]): PositionData[] {
+        return states.map(state => ({
+            icao24: state[0],
+            latitude: state[6] || 0,
+            longitude: state[5] || 0,
+            altitude: state[7] || 0,
+            velocity: state[9] || 0,
+            heading: state[10] || 0,
+            on_ground: Boolean(state[8]),
+            last_contact: state[4] || 0
         }));
     }
 
-    private handleWebSocketMessage(message: any): void {
-        // Broadcast to all connected clients
-        const messageStr = JSON.stringify(message);
-        this.clients.forEach(client => {
-            if (client.readyState === WebSocket.OPEN) {
-                client.send(messageStr);
+    private async notifyCallbacks(positions: PositionData[]): Promise<void> {
+        for (const callback of this.positionCallbacks) {
+            try {
+                await callback(positions);
+            } catch (error) {
+                console.error('Error in position update callback:', error);
             }
-        });
-
-        // Emit events for hook consumption
-        this.emit('stateVector', message);
-    }
-
-    private handleWebSocketDisconnect(): void {
-        if (this.wsHeartbeatInterval) {
-            clearInterval(this.wsHeartbeatInterval);
-            this.wsHeartbeatInterval = null;
-        }
-
-        if (this.ws) {
-            this.ws.removeAllListeners();
-            this.ws = null;
-        }
-
-        // Attempt to reconnect after delay
-        if (this.wsReconnectTimeout) {
-            clearTimeout(this.wsReconnectTimeout);
-        }
-
-        this.wsReconnectTimeout = setTimeout(() => {
-            if (this.clients.size > 0) {
-                this.initializeWebSocket();
-            }
-        }, 5000);
-    }
-
-    public async fetchPositions(icao24List: string[]): Promise<PositionData[]> {
-        await this.enforceRateLimit();
-
-        if (!icao24List.length) {
-            console.log('No ICAO24s provided');
-            return [];
-        }
-
-        console.log(`[DEBUG] Fetching positions for ${icao24List.length} aircraft`);
-
-        try {
-            const url = new URL(`${OPENSKY_BASE_URL}/states/all`);
-            url.searchParams.append('icao24', icao24List.join(','));
-
-            const response = await axios.get(url.toString(), {
-                headers: this.getAuthHeaders(),
-                timeout: 10000,
-            });
-
-            if (response.data && Array.isArray(response.data.states)) {
-                console.log(`[DEBUG] Found ${response.data.states.length} active aircraft positions`);
-                return response.data.states;
-            }
-
-            return [];
-        } catch (error) {
-            if (axios.isAxiosError(error)) {
-                if (error.response?.status === 429) {
-                    errorHandler.handleError(ErrorType.RATE_LIMIT, 'OpenSky rate limit exceeded');
-                } else if (error.response?.status === 403) {
-                    errorHandler.handleError(ErrorType.AUTH, 'OpenSky authentication failed');
-                } else if (error.code === 'ECONNABORTED') {
-                    errorHandler.handleError(ErrorType.NETWORK, 'OpenSky request timeout');
-                } else {
-                    errorHandler.handleError(ErrorType.NETWORK, `OpenSky request failed: ${error.message}`);
-                }
-            } else {
-                errorHandler.handleError(
-                    ErrorType.DATA,
-                    'Failed to fetch positions from OpenSky',
-                    error instanceof Error ? error : new Error('Unknown error')
-                );
-            }
-            console.error('[ERROR] Failed to fetch positions:', error);
-            throw error;
         }
     }
 
-    public cleanup(): void {
-        if (this.wsHeartbeatInterval) {
-            clearInterval(this.wsHeartbeatInterval);
-            this.wsHeartbeatInterval = null;
+    async cleanup(): Promise<void> {
+        if (this.socket) {
+            this.socket.close();
+            this.socket = null;
         }
-
-        if (this.wsReconnectTimeout) {
-            clearTimeout(this.wsReconnectTimeout);
-            this.wsReconnectTimeout = null;
-        }
-
-        if (this.ws) {
-            this.ws.close();
-            this.ws = null;
-        }
-
-        this.clients.clear();
-        this.activeSubscriptions.clear();
+        this.positionCallbacks.clear();
+        this.cache.flush();
+        await this.wsHandler.cleanup();
     }
 }
-
-export const openSkyManager = OpenSkyManager.getInstance();

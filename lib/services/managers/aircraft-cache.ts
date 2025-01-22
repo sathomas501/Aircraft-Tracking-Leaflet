@@ -1,3 +1,5 @@
+//lib/services/managers/aircraft-cache.ts
+
 import type { OpenSkyAircraft } from '@/types/opensky';
 
 export interface CachedRegionData {
@@ -22,6 +24,17 @@ class AircraftCache {
         });
     }
 
+    clearRegion(description: string): void {
+        const regionData = this.regionData.get(description);
+        if (regionData) {
+            // Remove aircraft in this region from the main cache
+            regionData.aircraft.forEach(aircraft => {
+                this.cache.delete(aircraft.icao24);
+            });
+            this.regionData.delete(description);
+        }
+    }
+
     getLatestData(): { aircraft: OpenSkyAircraft[] } {
         return { aircraft: Array.from(this.cache.values()) };
     }
@@ -36,5 +49,4 @@ class AircraftCache {
     }
 }
 
-// Export the singleton instance directly
 export const aircraftCache = new AircraftCache();

@@ -1,9 +1,7 @@
 // pages/api/positions.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
 import type { Aircraft } from '@/types/base';
-import { getActiveDb } from '@/lib/db/databaseManager';
-
-const db = await getActiveDb();
+import { getDatabase} from '@/lib/db/databaseManager';
 
 interface PositionsResponse {
   aircraft?: Aircraft[];
@@ -28,7 +26,11 @@ export default async function handler(
   }
 
   try {
-    const db = await getActiveDb();
+    const db = await getDatabase();
+    if (!db) {
+      throw new Error('No active database connection');
+    }
+
     const placeholders = icao24s.map(() => '?').join(',');
     const query = `
       SELECT icao24, manufacturer, model
@@ -41,8 +43,9 @@ export default async function handler(
     res.status(200).json({ aircraft });
   } catch (error) {
     console.error('Error fetching aircraft:', error);
-    res.status(500).json({ 
-      error: 'Failed to fetch aircraft',
+    const statusCode = (error as Error).message === 'No active database connection' ? 503 : 500;
+    res.status(statusCode).json({ 
+      error: statusCode === 503 ? 'Database unavailable' : 'Failed to fetch aircraft',
       message: process.env.NODE_ENV === 'development' ? (error as Error).message : undefined
     });
   }

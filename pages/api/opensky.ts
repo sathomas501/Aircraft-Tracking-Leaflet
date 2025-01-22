@@ -1,62 +1,51 @@
+// pages/api/opensky.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { OpenSkyManager } from '@/lib/services/openSkyService';
+import { OpenSkyWebSocket } from '@/lib/services/openSkyService';
 
-const openSkyService = OpenSkyManager.getInstance();
+// Create singleton instance
+let openSkyService: OpenSkyWebSocket | null = null;
 
-function handleWebSocket(server: any): void {
-    server.on('connection', (wsClient: any) => {
-        (openSkyService as any).addClient(wsClient);
-
-        wsClient.on('close', () => {
-            console.log('WebSocket client disconnected');
-            (openSkyService as any).removeClient(wsClient);
-        });
-
-        const pingInterval = setInterval(() => {
-            if (wsClient.isAlive === false) {
-                wsClient.terminate();
-                clearInterval(pingInterval);
-                return;
-            }
-            wsClient.isAlive = false;
-            wsClient.ping();
-        }, 30000);
-
-        wsClient.on('close', () => {
-            clearInterval(pingInterval);
-        });
-    });
+function getOpenSkyService(): OpenSkyWebSocket {
+    if (!openSkyService) {
+        openSkyService = new OpenSkyWebSocket();
+    }
+    return openSkyService;
 }
 
+interface OpenSkyResponse {
+    data?: any;
+    error?: string;
+    message?: string;
+}
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-    const { icao24s } = req.query;
-
-    if (!icao24s || (typeof icao24s !== 'string' && !Array.isArray(icao24s))) {
-        return res.status(400).json({ error: 'Missing or invalid icao24s parameter' });
-    }
-
+export default async function handler(
+    req: NextApiRequest,
+    res: NextApiResponse<OpenSkyResponse>
+) {
     try {
-        // Ensure icaoList is an array
-        const icaoList = Array.isArray(icao24s) ? icao24s : icao24s.split(',');
+        const service = getOpenSkyService();
+        const { icao24s, manufacturer } = req.query;
 
-        // Get OpenSkyManager instance
-        const openSkyManager = OpenSkyManager.getInstance();
+        // Handle different types of requests
+        if (icao24s) {
+            const icao24List = Array.isArray(icao24s) ? icao24s : [icao24s];
+            const positions = await service.getPositions(icao24List);
+            return res.status(200).json({ data: positions });
+        }
 
-        // Handle each ICAO24 separately if `getAircraft` supports only single string arguments
-        const positions = await Promise.all(
-            icaoList.map((icao24) => openSkyManager.getAircraft(icao24))
-        );
+        if (manufacturer) {
+            const aircraft = await service.getAircraft([manufacturer as string]);
+            return res.status(200).json({ data: aircraft });
+        }
 
-        res.status(200).json({ aircraft: positions.filter(Boolean) }); // Filter out null/undefined
+        // Default to getting all positions
+        const positions = await service.getPositions();
+        res.status(200).json({ data: positions });
     } catch (error) {
         console.error('OpenSky API error:', error);
-        res.status(500).json({ error: 'Failed to fetch from OpenSky' });
+        res.status(500).json({
+            error: 'Failed to fetch data from OpenSky Network',
+            message: process.env.NODE_ENV === 'development' ? (error as Error).message : undefined
+        });
     }
 }
-
-export const config = {
-    api: {
-        bodyParser: false,
-    },
-};

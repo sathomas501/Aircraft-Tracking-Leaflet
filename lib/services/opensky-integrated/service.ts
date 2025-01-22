@@ -1,4 +1,4 @@
-import  {getActiveDb }  from '@/lib/db/databaseManager'
+
 import type { WebSocketClient } from '@/types/websocket'
 import type { IOpenSkyService } from '@/lib/services/opensky-integrated/types';
 import type { PositionData } from '@/types/base';
@@ -41,6 +41,8 @@ export class OpenSkyIntegratedService implements IOpenSkyService {
             NAME: 'Unknown',
             CITY: 'Unknown',
             STATE: 'Unknown',
+            OWNER_TYPE:'Unknown',
+            TYPE_AIRCRAFT: 'Unknown',
             isTracked: false,
         }));
     }

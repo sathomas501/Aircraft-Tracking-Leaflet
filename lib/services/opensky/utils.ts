@@ -17,6 +17,8 @@ export function positionToAircraft(position: PositionData): Aircraft {
         velocity: position.velocity || 0,  // Provide default value
         on_ground: position.on_ground,
         last_contact: position.last_contact,
+        TYPE_AIRCRAFT: "",
+        OWNER_TYPE: "",
         NAME: "",
         CITY: "",
         STATE: "",
@@ -38,6 +40,8 @@ export function openSkyToAircraft(aircraft: OpenSkyAircraft): Aircraft {
         velocity: aircraft.velocity ?? 0,    // Use nullish coalescing
         on_ground: aircraft.on_ground,
         last_contact: aircraft.last_contact,
+        OWNER_TYPE: "",
+        TYPE_AIRCRAFT: "",
         NAME: "",
         CITY: "",
         STATE: "",

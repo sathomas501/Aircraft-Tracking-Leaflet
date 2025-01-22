@@ -2,11 +2,13 @@ import type { WebSocketClient, WebSocketMessage } from '@/types/websocket';
 import type { IOpenSkyService } from '@/types/opensky/index';
 import type { Aircraft } from '@/types/base';
 import type { AircraftStatus } from '@/types/database';
-import { enhancedCache } from './enhanced-cache';
-import { errorHandler, ErrorType } from './error-handler';
-import DatabaseManager from '@/lib/db/databaseManager';
+import { enhancedCache } from '@/lib/services/managers/enhanced-cache'; // Fixed import path
+import { errorHandler, ErrorType } from '@/lib/services/error-handler';
+import { getDatabase, allQuery, runQuery } from '@/lib/db/databaseManager';
 
-const { getDb, updateAircraftStatus, clearActiveStatus } = DatabaseManager;
+interface IcaoRow {
+    icao24: string;
+}
 
 export class WebSocketHandler {
     private clients: Set<WebSocketClient> = new Set();
@@ -105,14 +107,25 @@ export class WebSocketHandler {
     private async updateDatabaseWithPositions(aircraft: Aircraft[]): Promise<void> {
         try {
             const updatePromises = aircraft.map((plane) =>
-                updateAircraftStatus(plane.icao24, {
-                    latitude: plane.latitude,
-                    longitude: plane.longitude,
-                    altitude: plane.altitude,
-                    velocity: plane.velocity,
-                    heading: plane.heading,
-                    on_ground: plane.on_ground,
-                } as AircraftStatus)
+                runQuery<void>(
+                    `UPDATE aircraft SET 
+                        latitude = ?, 
+                        longitude = ?, 
+                        altitude = ?,
+                        velocity = ?,
+                        heading = ?,
+                        on_ground = ?
+                    WHERE icao24 = ?`,
+                    [
+                        plane.latitude,
+                        plane.longitude,
+                        plane.altitude,
+                        plane.velocity,
+                        plane.heading,
+                        plane.on_ground,
+                        plane.icao24
+                    ]
+                )
             );
     
             await Promise.all(updatePromises);
@@ -131,14 +144,17 @@ export class WebSocketHandler {
     
             if (this.currentManufacturer && this.currentManufacturer !== manufacturer) {
                 console.log('[DEBUG] Clearing active status for:', this.currentManufacturer);
-                await clearActiveStatus(this.currentManufacturer);
+                await runQuery<void>(
+                    'UPDATE aircraft SET active = 0 WHERE manufacturer = ?',
+                    [this.currentManufacturer]
+                );
             }
     
             this.currentManufacturer = manufacturer;
     
             if (manufacturer) {
-                const db = await getDb();
-                const icao24s = await db.all<{ icao24: string }[]>(
+                const db = await getDatabase();
+                const icao24s = await allQuery<IcaoRow>(
                     'SELECT icao24 FROM aircraft WHERE manufacturer = ?',
                     [manufacturer]
                 );
@@ -146,10 +162,10 @@ export class WebSocketHandler {
                 console.log('[DEBUG] Retrieved ICAO24 list for manufacturer:', icao24s);
     
                 this.clients.forEach((client) => {
-                    client.aircraftFilter = icao24s.map((row) => row.icao24);
+                    client.aircraftFilter = icao24s.map((row: IcaoRow) => row.icao24);
                 });
             }
-        } catch (error) {
+        } catch (error: unknown) {
             console.error('[DEBUG] Error setting manufacturer:', error);
             errorHandler.handleError(
                 ErrorType.DATA,
@@ -158,7 +174,6 @@ export class WebSocketHandler {
             );
         }
     }
-    
 
     public addClient(client: WebSocketClient): void {
         this.clients.add(client);
@@ -179,12 +194,12 @@ export class WebSocketHandler {
                     ? data
                           .map((aircraft) => ({
                               ...aircraft,
-                              model: aircraft.model ?? 'Unknown', // Provide default model
+                              model: aircraft.model ?? 'Unknown',
                           }))
                           .filter((aircraft) => client.aircraftFilter?.includes(aircraft.icao24))
                     : data.map((aircraft) => ({
                           ...aircraft,
-                          model: aircraft.model ?? 'Unknown', // Provide default model
+                          model: aircraft.model ?? 'Unknown',
                       }));
     
                 const message: WebSocketMessage = {
@@ -194,7 +209,7 @@ export class WebSocketHandler {
                 };
     
                 client.send(JSON.stringify(message));
-            } catch (error) {
+            } catch (error: unknown) {
                 console.error('Error sending to client:', error);
                 this.removeClient(client);
                 errorHandler.handleError(
@@ -219,7 +234,10 @@ export class WebSocketHandler {
         this.clients.clear();
 
         if (this.currentManufacturer) {
-            clearActiveStatus(this.currentManufacturer).catch((error) => {
+            runQuery<void>(
+                'UPDATE aircraft SET active = 0 WHERE manufacturer = ?',
+                [this.currentManufacturer]
+            ).catch((error: unknown) => {
                 errorHandler.handleError(
                     ErrorType.DATA,
                     'Failed to clear active status during cleanup',

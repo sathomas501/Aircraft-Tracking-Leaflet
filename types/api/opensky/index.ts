@@ -1,4 +1,6 @@
 // types/api/opensky/index.ts
+import { PositionData } from '@/types/base';
+import { parsePositionData } from './utils';
 export * from './interfaces';
 export * from './messages';
 export * from './utils';

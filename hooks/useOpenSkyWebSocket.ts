@@ -1,27 +1,11 @@
 import { useEffect, useCallback, useRef, useState } from 'react';
-
-// Define types for aircraft and connection status
-interface Aircraft {
-    icao24: string;
-    latitude: number;
-    longitude: number;
-    altitude?: number;
-    velocity?: number;
-    heading?: number;
-    model?: string;
-    manufacturer?: string;
-    lastUpdate: number;
-}
-
-interface CachedRegionData {
-    description: string;
-    aircraft: Aircraft[];
-}
+import { OpenSkyWebSocket } from '@/lib/services/openSkyService';
+import { ExtendedAircraft } from '@/lib/services/opensky-integrated';
 
 export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
 
 interface UseWebSocketOptions {
-    onData?: (data: Aircraft[]) => void;
+    onData?: (data: ExtendedAircraft[]) => void;
     onError?: (error: Error) => void;
     onStatusChange?: (status: ConnectionStatus) => void;
     icao24List?: string[];
@@ -37,47 +21,39 @@ export function useOpenSkyWebSocket({
     manufacturer,
     interpolate = true,
 }: UseWebSocketOptions = {}) {
-    const wsRef = useRef<WebSocket | null>(null);
+    const serviceRef = useRef<OpenSkyWebSocket | null>(null);
     const interpolationFrameRef = useRef<number>();
     const [status, setStatus] = useState<ConnectionStatus>('disconnected');
     const [error, setError] = useState<Error | null>(null);
 
-    // Internal caching logic
-    const cache = useRef<Map<string, Aircraft>>(new Map());
+    const lastUpdateRef = useRef<number>(Date.now());
+    const currentAircraftRef = useRef<ExtendedAircraft[]>([]);
 
-    // Update aircraft data from WebSocket messages
-    const updateFromWebSocket = useCallback((data: Aircraft[]) => {
-        const timestamp = Date.now();
-
-        data.forEach((aircraft) => {
-            if (aircraft.icao24) {
-                cache.current.set(aircraft.icao24, { ...aircraft, lastUpdate: timestamp });
-            }
-        });
+    const updateFromWebSocket = useCallback((data: ExtendedAircraft[]) => {
+        currentAircraftRef.current = data;
+        lastUpdateRef.current = Date.now();
 
         if (onData) {
             onData(data);
         }
     }, [onData]);
 
-    // Interpolate aircraft positions based on velocity and heading
     const interpolatePositions = useCallback(() => {
-        if (!interpolate) return;
+        if (!interpolate || !currentAircraftRef.current.length) return;
 
         const now = Date.now();
-        const deltaTime = (now - (cache.current.get('lastUpdate')?.lastUpdate ?? now)) / 1000; // seconds
+        const deltaTime = (now - lastUpdateRef.current) / 1000;
 
-        const interpolated = Array.from(cache.current.values()).map((aircraft) => {
+        const interpolated = currentAircraftRef.current.map((aircraft) => {
             if (!aircraft.velocity || !aircraft.heading) return aircraft;
 
-            const distance = (aircraft.velocity * deltaTime) / 3600; // Convert to degrees
+            const distance = (aircraft.velocity * deltaTime) / 3600;
             const headingRad = (aircraft.heading * Math.PI) / 180;
 
             return {
                 ...aircraft,
                 latitude: aircraft.latitude + distance * Math.cos(headingRad),
-                longitude: aircraft.longitude + distance * Math.sin(headingRad),
-                lastUpdate: now,
+                longitude: aircraft.longitude + distance * Math.sin(headingRad)
             };
         });
 
@@ -88,86 +64,102 @@ export function useOpenSkyWebSocket({
         interpolationFrameRef.current = requestAnimationFrame(interpolatePositions);
     }, [interpolate, onData]);
 
-    // Handle WebSocket connection
-    const setupWebSocket = useCallback(() => {
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsUrl = `${protocol}//${window.location.host}/api/websocket`;
+    // Connection setup
+const setupConnection = useCallback(() => {
+    if (typeof window === 'undefined') return () => {};
+    
+    let cleanup = () => {};
+    
+    try {
+        // Create new instance if needed
+        if (!serviceRef.current) {
+            serviceRef.current = new OpenSkyWebSocket();
+        }
 
-        const ws = new WebSocket(wsUrl);
-        wsRef.current = ws;
-
+        const service = serviceRef.current;
         setStatus('connecting');
         onStatusChange?.('connecting');
 
-        ws.onopen = () => {
-            setStatus('connected');
-            onStatusChange?.('connected');
+        // Authentication check using instance method
+        const authStatus = service.getAuthStatus();
+        if (!authStatus) {
+            throw new Error('WebSocket authentication failed');
+        }
 
-            ws.send(JSON.stringify({ type: 'subscribe', data: { icao24List, manufacturer } }));
+        // Connect and subscribe
+        service.connect();
+        
+        const topic = manufacturer 
+            ? `manufacturer/${manufacturer}`
+            : `aircraft/${icao24List.join(',')}`;
+            
+        // Use instance method to subscribe
+        service.subscribe(topic, (data: ExtendedAircraft[]) => {
+            updateFromWebSocket(data);
+        });
 
-            if (interpolate) {
-                interpolatePositions();
+        // Initial data fetch
+        if (icao24List.length > 0) {
+            service.getAircraft(icao24List)
+                .then(updateFromWebSocket)
+                .catch((err) => {
+                    console.error('Error fetching initial aircraft data:', err);
+                    onError?.(err);
+                });
+        }
+
+        setStatus('connected');
+        onStatusChange?.('connected');
+
+        if (interpolate) {
+            interpolationFrameRef.current = requestAnimationFrame(interpolatePositions);
+        }
+
+        cleanup = () => {
+            if (serviceRef.current) {
+                serviceRef.current.unsubscribe(topic);
+                serviceRef.current.cleanup();
+                serviceRef.current = null;
             }
-        };
-
-        ws.onmessage = (event) => {
-            try {
-                const messageData = JSON.parse(event.data);
-                updateFromWebSocket(messageData);
-            } catch (err) {
-                console.error('[WebSocket] Error parsing message:', err);
-                setError(new Error('Error parsing WebSocket message'));
-                onError?.(err as Error);
+            if (interpolationFrameRef.current) {
+                cancelAnimationFrame(interpolationFrameRef.current);
             }
-        };
-
-        ws.onerror = (err) => {
-            console.error('[WebSocket] Error:', err);
-            setError(new Error('WebSocket error'));
-            setStatus('error');
-            onStatusChange?.('error');
-        };
-
-        ws.onclose = () => {
-            console.warn('[WebSocket] Connection closed');
             setStatus('disconnected');
             onStatusChange?.('disconnected');
-
-            if (interpolationFrameRef.current) {
-                cancelAnimationFrame(interpolationFrameRef.current);
-            }
         };
 
-        return () => {
-            ws.close();
-            if (interpolationFrameRef.current) {
-                cancelAnimationFrame(interpolationFrameRef.current);
-            }
-        };
-    }, [icao24List, manufacturer, interpolate, interpolatePositions, onStatusChange, onError]);
+    } catch (err) {
+        const error = err instanceof Error ? err : new Error('Failed to setup connection');
+        console.error('[OpenSky] Connection error:', error);
+        setError(error);
+        setStatus('error');
+        onStatusChange?.('error');
+        onError?.(error);
+    }
 
-    // Manage WebSocket connection lifecycle
+    return cleanup;
+}, [icao24List, manufacturer, interpolate, interpolatePositions, onStatusChange, onError, updateFromWebSocket]);
+
     useEffect(() => {
         if (typeof window === 'undefined') return;
 
-        const cleanup = setupWebSocket();
-
+        const cleanup = setupConnection();
         return cleanup;
-    }, [setupWebSocket]);
+    }, [setupConnection]);
 
     return {
         status,
         error,
         disconnect: useCallback(() => {
-            if (wsRef.current) {
-                wsRef.current.close();
+            if (serviceRef.current) {
+                serviceRef.current.cleanup();
                 setStatus('disconnected');
             }
         }, []),
         reconnect: useCallback(() => {
-            if (wsRef.current?.readyState === WebSocket.CLOSED) {
-                setupWebSocket();
+            if (status === 'disconnected' || status === 'error') {
+                setupConnection();
             }
-        }, [setupWebSocket]),
+        }, [status, setupConnection]),
     };
 }

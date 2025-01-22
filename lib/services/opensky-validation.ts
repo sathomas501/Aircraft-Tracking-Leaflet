@@ -1,13 +1,12 @@
 // lib/services/opensky-validation.ts
 import type { OpenSkyState } from '@/types/api/opensky';
 import { OPENSKY_INDICES } from '@/lib/api/constants';
-import { OpenSkyError, OpenSkyErrorCode } from './opensky-errors';
+import { OpenSkyError, OpenSkyErrorCode } from '@/lib/services/opensky-errors';
 import type {PositionData } from '@/types/base'
 
 /**
  * Converts any value to a number or undefined if invalid
  */
-export import { types } from 'util';
  function toNumberOrUndefined(value: any): number | undefined {
     if (value === null || value === undefined) return undefined;
     const num = Number(value);
@@ -57,21 +56,7 @@ export function validateStateVector(state: any[]): OpenSkyState {
     };
 }
 
-/**
- * Maps an OpenSkyState object to a PositionData object
- */
-export function mapStateToPosition(state: OpenSkyState): PositionData {
-    return {
-        icao24: state.icao24,
-        latitude: state.latitude,
-        longitude: state.longitude,
-        altitude: state.baro_altitude,
-        velocity: state.velocity,
-        heading: state.true_track,
-        on_ground: state.on_ground,
-        last_contact: state.last_contact
-    };
-}
+
 
 /**
  * Validates that a partial PositionData object contains all required fields
