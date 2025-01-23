@@ -9,7 +9,9 @@ export enum ErrorType {
     AUTH_REQUIRED = 'AUTH_REQUIRED', // Add this line
     RATE_LIMIT = 'RATE_LIMIT',
     DATA = 'DATA',
-    WEBSOCKET = 'WEBSOCKET'
+    WEBSOCKET = 'WEBSOCKET',
+    POLLING = 'POLLING',
+    CRITICAL = 'CRITICAL',
 }
 
 
