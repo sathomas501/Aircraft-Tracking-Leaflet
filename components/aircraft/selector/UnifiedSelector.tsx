@@ -60,6 +60,9 @@ const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
         console.log('Selected Manufacturer:', selectedMfr);
         setLoading(true);
         setError(null);
+        setSearchTerm(selectedMfr); // Set the search term to selected manufacturer
+        setIsManufacturerOpen(false); // Close the dropdown
+        setSelectedManufacturer(selectedMfr); // Update selected manufacturer
 
         // Check if data is already cached
         if (activeAircraftCache[selectedMfr]) {
@@ -101,9 +104,8 @@ const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
         // Update the dropdown and state
         setModels(data.models || []);
         onAircraftUpdate(data.positions || []);
-    } catch (err) {
+      } catch (err) {
         console.error('Error selecting manufacturer:', err);
-
         if (err instanceof Error) {
             setError(err.message || 'An unexpected error occurred.');
         } else {
@@ -163,6 +165,8 @@ const resetManufacturerSelection = () => {
   setModels([]); // Clear the models
   setError(null); // Clear error messages
   onAircraftUpdate([]); // Clear aircraft data
+  setIsManufacturerOpen(false); // Close the dropdown
+  onModelSelect(''); // Reset model selection if you have this function
 };
 
 
@@ -336,29 +340,33 @@ return (
               </label>
               <div className="relative">
                 <div className="relative">
-                  <input
-                    type="text"
-                    value={searchTerm}
-                    onChange={(e) => {
-                      setSearchTerm(e.target.value);
-                      setIsManufacturerOpen(true);
-                    }}
-                    onFocus={() => setIsManufacturerOpen(true)}
-                    placeholder="Search or select manufacturer..."
-                    className="w-full p-2 pl-8 border border-gray-300 rounded-md shadow-sm
-                             focus:ring-blue-500 focus:border-blue-500
-                             bg-white text-gray-900"
-                  />
+                <input
+    type="text"
+    value={selectedManufacturer}
+    onChange={(e) => {
+        setSearchTerm(e.target.value);
+        setSelectedManufacturer(''); // Clear selection when user types
+        setIsManufacturerOpen(true);
+    }}
+    onFocus={() => setIsManufacturerOpen(true)}
+    placeholder="Search or select manufacturer..."
+    className="w-full p-2 pl-8 border border-gray-300 rounded-md shadow-sm
+             focus:ring-blue-500 focus:border-blue-500
+             bg-white text-gray-900"
+/>
                   <Search className="absolute left-2 top-2.5 text-gray-400" size={16} />
                 </div>
 
                 {/* Filtered Manufacturer List */}
-                {isManufacturerOpen && filteredManufacturers.length > 0 && (
+                {isManufacturerOpen && searchTerm && filteredManufacturers.length > 0 && (
     <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-auto">
         {filteredManufacturers.map((manufacturer) => (
             <button
                 key={manufacturer.value}
-                onClick={() => handleManufacturerSelect(manufacturer.value)}
+                onClick={() => {
+                    handleManufacturerSelect(manufacturer.value);
+                    setIsManufacturerOpen(false);
+                }}
                 className="w-full px-4 py-2 text-left hover:bg-gray-100 focus:outline-none focus:bg-gray-100"
             >
                 <div className="flex justify-between items-center">

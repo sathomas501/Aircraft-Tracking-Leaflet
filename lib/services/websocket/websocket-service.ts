@@ -46,33 +46,39 @@ export class WebSocketService {
         await this.establishConnection();
     }
 
-    private async establishConnection(): Promise<void> {
-        try {
-            let headers = {};
-            
-            if (this.config.authRequired) {
-                console.log('[WebSocket] Authenticating...');
-                const isAuthenticated = await openSkyAuth.authenticate({
-                    useEnvCredentials: true
-                });
-            
-                if (!isAuthenticated) {
-                    throw new Error('Authentication failed');
-                }
-            
-                headers = openSkyAuth.getWebSocketHeaders();
+    // In websocket-service.ts
+    
+private async establishConnection(): Promise<void> {
+    try {
+        let headers = {};
+        
+        if (this.config.authRequired) {
+            console.log('[WebSocket] Starting authentication...');
+            const isAuthenticated = await openSkyAuth.authenticate({
+                useEnvCredentials: true
+            });
+
+            if (!isAuthenticated) {
+                console.warn('[WebSocket] Authentication failed, may retry with polling fallback');
+                throw new Error('OpenSky authentication failed - service may be temporarily unavailable');
             }
 
-            this.ws = new WebSocket(this.config.url, { headers });
-
-            this.setupEventListeners();
-
-        } catch (error) {
-            console.error('[WebSocket] Connection error:', error);
-            this.handleError(error as Error);
+            headers = openSkyAuth.getWebSocketHeaders();
         }
-    }
 
+        this.ws = new WebSocket(this.config.url, { 
+            headers,
+            handshakeTimeout: 15000  // 15 second handshake timeout
+        });
+
+        this.setupEventListeners();
+
+    } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown connection error';
+        console.error('[WebSocket] Connection error:', errorMessage);
+        this.handleError(new Error(errorMessage));
+    }
+}
     private setupEventListeners(): void {
         if (!this.ws) return;
 
