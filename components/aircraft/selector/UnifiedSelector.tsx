@@ -46,12 +46,14 @@ const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
   
   // Filter manufacturers
   const filteredManufacturers = useMemo(() => {
+    if (!searchTerm) return manufacturers; // Show all if no search term
+    
     return manufacturers
-      .filter(manufacturer => 
-        manufacturer.label.toLowerCase().includes(searchTerm.toLowerCase())
-      )
-      .sort((a, b) => a.label.localeCompare(b.label));
-  }, [manufacturers, searchTerm]);
+        .filter(manufacturer => 
+            manufacturer.label.toLowerCase().includes(searchTerm.toLowerCase().trim())
+        )
+        .sort((a, b) => a.label.localeCompare(b.label));
+}, [manufacturers, searchTerm]);
 
   const [checkingActiveAircraft, setCheckingActiveAircraft] = useState(false);
 
@@ -116,34 +118,37 @@ const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
     }
 };
 
-
-
   // Fetch manufacturers
-const fetchManufacturers = useCallback(async () => {
-  try {
-    setLoading(true);
-    setError(null);
-    
-    const response = await fetch('/api/manufacturers');
-    
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+  const fetchManufacturers = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const response = await fetch('/api/manufacturers');
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+  
+      const data = await response.json();
+      
+      if (!data.manufacturers) {
+        throw new Error('No manufacturers data received');
+      }
+  
+      // Sort manufacturers alphabetically by label
+      const sortedManufacturers = data.manufacturers.sort((a: SelectOption, b: SelectOption) => 
+        a.label.localeCompare(b.label)
+      );
+  
+      setManufacturers(sortedManufacturers);
+    } catch (err) {
+      console.error('Error fetching manufacturers:', err);
+      setError('Failed to load manufacturers. Please try again.');
+    } finally {
+      setLoading(false);
     }
-
-    const data = await response.json();
-    
-    if (!data.manufacturers) {
-      throw new Error('No manufacturers data received');
-    }
-
-    setManufacturers(data.manufacturers);
-  } catch (err) {
-    console.error('Error fetching manufacturers:', err);
-    setError('Failed to load manufacturers. Please try again.');
-  } finally {
-    setLoading(false);
-  }
-}, []);
+  }, []);
 
 // Use effect for initial load
 useEffect(() => {
@@ -279,23 +284,19 @@ const handleReset = () => {
 
 return (
   <div className="bg-white rounded-lg shadow-lg p-4">
-    {/* ... existing JSX ... */}
-
-    {/* Reset Button Always Visible */}
+    {/* Reset Button */}
     <div className="flex justify-end mb-4">
-    <button
+      <button
         onClick={resetManufacturerSelection}
         className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-    >
+      >
         Reset
-    </button>
-</div>
+      </button>
+    </div>
 
     {error && (
       <div className="text-black text-sm py-2 bg-red-50 px-3 rounded flex justify-between items-center">
-        <div>
-            <span>{error}</span>
-        </div>
+        <span>{error}</span>
       </div>
     )}
 
@@ -340,83 +341,84 @@ return (
               </label>
               <div className="relative">
                 <div className="relative">
-                <input
-    type="text"
-    value={selectedManufacturer}
-    onChange={(e) => {
-        setSearchTerm(e.target.value);
-        setSelectedManufacturer(''); // Clear selection when user types
-        setIsManufacturerOpen(true);
-    }}
-    onFocus={() => setIsManufacturerOpen(true)}
-    placeholder="Search or select manufacturer..."
-    className="w-full p-2 pl-8 border border-gray-300 rounded-md shadow-sm
-             focus:ring-blue-500 focus:border-blue-500
-             bg-white text-gray-900"
-/>
+                  <input
+                    type="text"
+                    value={searchTerm}
+                    onChange={(e) => {
+                      const newTerm = e.target.value;
+                      setSearchTerm(newTerm);
+                      setSelectedManufacturer('');
+                      setIsManufacturerOpen(true);
+                    }}
+                    onFocus={() => setIsManufacturerOpen(true)}
+                    placeholder="Search or select manufacturer..."
+                    className="w-full p-2 pl-8 border border-gray-300 rounded-md shadow-sm
+                             focus:ring-blue-500 focus:border-blue-500
+                             bg-white text-gray-900"
+                  />
                   <Search className="absolute left-2 top-2.5 text-gray-400" size={16} />
                 </div>
 
-                {/* Filtered Manufacturer List */}
-                {isManufacturerOpen && searchTerm && filteredManufacturers.length > 0 && (
-    <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-auto">
-        {filteredManufacturers.map((manufacturer) => (
-            <button
-                key={manufacturer.value}
-                onClick={() => {
-                    handleManufacturerSelect(manufacturer.value);
-                    setIsManufacturerOpen(false);
-                }}
-                className="w-full px-4 py-2 text-left hover:bg-gray-100 focus:outline-none focus:bg-gray-100"
-            >
-                <div className="flex justify-between items-center">
-                    <span>{manufacturer.label}</span>
-                    <span className="text-sm text-gray-500">
-                        {manufacturer.activeCount && manufacturer.activeCount > 0
-                            ? `${manufacturer.activeCount.toLocaleString()} active / ${manufacturer.count?.toLocaleString()} total`
-                            : `${manufacturer.count?.toLocaleString()} total`}
-                    </span>
-                </div>
-            </button>
-        ))}
-    </div>
-)}
-
+                {/* Manufacturer Dropdown */}
+                {isManufacturerOpen && (
+                  <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-auto">
+                    {filteredManufacturers.map((manufacturer) => (
+                      <button
+                        key={manufacturer.value}
+                        onClick={() => {
+                          handleManufacturerSelect(manufacturer.value);
+                          setSearchTerm(manufacturer.label);
+                          setIsManufacturerOpen(false);
+                        }}
+                        className="w-full px-4 py-2 text-left hover:bg-gray-100 focus:outline-none focus:bg-gray-100"
+                      >
+                        <div className="flex justify-between items-center">
+                          <span>{manufacturer.label}</span>
+                          <span className="text-sm text-gray-500">
+                            {manufacturer.activeCount && manufacturer.activeCount > 0
+                              ? `${manufacturer.activeCount.toLocaleString()} active / ${manufacturer.count?.toLocaleString()} total`
+                              : `${manufacturer.count?.toLocaleString()} total`}
+                          </span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
 
             {/* Model Dropdown */}
             <div className="space-y-2">
-    <label className="block text-sm font-medium text-gray-600">
-        Model
-    </label>
-    <div className="relative">
-        <select
-            value={selectedModel}
-            onChange={(e) => onModelSelect(e.target.value)}
-            className="w-full p-2 pr-8 border border-gray-300 rounded-md shadow-sm 
-                     focus:ring-blue-500 focus:border-blue-500 
-                     bg-white text-gray-900 appearance-none
-                     disabled:bg-gray-100 disabled:text-gray-500"
-            disabled={!selectedManufacturer}
-        >
-            <option value="">
-                {selectedManufacturer
-                    ? `All Models (${totalActive} active)`
-                    : 'Select a manufacturer first'}
-            </option>
-            {models.map((model) => {
-                const activeCount = model.activeCount || 0;
-                return (
-                    <option key={model.value} value={model.value}>
+              <label className="block text-sm font-medium text-gray-600">
+                Model
+              </label>
+              <div className="relative">
+                <select
+                  value={selectedModel}
+                  onChange={(e) => onModelSelect(e.target.value)}
+                  className="w-full p-2 pr-8 border border-gray-300 rounded-md shadow-sm 
+                           focus:ring-blue-500 focus:border-blue-500 
+                           bg-white text-gray-900 appearance-none
+                           disabled:bg-gray-100 disabled:text-gray-500"
+                  disabled={!selectedManufacturer}
+                >
+                  <option value="">
+                    {selectedManufacturer
+                      ? `All Models (${totalActive} active)`
+                      : 'Select a manufacturer first'}
+                  </option>
+                  {models.map((model) => {
+                    const activeCount = model.activeCount || 0;
+                    return (
+                      <option key={model.value} value={model.value}>
                         {model.label} ({activeCount} active / {model.count?.toLocaleString() || 0} total)
-                    </option>
-                );
-            })}
-        </select>
-        <ChevronDown className="absolute right-2 top-3 text-gray-500" size={16} />
-    </div>
-</div>
+                      </option>
+                    );
+                  })}
+                </select>
+                <ChevronDown className="absolute right-2 top-3 text-gray-500" size={16} />
+              </div>
+            </div>
           </>
         ) : (
           /* N-Number Search */
@@ -460,8 +462,7 @@ return (
     )}
   </div>
 );
-};
-
+}
 
 
 
