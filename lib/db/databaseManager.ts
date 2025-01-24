@@ -1,40 +1,37 @@
 // lib/db/databaseManager.ts
 
 import { open, Database } from 'sqlite';
-import path from 'path';
-import { AircraftStatus } from '@/types/database';
+import path from 'path'; // Node.js path module
+import { STATIC_SCHEMA } from './schema'; // Import the schema
+import { access, constants } from 'fs/promises';
 
 
-let sqlite3: typeof import('sqlite3');
+export const config = {
+    runtime: 'nodejs', // Ensure Node.js runtime
+};
+
+let sqlite3: typeof import('sqlite3') | null = null;
+
+// Load SQLite3 only in server environments
 if (typeof window === 'undefined') {
-    sqlite3 = require('sqlite3');
+    try {
+        sqlite3 = require('sqlite3');
+        console.log('[Database] Successfully loaded sqlite3');
+    } catch (err: any) {
+        console.error('[Database] Failed to load sqlite3:', err);
+        throw new Error(`Failed to initialize sqlite3: ${err?.message || 'Unknown error'}`);
+    }
 }
 
+if (!sqlite3) {
+    console.warn('[Database] sqlite3 is not initialized. Ensure this code runs in the Node.js environment.');
+}
 
-export const STATIC_SCHEMA = `
-    CREATE TABLE IF NOT EXISTS aircraft (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        icao24 TEXT UNIQUE,
-        "N-NUMBER" TEXT,
-        manufacturer TEXT,
-        model TEXT,
-        operator TEXT,
-        NAME TEXT,
-        CITY TEXT,
-        STATE TEXT,
-        aircraft_type TEXT,
-        owner_type TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    );
+const STATIC_DB_PATH = path.join(process.cwd(), 'lib', 'db', 'static.db');
 
-    -- Optimize indexes for common queries
-    CREATE INDEX IF NOT EXISTS idx_aircraft_icao24 ON aircraft(icao24);
-    CREATE INDEX IF NOT EXISTS idx_aircraft_manufacturer ON aircraft(manufacturer);
-    CREATE INDEX IF NOT EXISTS idx_aircraft_model ON aircraft(model);
-    CREATE INDEX IF NOT EXISTS idx_aircraft_type ON aircraft(aircraft_type, owner_type);
-    CREATE INDEX IF NOT EXISTS idx_aircraft_operator ON aircraft(operator);
-`;
+
+console.log('[Database] Database path:', STATIC_DB_PATH);
+
 
 class DatabaseManager {
     private static instance: DatabaseManager;
@@ -51,10 +48,20 @@ class DatabaseManager {
     }
 
     private async initializeConnection(): Promise<Database> {
+        try {
+            await access(STATIC_DB_PATH, constants.R_OK | constants.W_OK);
+            console.log('[Database] File is readable/writable');
+        } catch {
+            console.error('[Database] Permission denied');
+        }
+        
         if (!this.db) {
-            const dbPath = path.join(process.cwd(), 'lib', 'db', 'static.db');
+            if (!sqlite3) {
+                throw new Error('[Database] sqlite3 is not initialized.');
+            }
+
             this.db = await open({
-                filename: dbPath,
+                filename: STATIC_DB_PATH,
                 driver: sqlite3.Database,
             });
 
@@ -67,9 +74,18 @@ class DatabaseManager {
 
     private async initializeDatabase(): Promise<void> {
         if (!this.db) return;
+     
+
+// Add to initializeDatabase():
+const testData = await this.db.get('SELECT * FROM aircraft LIMIT 1');
+console.log('[Database] Sample record:', testData);
 
         try {
-            // Configure SQLite for better performance
+            // Add logging to check if this runs
+            console.log('[Database] Starting database initialization...');
+            
+
+
             await this.db.exec(`
                 PRAGMA journal_mode = WAL;
                 PRAGMA busy_timeout = 30000;
@@ -79,31 +95,23 @@ class DatabaseManager {
                 PRAGMA page_size = 4096;
                 PRAGMA cache_size = -2000;
             `);
-
-            // Initialize schema
+     
+            // Initialize schema 
             await this.db.exec(STATIC_SCHEMA);
-
-            // Create triggers for updated_at
-            await this.db.exec(`
-                CREATE TRIGGER IF NOT EXISTS update_aircraft_timestamp 
-                AFTER UPDATE ON aircraft
-                BEGIN
-                    UPDATE aircraft 
-                    SET updated_at = CURRENT_TIMESTAMP 
-                    WHERE id = NEW.id;
-                END;
-            `);
-
-            // Analyze tables for query optimization
-            await this.db.exec('ANALYZE;');
-
-            this.isInitialized = true;
-            console.log('Database initialized successfully');
+            
+            // Verify tables exist
+            const tables = await this.db.all("SELECT name FROM sqlite_master WHERE type='table'");
+            console.log('[Database] Existing tables:', tables);
+            
+            // Check record count
+            const count = await this.db.get('SELECT COUNT(*) as count FROM aircraft');
+            console.log('[Database] Aircraft count:', count);
+     
         } catch (error) {
-            console.error('Error initializing database:', error);
+            console.error('[Database] Error initializing schema:', error);
             throw error;
         }
-    }
+     }
 
     public async getDb(): Promise<Database> {
         return this.initializeConnection();
@@ -127,7 +135,7 @@ class DatabaseManager {
     public async vacuum(): Promise<void> {
         const db = await this.getDb();
         await db.exec('VACUUM;');
-        console.log('Database vacuumed successfully');
+        console.log('[Database] Vacuum completed successfully');
     }
 
     public async optimize(): Promise<void> {
@@ -136,7 +144,7 @@ class DatabaseManager {
             ANALYZE;
             PRAGMA optimize;
         `);
-        console.log('Database optimized successfully');
+        console.log('[Database] Optimization completed successfully');
     }
 
     public async getTableStats(): Promise<any> {
@@ -166,11 +174,11 @@ const databaseManagerInstance = DatabaseManager.getInstance();
 
 // Export the instance methods
 export const getDatabase = () => databaseManagerInstance.getDb();
-export const runQuery = <T>(query: string, params: any[] = []) => 
+export const runQuery = <T>(query: string, params: any[] = []) =>
     databaseManagerInstance.runQuery<T>(query, params);
-export const getQuery = <T>(query: string, params: any[] = []) => 
+export const getQuery = <T>(query: string, params: any[] = []) =>
     databaseManagerInstance.getQuery<T>(query, params);
-export const allQuery = <T>(query: string, params: any[] = []) => 
+export const allQuery = <T>(query: string, params: any[] = []) =>
     databaseManagerInstance.allQuery<T>(query, params);
 export const optimizeDb = () => databaseManagerInstance.optimize();
 export const vacuumDb = () => databaseManagerInstance.vacuum();

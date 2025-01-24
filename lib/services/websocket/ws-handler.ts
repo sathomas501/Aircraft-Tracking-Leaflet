@@ -1,10 +1,10 @@
 import type { WebSocketClient, WebSocketMessage } from '@/types/websocket';
 import type { IOpenSkyService } from '@/types/opensky/index';
 import type { Aircraft } from '@/types/base';
-import type { AircraftStatus } from '@/types/database';
-import { enhancedCache } from '@/lib/services/managers/enhanced-cache'; // Fixed import path
+import { unifiedCache } from '../managers/unified-cache-system'; 
 import { errorHandler, ErrorType } from '@/lib/services/error-handler';
 import { getDatabase, allQuery, runQuery } from '@/lib/db/databaseManager';
+import { AircraftMessage } from '@/types/opensky';
 
 interface IcaoRow {
     icao24: string;
@@ -90,9 +90,27 @@ export class WebSocketHandler {
 
         this.updateInterval = setInterval(async () => {
             try {
-                const cachedData = enhancedCache.getLatestData();
-                if (cachedData && cachedData.length > 0) {
-                    await this.updateDatabaseWithPositions(cachedData);
+                const cachedData = await unifiedCache.getLatestData(); // Await the promise
+                if (cachedData && cachedData.aircraft.length > 0) {
+                    const aircraftData: Aircraft[] = cachedData.aircraft.map((plane) => ({
+                        icao24: plane.icao24 || 'unknown',
+                        latitude: plane.latitude ?? 0,
+                        longitude: plane.longitude ?? 0,
+                        altitude: plane.altitude ?? 0,
+                        velocity: plane.velocity ?? 0,
+                        heading: plane.heading ?? 0,
+                        on_ground: plane.onGround ?? false,
+                        last_contact: plane.lastContact ?? Date.now(),
+                        "N-NUMBER": plane["N-NUMBER"] || 'N/A',
+                        NAME: plane.NAME || 'Unknown',
+                        CITY: plane.CITY || 'Unknown',
+                        STATE: plane.STATE || 'Unknown',
+                        TYPE_AIRCRAFT: plane.TYPE_AIRCRAFT || 'Unknown',
+                        manufacturer: plane.manufacturer || 'Unknown',
+                        OWNER_TYPE: plane.OWNER_TYPE || 'Unknown',
+                        isTracked: plane.isTracked ?? false,
+                    }));
+                    await this.updateDatabaseWithPositions(aircraftData); // Pass the aircraft array
                 }
             } catch (error) {
                 errorHandler.handleError(
@@ -102,8 +120,8 @@ export class WebSocketHandler {
                 );
             }
         }, this.UPDATE_DB_INTERVAL);
-    }
 
+    }
     private async updateDatabaseWithPositions(aircraft: Aircraft[]): Promise<void> {
         try {
             const updatePromises = aircraft.map((plane) =>
@@ -185,22 +203,36 @@ export class WebSocketHandler {
         client.terminate();
     }
 
-    public broadcast(data: Aircraft[]): void {
+    public broadcast(data: Partial<Aircraft>[]): void {
+        const transformedData: Aircraft[] = data.map((aircraft) => ({
+            icao24: aircraft.icao24 || 'unknown',
+            latitude: aircraft.latitude ?? 0,
+            longitude: aircraft.longitude ?? 0,
+            altitude: aircraft.altitude ?? 0,
+            velocity: aircraft.velocity ?? 0,
+            heading: aircraft.heading ?? 0,
+            on_ground: aircraft.on_ground ?? false,
+            last_contact: aircraft.last_contact ?? Date.now(),
+            "N-NUMBER": aircraft["N-NUMBER"] || 'N/A',
+            NAME: aircraft.NAME || 'Unknown',
+            CITY: aircraft.CITY || 'Unknown',
+            STATE: aircraft.STATE || 'Unknown',
+            TYPE_AIRCRAFT: aircraft.TYPE_AIRCRAFT || 'Unknown',
+            manufacturer: aircraft.manufacturer || 'Unknown',
+            OWNER_TYPE: aircraft.OWNER_TYPE || 'Unknown', // Default value for OWNER_TYPE
+            isTracked: aircraft.isTracked ?? false, // Default value for isTracked
+        }));
+    
+        // Send data to clients
         this.clients.forEach((client) => {
             if (client.readyState !== client.OPEN) return;
     
             try {
                 const filteredData = client.aircraftFilter
-                    ? data
-                          .map((aircraft) => ({
-                              ...aircraft,
-                              model: aircraft.model ?? 'Unknown',
-                          }))
-                          .filter((aircraft) => client.aircraftFilter?.includes(aircraft.icao24))
-                    : data.map((aircraft) => ({
-                          ...aircraft,
-                          model: aircraft.model ?? 'Unknown',
-                      }));
+                    ? transformedData.filter((aircraft) =>
+                          client.aircraftFilter?.includes(aircraft.icao24)
+                      )
+                    : transformedData;
     
                 const message: WebSocketMessage = {
                     type: 'positions',
@@ -220,8 +252,11 @@ export class WebSocketHandler {
             }
         });
     
-        enhancedCache.update(data);
+        // Update the cache
+        unifiedCache.update(transformedData);
     }
+    
+    
 
     public cleanup(): void {
         if (this.pingInterval) {

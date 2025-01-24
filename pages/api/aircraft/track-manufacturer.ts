@@ -1,10 +1,9 @@
-// pages/api/aircraft/track-manufacturer.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
-import axios from 'axios';
 import { manufacturerTracking } from '@/lib/services/manufacturer-tracking-service';
 import { errorHandler, ErrorType } from '@/lib/services/error-handler';
-import { RateLimiter } from '@/lib/services/rate-limiter';
-    
+import { PollingRateLimiter } from '@/lib/services/rate-limiter';
+import { unifiedCache } from '../../../lib/services/managers/unified-cache-system';
+
 interface TrackResponse {
     success: boolean;
     message: string;
@@ -12,35 +11,42 @@ interface TrackResponse {
     tracking?: {
         isTracking: boolean;
         manufacturer: string | null;
-        connectionMode: string;
+        pollingStatus: {
+            interval: number,
+            nextPoll: Date,
+            isRateLimited: boolean
+        },
         rateLimitInfo: {
-            remainingRequests: number;
-            remainingDaily: number;
-        };
+            remainingRequests: number,
+            remainingDaily: number
+        }
     };
 }
 
-async function getBaseUrl(): Promise<string> {
-    return process.env.BASE_URL || 'http://localhost:3000';
-}
+const rateLimiter = new PollingRateLimiter({
+    requestsPerMinute: 60,
+    requestsPerDay: 1000,
+    minPollingInterval: 5000,
+    maxPollingInterval: 30000
+});
 
 async function fetchIcao24s(manufacturer: string): Promise<string[]> {
-    try {
-        const baseUrl = await getBaseUrl();
-        const response = await axios.get(`${baseUrl}/api/aircraft/icao24s`, {
-            params: { manufacturer },
-        });
-        return response.data.icao24List;
-    } catch (error) {
-        console.error('Error fetching ICAO24s:', error);
-        errorHandler.handleError(
-            ErrorType.DATA, 
-            'Failed to fetch aircraft identifiers', 
-            { manufacturer }
-        );
-        throw error;
+    // Fetch ICAO24s (either from cache or an external source)
+    const data = (await unifiedCache.getLatestData()) as { aircraft: any[] }; // Ensure this is not rate-limited
+
+    if (!data || !Array.isArray(data.aircraft)) {
+        throw new Error('Cache data is invalid or not properly initialized.');
     }
+
+    // Filter and map to get ICAO24s
+    const icao24s = data.aircraft
+        .filter((aircraft) => aircraft.manufacturer === manufacturer)
+        .map((aircraft: any) => aircraft.icao24);
+
+    return icao24s;
 }
+
+
 
 export default async function handler(
     req: NextApiRequest, 
@@ -55,58 +61,79 @@ export default async function handler(
             if (!manufacturer) {
                 return res.status(400).json({ 
                     success: false, 
-                    message: 'Manufacturer is required.' 
+                    message: 'Manufacturer is required' 
                 });
             }
 
             try {
-                console.log(`[Tracking] Starting tracking for ${manufacturer}`);
+                const nextPoll = await rateLimiter.getNextAvailableSlot();
+                if (rateLimiter.isRateLimited()) {
+                    return res.status(429).json({
+                        success: false,
+                        message: 'Rate limit exceeded',
+                        tracking: {
+                            isTracking: false,
+                            manufacturer: null,
+                            pollingStatus: {
+                                interval: rateLimiter.getCurrentPollingInterval(),
+                                nextPoll,
+                                isRateLimited: true
+                            },
+                            rateLimitInfo: {
+                                remainingRequests: rateLimiter.getRemainingRequests(),
+                                remainingDaily: rateLimiter.getRemainingDailyRequests()
+                            }
+                        }
+                    });
+                }
+
                 const icao24List = await fetchIcao24s(manufacturer);
-                console.log(`[Tracking] Found ${icao24List.length} aircraft to track`);
-                
-                await manufacturerTracking.startTracking(manufacturer, icao24List);
+                await manufacturerTracking.startPolling(manufacturer, icao24List);
                 const status = manufacturerTracking.getTrackingStatus();
-            
-                return res.status(200).json({ 
-                    success: true, 
+
+                return res.status(200).json({
+                    success: true,
                     message: `Tracking started for ${manufacturer}`,
                     aircraftCount: icao24List.length,
                     tracking: {
                         isTracking: status.isTracking,
                         manufacturer: status.manufacturer,
-                        connectionMode: status.connectionMode,
-                        rateLimitInfo: status.rateLimitInfo
+                        pollingStatus: {
+                            interval: rateLimiter.getCurrentPollingInterval(),
+                            nextPoll,
+                            isRateLimited: false
+                        },
+                        rateLimitInfo: {
+                            remainingRequests: rateLimiter.getRemainingRequests(),
+                            remainingDaily: rateLimiter.getRemainingDailyRequests()
+                        }
                     }
                 });
             } catch (error) {
-                console.error('[Error] Failed to start tracking:', error);
                 const errorMsg = error instanceof Error ? error.message : 'Failed to start tracking';
-                errorHandler.handleError(
-                    ErrorType.DATA,
-                    errorMsg,
-                    { manufacturer }
-                );
-                return res.status(500).json({ 
-                    success: false, 
+                errorHandler.handleError(ErrorType.DATA, errorMsg, { manufacturer });
+                
+                return res.status(500).json({
+                    success: false,
                     message: errorMsg
                 });
             }
         }
 
         case 'DELETE': {
-            manufacturerTracking.stopTracking();
-            return res.status(200).json({ 
-                success: true, 
-                message: 'Stopped tracking.'
+            manufacturerTracking.stopPolling();
+            rateLimiter.resetPollingInterval();
+            return res.status(200).json({
+                success: true,
+                message: 'Stopped tracking'
             });
         }
 
         default:
             res.setHeader('Allow', ['POST', 'DELETE']);
-            return res.status(405).json({ 
-                success: false, 
-                message: `Method ${method} not allowed.` 
+            return res.status(405).json({
+                success: false,
+                message: `Method ${method} not allowed`
             });
     }
 }
-

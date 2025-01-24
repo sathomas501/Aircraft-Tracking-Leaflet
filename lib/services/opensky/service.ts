@@ -3,7 +3,7 @@ import type {PositionData } from '@/types/base';
 import { positionToAircraft } from './utils';
 import WebSocket from 'ws';
 import { errorHandler, ErrorType } from '../error-handler';
-import { enhancedCache } from '@/lib/services/managers/enhanced-cache';
+import { unifiedCache } from '../managers/unified-cache-system';
 import { positionInterpolator } from '@/utils/position-interpolation';
 import type {
     IOpenSkyService,
@@ -147,7 +147,7 @@ export class OpenSkyManager implements IOpenSkyService {
     private broadcastPositions(positions: PositionData[]): void {
         positions.forEach(position => {
             const aircraft = positionToAircraft(position);
-            enhancedCache.set(position.icao24, aircraft);
+            unifiedCache.setAircraft(position.icao24, aircraft); // Use the new method
             positionInterpolator.updatePosition(aircraft);
         });
     
@@ -157,6 +157,7 @@ export class OpenSkyManager implements IOpenSkyService {
             });
         });
     }
+    
 
     private broadcastStatus(): void {
         const message: WebSocketMessage = {

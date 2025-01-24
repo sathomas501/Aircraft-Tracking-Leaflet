@@ -2,12 +2,12 @@
   "name": "aircraft-tracking",
   "version": "0.1.0",
   "private": true,
-  "scripts": {
-    "dev": "next dev -p 3001",
-    "build": "next build",
-    "start": "next start -p 3001",
-    "find-unused": "ts-prune"
-  },
+  
+    "scripts": {
+      "dev": "cross-env NODE_ENV=development next dev -p 3001",
+      "build": "cross-env NODE_ENV=production next build",
+      "start": "cross-env NODE_ENV=production next start -p 3001"
+    },
   "dependencies": {
     "@tanstack/react-query": "^5.62.2",
     "axios": "^1.7.9",
@@ -15,6 +15,7 @@
     "clsx": "^2.1.1",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
+    "ioredis": "^5.4.2",
     "leaflet": "^1.9.4",
     "lodash": "^4.17.21",
     "lucide-react": "^0.468.0",

@@ -1,22 +1,9 @@
 import { NextApiRequest, NextApiResponse } from 'next';
+import { getDatabase } from '@/lib/db/databaseManager';
 
-import path from 'path';
-import { open, Database } from 'sqlite';
-
-let sqlite3: typeof import('sqlite3');
-if (typeof window === 'undefined') {
-    sqlite3 = require('sqlite3');
-}
-
-export async function getDatabase(): Promise<Database> {
-    return await open({
-        filename: './path/to/database.db',
-        driver: sqlite3!.Database,
-    });
-}
-
-// Define database path
-const dbPath = path.join(process.cwd(), 'lib', 'static.db');
+export const config = {
+    runtime: 'nodejs', // Ensure Node.js runtime
+};
 
 // Database service functions
 async function fetchManufacturers(activeOnly: boolean = false): Promise<string[]> {
@@ -24,15 +11,14 @@ async function fetchManufacturers(activeOnly: boolean = false): Promise<string[]
         ? `SELECT DISTINCT manufacturer FROM aircraft WHERE active = 1 AND manufacturer IS NOT NULL ORDER BY manufacturer`
         : `SELECT DISTINCT manufacturer FROM aircraft WHERE manufacturer IS NOT NULL ORDER BY manufacturer`;
 
-    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY);
-
-    return new Promise((resolve, reject) => {
-        db.all(query, [], (err, rows: { manufacturer: string }[]) => {
-            db.close();
-            if (err) return reject(err);
-            resolve(rows.map(row => row.manufacturer));
-        });
-    });
+    try {
+        const db = await getDatabase();
+        const rows: { manufacturer: string }[] = await db.all(query);
+        return rows.map(row => row.manufacturer);
+    } catch (error) {
+        console.error('[Database] Failed to fetch manufacturers:', error);
+        throw error;
+    }
 }
 
 // API route handler
@@ -48,10 +34,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     try {
         const manufacturers = await fetchManufacturers(activeOnly === 'true');
-        res.status(200).json({ manufacturers });
+        return res.status(200).json({ manufacturers });
     } catch (error) {
-        console.error('Error in API handler:', error);
-        res.status(500).json({ 
+        console.error('[API] Error in handler:', error);
+        return res.status(500).json({ 
             message: 'Failed to fetch manufacturers',
             error: process.env.NODE_ENV === 'development' ? error : undefined
         });

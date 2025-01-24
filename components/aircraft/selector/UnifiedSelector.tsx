@@ -1,8 +1,7 @@
 // components/aircraft/selector/UnifiedSelector.tsx
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { ChevronDown, X, Search, Plane } from 'lucide-react';
-import type { SelectOption } from '@/types/base';
-import type { Aircraft } from '@/types/base';
+import type { Aircraft, SelectOption } from '@/types/base';
 
 interface UnifiedSelectorProps {
   selectedType: string;
@@ -38,8 +37,6 @@ const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
   const [isManufacturerOpen, setIsManufacturerOpen] = useState(false);
   const [searchMode, setSearchMode] = useState<'manufacturer' | 'nNumber'>('manufacturer');
   const [nNumber, setNNumber] = useState('');
-  const resetRef = useRef(false); // Add this at the top level of your component
-  const resetInProgress = useRef(false); // Control flag for resets
   const [activeAircraftCache, setActiveAircraftCache] = useState<AircraftCache>({});
   const [selectedManufacturer, setSelectedManufacturer] = useState<string>('');
   const abortControllerRef = useRef<AbortController | null>(null); // AbortController reference
@@ -54,8 +51,6 @@ const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
         )
         .sort((a, b) => a.label.localeCompare(b.label));
 }, [manufacturers, searchTerm]);
-
-  const [checkingActiveAircraft, setCheckingActiveAircraft] = useState(false);
 
   const handleManufacturerSelect = async (selectedMfr: string) => {
     try {
@@ -121,16 +116,15 @@ const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
   // Fetch manufacturers
   const fetchManufacturers = useCallback(async () => {
     try {
+      console.log('[Selector] Starting manufacturers fetch');
       setLoading(true);
       setError(null);
-      
+     
       const response = await fetch('/api/manufacturers');
+      console.log('[Selector] Response status:', response.status);
       
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-  
       const data = await response.json();
+      console.log('[Selector] Response data:', data);
       
       if (!data.manufacturers) {
         throw new Error('No manufacturers data received');
@@ -229,7 +223,6 @@ const fetchModels = async (selectedManufacturer: string) => {
   }
 };
 
-
 useEffect(() => {
   if (!selectedManufacturer) {
       console.log('No manufacturer selected. Clearing models...');
@@ -273,14 +266,12 @@ const handleNNumberSearch = async () => {
   }
 };
 
-
 const handleReset = () => {
   setError(null);
   setModels([]);
   onAircraftUpdate([]);
   setSelectedManufacturer(''); // Reset the selected manufacturer
 };
-
 
 return (
   <div className="bg-white rounded-lg shadow-lg p-4">
@@ -463,7 +454,5 @@ return (
   </div>
 );
 }
-
-
 
 export default UnifiedSelector;

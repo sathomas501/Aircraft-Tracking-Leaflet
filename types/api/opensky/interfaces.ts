@@ -53,6 +53,8 @@ export interface OpenSkyState {
   latitude?: number;
   baro_altitude?: number;
   on_ground?: boolean;
+  altitude?: number;
+  heading?: number;
   velocity?: number;
   true_track?: number;
   vertical_rate?: number;

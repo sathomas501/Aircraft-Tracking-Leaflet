@@ -1,8 +1,5 @@
-// position-update-service.ts
-import { WebSocketService, WebSocketConfig } from '@/lib/services/websocket/websocket-service';
 import { errorHandler, ErrorType } from './error-handler';
-import { PositionServiceFactory } from './position-service-factory';
-
+import { PollingRateLimiter } from './rate-limiter';
 
 interface Position {
     icao24: string;
@@ -15,22 +12,20 @@ interface Position {
     last_contact: number;
 }
 
-
-
 export class PositionUpdateService {
     private static instance: PositionUpdateService;
-    private wsService: WebSocketService;
     private positions: Map<string, Position> = new Map();
     private updateCallback: ((positions: Position[]) => void) | null = null;
+    private pollingInterval: NodeJS.Timeout | null = null;
+    private rateLimiter: PollingRateLimiter;
 
     private constructor() {
-        const config: WebSocketConfig = {
-            url: 'wss://opensky-network.org/api/states/all/ws',
-            reconnectAttempts: 3,
-            reconnectDelay: 5000,
-            authRequired: true
-        };
-        this.wsService = new WebSocketService(config);
+        this.rateLimiter = new PollingRateLimiter({
+            requestsPerMinute: 60,
+            requestsPerDay: 1000,
+            minPollingInterval: 5000,
+            maxPollingInterval: 30000
+        });
     }
 
     public static getInstance(): PositionUpdateService {
@@ -40,14 +35,32 @@ export class PositionUpdateService {
         return PositionUpdateService.instance;
     }
 
-    private handleMessage(data: any): void {
-        if (data && data.states) {
-            this.processStates(data.states);
+    private async fetchPositions(): Promise<void> {
+        if (!await this.rateLimiter.tryAcquire()) {
+            errorHandler.handleError(ErrorType.POLLING, 'Rate limit exceeded');
+            return;
         }
-    }
 
-    private handleError(error: Error): void {
-        errorHandler.handleError(ErrorType.WEBSOCKET, error.message);
+        try {
+            const response = await fetch('https://opensky-network.org/api/states/all', {
+                headers: { 'Content-Type': 'application/json' }
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const data = await response.json();
+            this.processStates(data.states || []);
+            this.rateLimiter.decreasePollingInterval();
+
+        } catch (error) {
+            this.rateLimiter.increasePollingInterval();
+            errorHandler.handleError(
+                ErrorType.POLLING,
+                error instanceof Error ? error.message : 'Failed to fetch positions'
+            );
+        }
     }
 
     private processStates(states: any[]): void {
@@ -85,26 +98,31 @@ export class PositionUpdateService {
 
         return () => {
             this.updateCallback = null;
+            if (!this.updateCallback) {
+                this.stop();
+            }
         };
     }
 
     public async start(): Promise<void> {
-        if (!this.wsService.isActive()) {
-            await this.wsService.connect(
-                this.handleMessage.bind(this),
-                this.handleError.bind(this)
-            );
-        }
+        await this.fetchPositions();
+        
+        const interval = this.rateLimiter.getCurrentPollingInterval();
+        this.pollingInterval = setInterval(async () => {
+            await this.fetchPositions();
+        }, interval);
     }
 
     public stop(): void {
-        this.wsService.disconnect();
-        this.positions.clear();
-        this.updateCallback = null;
+        if (this.pollingInterval) {
+            clearInterval(this.pollingInterval);
+            this.pollingInterval = null;
+        }
+        this.rateLimiter.resetPollingInterval();
     }
 
     public isActive(): boolean {
-        return this.wsService.isActive();
+        return this.pollingInterval !== null;
     }
 
     public getCurrentPositions(): Position[] {

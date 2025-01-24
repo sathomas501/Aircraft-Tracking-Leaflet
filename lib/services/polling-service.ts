@@ -1,102 +1,166 @@
 import axios from 'axios';
 import { chunk } from 'lodash';
-import { RateLimiter } from './rate-limiter';
 import { openSkyAuth } from './opensky-auth';
 
-export class PollingService {
-    private readonly BATCH_SIZE = 100;
-    private readonly POLLING_INTERVAL = 30000;
-    private rateLimiter: RateLimiter;
-    private pollingInterval: NodeJS.Timeout | null = null;
-    private isPolling = false;
+export interface PollingConfig {
+    url: string;
+    pollingInterval?: number; // in ms
+    batchSize?: number;
+    authRequired?: boolean;
+    maxRetries?: number;
+    cacheEnabled?: boolean; // Enable/disable caching
+}
 
-    constructor(rateLimiter: RateLimiter) {
-        this.rateLimiter = rateLimiter;
+export type PollingHandler = (data: any) => void;
+export type ErrorHandler = (error: Error) => void;
+
+export class PollingService {
+    private readonly config: Required<PollingConfig>;
+    private pollingIntervalId: NodeJS.Timeout | null = null;
+    private isPolling = false;
+    private retries = 0;
+    private cache: Set<string> = new Set(); // Cache for processed data to avoid redundant calls
+    private activeBatches: Set<string> = new Set(); // Track active batches being processed
+
+    private pollingHandler: PollingHandler | null = null;
+    private errorHandler: ErrorHandler | null = null;
+
+    constructor(config: PollingConfig) {
+        this.config = {
+            url: config.url,
+            pollingInterval: config.pollingInterval ?? 30000, // Default: 30 seconds
+            batchSize: config.batchSize ?? 100,
+            authRequired: config.authRequired ?? true,
+            maxRetries: config.maxRetries ?? 3,
+            cacheEnabled: config.cacheEnabled ?? true,
+        };
     }
 
-    async startPolling(icao24List: string[], onUpdate: (data: any) => void): Promise<void> {
+    public async startPolling(
+        icao24List: string[],
+        pollingHandler: PollingHandler,
+        errorHandler: ErrorHandler
+    ): Promise<void> {
         if (this.isPolling) {
-            console.log('[PollingService] Already polling, ignoring start request');
+            console.log('[PollingService] Already polling. Ignoring start request.');
             return;
         }
 
+        if (!icao24List || icao24List.length === 0) {
+            console.warn('[PollingService] No aircraft to poll. Exiting.');
+            return;
+        }
+
+        this.pollingHandler = pollingHandler;
+        this.errorHandler = errorHandler;
         this.isPolling = true;
-        console.log('[PollingService] Starting polling for:', icao24List.length, 'aircraft');
 
-        // Initial poll immediately
-        await this.pollPositions(icao24List, onUpdate);
+        console.log('[PollingService] Starting polling...');
+        await this.poll(icao24List); // Initial poll
 
-        // Then set up interval
-        this.pollingInterval = setInterval(async () => {
+        this.pollingIntervalId = setInterval(async () => {
             if (!this.isPolling) return;
 
             try {
-                await this.pollPositions(icao24List, onUpdate);
+                await this.poll(icao24List);
             } catch (error: unknown) {
-                const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-                console.error('[PollingService] Polling error:', errorMessage);
+                if (error instanceof Error) {
+                    console.error('[PollingService] Error during polling:', error.message);
+                    if (this.errorHandler) this.errorHandler(error);
+                }
             }
-        }, this.POLLING_INTERVAL);
+        }, this.config.pollingInterval);
     }
 
-    stopPolling(): void {
-        console.log('[PollingService] Stopping polling');
-        this.isPolling = false;
-        if (this.pollingInterval) {
-            clearInterval(this.pollingInterval);
-            this.pollingInterval = null;
+    public stopPolling(): void {
+        console.log('[PollingService] Stopping polling...');
+        if (this.pollingIntervalId) {
+            clearInterval(this.pollingIntervalId);
+            this.pollingIntervalId = null;
         }
+        this.isPolling = false;
+        this.cache.clear();
+        this.activeBatches.clear();
     }
 
-    private async pollPositions(icao24List: string[], onUpdate: (data: any) => void): Promise<void> {
-        if (!this.isPolling) return;
-
-        const batches = chunk(icao24List, this.BATCH_SIZE);
-        console.log(`[PollingService] Processing ${batches.length} batches of aircraft data`);
+    public async poll(icao24List: string[]): Promise<void> {
+        const batches = chunk(icao24List, this.config.batchSize);
+        console.log(`[PollingService] Processing ${batches.length} batches.`);
 
         for (const batch of batches) {
             if (!this.isPolling) break;
 
+            const batchKey = batch.join(',');
+            if (this.config.cacheEnabled && this.cache.has(batchKey)) {
+                console.log(`[PollingService] Skipping cached batch: ${batchKey}`);
+                continue;
+            }
+
+            // Avoid processing the same batch concurrently
+            if (this.activeBatches.has(batchKey)) {
+                console.log(`[PollingService] Skipping active batch: ${batchKey}`);
+                continue;
+            }
+
+            this.activeBatches.add(batchKey);
+
             try {
-                if (await this.rateLimiter.tryAcquire()) {
-                    await this.fetchBatchPositions(batch, onUpdate);
-                } else {
-                    console.log('[PollingService] Rate limit reached, waiting for next interval');
-                    break;
-                }
+                await this.fetchBatchPositions(batch);
+                this.cache.add(batchKey); // Cache the batch after successful processing
             } catch (error: unknown) {
-                const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-                console.error('[PollingService] Batch error:', errorMessage);
-                // Continue with next batch despite errors
+                if (error instanceof Error) {
+                    console.error(`[PollingService] Error processing batch ${batchKey}:`, error.message);
+                    if (this.errorHandler) this.errorHandler(error);
+                }
+            } finally {
+                this.activeBatches.delete(batchKey); // Remove from active batch tracker
             }
         }
     }
 
-    private async fetchBatchPositions(batch: string[], onUpdate: (data: any) => void): Promise<void> {
+    public async fetchBatchPositions(batch: string[]): Promise<void> {
         try {
-            // Changed from canMakeRequest to tryAcquire
-            if (await this.rateLimiter.tryAcquire()) {
-                const isAuthenticated = await openSkyAuth.authenticate({
-                    useEnvCredentials: true
-                });
-                // ... rest of the method
-            } else {
-                console.log('[PollingService] Rate limit reached, waiting for next slot');
-                await this.rateLimiter.waitForSlot();
-                return this.fetchBatchPositions(batch, onUpdate);
+            if (this.config.authRequired && !(await openSkyAuth.ensureAuthenticated())) {
+                throw new Error('[PollingService] Authentication failed.');
             }
-        } catch (error) {
+
+            const headers = this.config.authRequired ? openSkyAuth.getAuthHeaders() : {};
+
+            const response = await axios.get(this.config.url, {
+                headers,
+                params: { icao24: batch.join(',') },
+            });
+
+            if (response.data && this.pollingHandler) {
+                console.log(`[PollingService] Data received for batch: ${batch.length} aircraft.`);
+                this.pollingHandler(response.data);
+            } else {
+                console.warn('[PollingService] No data received for batch.');
+            }
+        } catch (error: unknown) {
             if (axios.isAxiosError(error)) {
-                throw new Error(`Network error: ${error.message}`);
-            } else if (error instanceof Error) {
-                throw new Error(`Fetch error: ${error.message}`);
-            } else {
-                throw new Error('Unknown error during batch fetch');
+                const retryAfter = error.response?.headers['retry-after'];
+                if (retryAfter) {
+                    console.warn(`[PollingService] Rate limited. Retrying after ${retryAfter} seconds.`);
+                    await this.delay(parseInt(retryAfter) * 1000);
+                    return this.fetchBatchPositions(batch); // Retry after delay
+                }
             }
+
+            throw error; // Rethrow for higher-level handling
         }
     }
 
-    isActive(): boolean {
+    private delay(ms: number): Promise<void> {
+        return new Promise((resolve) => setTimeout(resolve, ms));
+    }
+
+    public isActive(): boolean {
         return this.isPolling;
+    }
+
+    public clearCache(): void {
+        console.log('[PollingService] Clearing cache...');
+        this.cache.clear();
     }
 }

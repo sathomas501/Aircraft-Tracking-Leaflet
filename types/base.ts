@@ -1,5 +1,5 @@
 // types/base.ts
-import { OpenSkyState } from '@/types/api/opensky';
+
 import { OpenSkyError, OpenSkyErrorCode } from '@/lib/services/opensky-errors';
 /**
  * Base position interface with latitude and longitude
@@ -76,6 +76,30 @@ export interface Aircraft {
   operatorIcao?: string;
   active?: boolean;
 }
+
+
+export interface OpenSkyState {
+  icao24: string;
+  latitude?: number;
+  longitude?: number;
+  baro_altitude?: number;
+  velocity?: number;
+  true_track?: number;
+  on_ground?: boolean;
+  last_contact?: number;
+
+  // Add missing fields
+  registration?: string;
+  manufacturer?: string;
+  name?: string;
+  city?: string;
+  state?: string;
+  type_aircraft?: string;
+  owner_type?: string;
+  operator?: string;
+  isTracked?: boolean;
+}
+
 
 /**
  * Aircraft marker for map display with optional details
