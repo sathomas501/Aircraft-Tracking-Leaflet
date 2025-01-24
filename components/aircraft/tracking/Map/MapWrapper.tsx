@@ -3,173 +3,113 @@ import { useEffect, useState, useCallback, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import { Menu } from 'lucide-react';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
-import { AIRCRAFT } from '@/constants/aircraft';
 import type { Aircraft } from '@/types/base';
-import { openSkyIntegrated } from '@/lib/services/opensky-integrated/opensky-integrated';
 import { errorHandler, ErrorType } from '@/lib/services/error-handler';
+import { useOpenSkyPolling } from '@/hooks/useOpenSkyPolling';
 
-// Dynamic imports
 const MapComponent = dynamic(() => import('./MapComponent'), {
     loading: () => <LoadingSpinner message="Loading map..." />,
     ssr: false,
 });
 
 const UnifiedSelector = dynamic(() => import('@/components/aircraft/selector/UnifiedSelector'), {
-    loading: () => null,
+    loading: () => <LoadingSpinner message="Loading selector..." />,
     ssr: false,
 });
 
-// Types
-interface ActiveCounts {
-    active: number;
-    total: number;
-}
-interface Manufacturer {
-    value: string;
-    label: string;
-    activeCount?: number;
-}
-
 export function MapWrapper() {
-    // State hooks
-    const [selectedManufacturer, setSelectedManufacturer] = useState<string>(AIRCRAFT.DEFAULT_STATE.selectedManufacturer);
-    const [selectedModel, setSelectedModel] = useState<string>(AIRCRAFT.DEFAULT_STATE.selectedModel);
-    const [manufacturers, setManufacturers] = useState<Manufacturer[]>([]);
+    const [selectedManufacturer, setSelectedManufacturer] = useState<string>('');
+    const [selectedModel, setSelectedModel] = useState<string>('');
     const [aircraft, setAircraft] = useState<Aircraft[]>([]);
     const [icao24List, setIcao24List] = useState<string[]>([]);
-    const [isMapReady, setIsMapReady] = useState(false);
     const [isSelectorOpen, setIsSelectorOpen] = useState(true);
     const [isLoading, setIsLoading] = useState(false);
-    const [activeCounts, setActiveCounts] = useState<ActiveCounts>({ active: 0, total: 0 });
     const [error, setError] = useState<string | null>(null);
-    const [trackingStatus, setTrackingStatus] = useState<'idle' | 'loading' | 'complete' | 'error'>('idle');
 
-    // Error handlers
-    const networkError = errorHandler.useErrorHandler(ErrorType.NETWORK);
-    const wsError = errorHandler.useErrorHandler(ErrorType.WEBSOCKET);
-    const rateLimitError = errorHandler.useErrorHandler(ErrorType.RATE_LIMIT);
-    const authError = errorHandler.useErrorHandler(ErrorType.AUTH);
+    const { status: pollingStatus, error: pollingError } = useOpenSkyPolling({
+        icao24List: icao24List.length > 0 ? icao24List : undefined,
+        onData: setAircraft,
+        onError: (err) => setError(err.message)
+    });
 
-    // Memoized values
-    const filteredAircraft = useMemo(() => {
-        if (!selectedModel) return aircraft;
-        return aircraft.filter((plane) => plane.model === selectedModel);
-    }, [aircraft, selectedModel]);
+    const filteredAircraft = useMemo(() => 
+        selectedModel ? aircraft.filter(plane => plane.model === selectedModel) : aircraft,
+    [aircraft, selectedModel]);
 
     const modelCounts = useMemo(() => {
         const counts = new Map();
-        aircraft.forEach((plane) => {
-            if (plane.model) {
-                const current = counts.get(plane.model) || 0;
-                counts.set(plane.model, current + 1);
-            }
+        aircraft.forEach(plane => {
+            if (plane.model) counts.set(plane.model, (counts.get(plane.model) || 0) + 1);
         });
         return counts;
     }, [aircraft]);
 
-    // Callback functions
     const handleManufacturerSelect = useCallback(async (manufacturer: string) => {
-        setIsLoading(true);
-        setError(null);
-        setTrackingStatus('loading');
-
         try {
+            setIsLoading(true);
+            setError(null);
+            
             const response = await fetch('/api/aircraft/track-manufacturer', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ manufacturer }),
             });
 
-            if (!response.ok) throw new Error(`Failed to track manufacturer: ${response.statusText}`);
-
+            if (!response.ok) throw new Error(response.statusText);
+            
             const result = await response.json();
-
-            if (result.success) {
-                setSelectedManufacturer(manufacturer);
-                setManufacturers((prev) =>
-                    prev.map((m) => (m.value === manufacturer ? { ...m, activeCount: result.activeCount } : m))
-                );
-                setActiveCounts({ active: result.activeCount, total: result.totalCount || 0 });
-                setIcao24List(result.icao24s || []);
-                setTrackingStatus('complete');
-            } else {
-                throw new Error(result.message || 'Failed to track manufacturer');
-            }
+            setSelectedManufacturer(manufacturer);
+            setIcao24List(result.icao24s || []);
+            setAircraft(result.positions || []);
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to track manufacturer');
-            setTrackingStatus('error');
+            errorHandler.handleError(ErrorType.POLLING, err instanceof Error ? err : new Error('Polling failed'));
         } finally {
             setIsLoading(false);
         }
     }, []);
 
-    const handleModelSelect = useCallback((model: string) => {
-        setSelectedModel(model);
-    }, []);
-
-    const toggleSelector = useCallback(() => {
-        setIsSelectorOpen((prev) => !prev);
-    }, []);
-
-    // Effects
-    useEffect(() => {
-        setIsMapReady(true);
-    }, []);
-
-    useEffect(() => {
-        if (!icao24List.length) return;
-
-        const unsubscribe = openSkyIntegrated.subscribe((updatedAircraft) => {
-            setAircraft(updatedAircraft);
-            setIsLoading(false);
-            setActiveCounts((prev) => ({ ...prev, active: updatedAircraft.length }));
-        });
-
-        openSkyIntegrated.getAircraft(icao24List);
-        return () => unsubscribe();
-    }, [icao24List]);
-
-    const getErrorMessage = (): string | null => {
-        if (rateLimitError?.error) return `Rate limit: ${rateLimitError.error.message}`;
-        if (authError?.error) return 'Authentication failed. Some features may be limited.';
-        if (wsError?.error && networkError?.error) return 'Connection lost. Retrying...';
-        if (wsError?.error) return 'Real-time updates temporarily unavailable';
-        return null;
-    };
-
-    if (!isMapReady) {
-        return (
-            <div className="flex items-center justify-center min-h-screen bg-gray-50">
-                <LoadingSpinner message="Initializing map..." />
-            </div>
-        );
-    }
-
-    const errorMessage = getErrorMessage();
-
     return (
-        <div className="relative w-full h-screen bg-gray-100">
-            <div className="absolute inset-0">
+        <div className="relative w-full h-screen">
+            <div className="absolute inset-0 z-0">
                 <MapComponent aircraft={filteredAircraft} />
             </div>
-            <div className="absolute top-4 left-4 z-[1000]">
-                <button onClick={toggleSelector} className="bg-white p-2 rounded shadow">
+            
+            <div className="absolute top-4 left-4 z-50">
+                <button 
+                    onClick={() => setIsSelectorOpen(prev => !prev)}
+                    className="bg-white p-2 rounded-md shadow-lg hover:bg-gray-50"
+                >
                     <Menu size={24} />
                 </button>
-                {isSelectorOpen && (
-                    <UnifiedSelector
-                    selectedType=""
-                    onManufacturerSelect={handleManufacturerSelect}
-                    onModelSelect={handleModelSelect}
-                    selectedManufacturer={selectedManufacturer}
-                    selectedModel={selectedModel}
-                    onAircraftUpdate={setAircraft}
-                    modelCounts={modelCounts}
-                    totalActive={aircraft.length}
-                />
-                )}
             </div>
-            {errorMessage && <div>{errorMessage}</div>}
+
+            {isSelectorOpen && (
+                <div className="absolute top-16 left-4 z-50 w-80">
+                    <UnifiedSelector
+                        selectedType="manufacturer"
+                        onManufacturerSelect={handleManufacturerSelect}
+                        onModelSelect={setSelectedModel}
+                        selectedManufacturer={selectedManufacturer}
+                        selectedModel={selectedModel}
+                        onAircraftUpdate={setAircraft}
+                        modelCounts={modelCounts}
+                        totalActive={aircraft.length}
+                    />
+                </div>
+            )}
+
+            {(error || pollingError) && (
+                <div className="absolute top-4 right-4 z-50 bg-red-100 border border-red-400 text-red-700 px-4 py-2 rounded">
+                    {error || pollingError?.message}
+                </div>
+            )}
+
+            {isLoading && (
+                <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center z-40">
+                    <LoadingSpinner message="Loading aircraft data..." />
+                </div>
+            )}
         </div>
     );
 }

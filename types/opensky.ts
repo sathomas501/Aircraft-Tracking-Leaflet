@@ -48,8 +48,11 @@ export interface AircraftMessage {
     onGround?: boolean;
     lastContact?: number;
     N_N?: string;
+    'N-NUMBER'?: string;
     manufacturer?: string;
     model?: string;
+    OWNER_TYPE?: string;
+    TYPE_AIRCRAFT?: string;
     NAME?: string;
     CITY?: string;
     STATE?: string;

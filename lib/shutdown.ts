@@ -2,8 +2,6 @@
 import { openSkyService } from './services/opensky/service';
 import { CleanupService } from './services/CleanupService';  // Fixed casing
 import { getDatabase } from './db/databaseManager';
-import Database from 'better-sqlite3';
-import { DB } from './db/constants';
 
 let isShuttingDown = false;
 

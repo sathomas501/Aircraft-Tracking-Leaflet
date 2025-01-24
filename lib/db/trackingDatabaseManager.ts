@@ -1,48 +1,37 @@
-import { open, Database } from 'sqlite';
 import path from 'path';
-import fs from 'fs';
+import { Database, open } from 'sqlite';
+import * as fs from 'fs';
 
-// Only load sqlite3 on server side
+
 let sqlite3: typeof import('sqlite3') | null = null;
+
 if (typeof window === 'undefined') {
-    try {
-        sqlite3 = require('sqlite3');
-    } catch (error) {
-        console.error('[Database] Failed to load sqlite3:', error);
-    }
+    import('sqlite3').then((module) => {
+        sqlite3 = module.default;
+    });
 }
 
 const TRACKING_DB_PATH = path.join(process.cwd(), 'lib', 'db', 'tracking.db');
 const STALE_TIME_LIMIT = 60 * 60 * 1000; // 1 hour in milliseconds
 
 export async function getActiveDb(): Promise<Database | null> {
-    if (typeof window !== 'undefined' || !sqlite3) {
+    if (typeof window !== 'undefined') {
         console.log('[Database] Skipping database connection in browser environment');
         return null;
     }
-
-    try {
-        // Ensure directory exists
-        const dbDir = path.dirname(TRACKING_DB_PATH);
-        if (!fs.existsSync(dbDir)) {
-            fs.mkdirSync(dbDir, { recursive: true });
-        }
-
-        const db = await open({
-            filename: TRACKING_DB_PATH,
-            driver: sqlite3.Database,
-        });
-        console.log('[Database] Connected to tracking database');
-        return db;
-    } catch (error) {
-        console.error('[Database] Failed to connect to tracking database:', error);
-        return null;
+    if (!sqlite3) {
+        throw new Error('[Database] sqlite3 is not initialized.');
     }
+
+    return open({
+        filename: TRACKING_DB_PATH,
+        driver: sqlite3.Database,
+    });
 }
 
 export class TrackingDatabaseManager {
     private static instance: TrackingDatabaseManager;
-    private db: Database | null = null;
+    public db: Database | null = null;
     private cleanupInterval: NodeJS.Timeout | null = null;
     private isServer: boolean;
     private isInitialized: boolean = false;
@@ -113,7 +102,7 @@ export class TrackingDatabaseManager {
         }
     }
 
-    private startCleanup(): void {
+    public startCleanup(): void {
         if (!this.isServer) return;
 
         // Periodically clean stale data

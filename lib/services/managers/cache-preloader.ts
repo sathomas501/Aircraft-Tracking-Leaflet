@@ -1,5 +1,5 @@
 // lib/services/managers/cache-preloader.ts
-import { aircraftCache } from './aircraft-cache';
+import { unifiedCache } from './unified-cache-system';
 import { errorHandler, ErrorType } from '../error-handler';
 
 interface Region {
@@ -87,7 +87,7 @@ class CachePreloaderService {
             const response = await fetch('/api/opensky', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ region, maxAircraft })
+                body: JSON.stringify({ region, maxAircraft }),
             });
 
             if (!response.ok) {
@@ -95,7 +95,18 @@ class CachePreloaderService {
             }
 
             const data = await response.json();
-            aircraftCache.updateFromRest(region.description, data);
+            const validData = data.map((item: any) => ({
+                icao24: item.icao24,
+                latitude: item.latitude || 0,
+                longitude: item.longitude || 0,
+                altitude: item.altitude || 0,
+                velocity: item.velocity || 0,
+                heading: item.heading || 0,
+                on_ground: item.on_ground || false,
+                last_contact: item.last_contact || Date.now() / 1000,
+                manufacturer: item.manufacturer || 'Unknown',
+            }));
+            unifiedCache.updateFromPolling(validData);
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error';
             throw new Error(`Preloading failed for region ${region.description}: ${errorMessage}`);
@@ -113,7 +124,7 @@ class CachePreloaderService {
                     const positions = await fetch(`/api/opensky?icao24s=${icao24List.join(',')}`);
                     if (positions.ok) {
                         const data = await positions.json();
-                        aircraftCache.updateFromRest(manufacturer, data);
+                        unifiedCache.updateFromRest(manufacturer, data);
                     }
                 }
             } catch (error) {

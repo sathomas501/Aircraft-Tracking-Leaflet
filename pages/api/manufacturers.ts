@@ -1,92 +1,43 @@
-// pages/api/manufacturers.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { getDatabase } from '@/lib/db/databaseManager';
-import { errorHandler, ErrorType } from '@/lib/services/error-handler';
+import { unifiedCache } from '../../lib/services/managers/unified-cache-system';
 
-interface ManufacturerResponse {
-    value: string;
-    label: string;
-    count: number;
-    activeCount: number;
+
+interface ManufacturersResponse {
+  manufacturers?: { value: string; label: string }[];
+  error?: string;
 }
 
-// Define the type for the database query result
-interface ManufacturerData {
-    name: string;      // Manufacturer name
-    count: number;     // Count of aircraft
-    activeCount: number; // Active aircraft count
-}
-
-export default async function handler(
-    req: NextApiRequest, 
-    res: NextApiResponse<{ manufacturers: ManufacturerResponse[] } | { error: string; message?: string }>
-) {
+// manufacturers.ts
+interface Aircraft {
+    manufacturer: string;
+ }
+ 
+ export default async function handler(req: NextApiRequest, res: NextApiResponse) {
     try {
-        if (req.method !== 'GET') {
-            res.setHeader('Allow', ['GET']);
-            return res.status(405).json({ 
-                error: 'Method Not Allowed',
-                message: `Method ${req.method} is not allowed` 
-            });
+        // Attempt to fetch data from cache
+        const data = await unifiedCache.getLatestData();
+
+        // Ensure data is valid
+        if (!data || !Array.isArray(data.aircraft)) {
+            throw new Error('Cache is empty or invalid.');
         }
 
-        console.log('Starting manufacturers fetch...');
-        
-        const db = await getDatabase();
-        console.log('Database connection established');
+        // Extract manufacturers
+        const manufacturers = Array.from(new Set(
+            data.aircraft.map((aircraft: any) => aircraft.manufacturer)
+        ))
+            .filter(Boolean)
+            .map((m) => ({ value: m, label: m }));
 
-        const manufacturers = await db.all<ManufacturerData[]>(`
-            SELECT 
-                manufacturer as name,
-                COUNT(*) as count,
-                0 as activeCount  -- Default to 0 since static DB doesn't track active status
-            FROM aircraft
-            WHERE 
-                manufacturer IS NOT NULL
-                AND manufacturer != ''
-                AND LENGTH(TRIM(manufacturer)) > 1
-            GROUP BY manufacturer
-            HAVING count >= 10
-            ORDER BY count DESC
-            LIMIT 50
-        `);
-
-        console.log(`Found ${manufacturers.length} manufacturers`);
-
-        if (!Array.isArray(manufacturers)) {
-            throw new Error('Invalid response from database');
-        }
-
-        const formattedManufacturers = manufacturers.map(m => ({
-            value: m.name,
-            label: m.name,
-            count: Number(m.count) || 0,
-            activeCount: Number(m.activeCount) || 0
-        }));
-
-        console.log('Successfully formatted manufacturers data');
-
-        return res.status(200).json({ manufacturers: formattedManufacturers });
-        
+        // Send response
+        res.status(200).json({ manufacturers });
     } catch (error) {
-        console.error('Detailed error in manufacturers API:', {
-            error,
-            message: error instanceof Error ? error.message : 'Unknown error',
-            stack: error instanceof Error ? error.stack : undefined,
-            retryAttempts: 0
-        });
-
-        errorHandler.handleError(
-            ErrorType.DATA,
-            'Failed to fetch manufacturers',
-            error instanceof Error ? error : new Error('Unknown error')
-        );
-        
-        return res.status(500).json({ 
-            error: 'Failed to fetch manufacturers',
-            message: process.env.NODE_ENV === 'development' 
-                ? (error instanceof Error ? error.message : 'Unknown error') 
-                : 'Internal server error'
-        });
+        if (error instanceof Error) {
+            console.error('[ERROR] API Handler Failed:', error.message);
+            res.status(500).json({ error: error.message });
+        } else {
+            console.error('[ERROR] API Handler Failed with unknown error:', error);
+            res.status(500).json({ error: 'An unknown error occurred.' });
+        }
     }
 }

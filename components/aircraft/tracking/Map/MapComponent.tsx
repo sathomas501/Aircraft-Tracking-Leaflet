@@ -26,9 +26,9 @@ const MapComponent = ({ aircraft = [] }: MapComponentProps) => {
       className="w-full h-full"
     >
       <TileLayer
-        url={MAP.TILE_LAYER.URL}
-        attribution={MAP.TILE_LAYER.ATTRIBUTION}
-      />
+  url={`${MAP.TILE_LAYER.URL}?v=${Date.now()}`}
+  attribution={MAP.TILE_LAYER.ATTRIBUTION}
+/>
       
       {aircraft.map((plane) => (
         <Marker

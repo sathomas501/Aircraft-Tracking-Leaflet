@@ -1,41 +1,45 @@
 import { useEffect, useCallback, useRef, useState } from 'react';
-import { OpenSkyWebSocket } from '@/lib/services/openSkyService';
+import { PollingRateLimiter } from '@/lib/services/rate-limiter';
+import { errorHandler, ErrorType } from '@/lib/services/error-handler';
 import { ExtendedAircraft } from '@/lib/services/opensky-integrated';
 
-export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
+export type PollingStatus = 'idle' | 'polling' | 'rate-limited' | 'error';
 
-interface UseWebSocketOptions {
+interface UsePollingOptions {
     onData?: (data: ExtendedAircraft[]) => void;
     onError?: (error: Error) => void;
-    onStatusChange?: (status: ConnectionStatus) => void;
+    onStatusChange?: (status: PollingStatus) => void;
     icao24List?: string[];
     manufacturer?: string;
     interpolate?: boolean;
 }
 
-export function useOpenSkyWebSocket({
+const rateLimiter = new PollingRateLimiter({
+    requestsPerMinute: 60,
+    requestsPerDay: 1000,
+    minPollingInterval: 5000,
+    maxPollingInterval: 30000
+});
+
+export function useOpenSkyPolling({
     onData,
     onError,
     onStatusChange,
     icao24List = [],
     manufacturer,
     interpolate = true,
-}: UseWebSocketOptions = {}) {
-    const serviceRef = useRef<OpenSkyWebSocket | null>(null);
-    const interpolationFrameRef = useRef<number>();
-    const [status, setStatus] = useState<ConnectionStatus>('disconnected');
+}: UsePollingOptions = {}) {
+    const [status, setStatus] = useState<PollingStatus>('idle');
     const [error, setError] = useState<Error | null>(null);
-
+    const pollingTimeoutRef = useRef<NodeJS.Timeout>();
+    const interpolationFrameRef = useRef<number>();
     const lastUpdateRef = useRef<number>(Date.now());
     const currentAircraftRef = useRef<ExtendedAircraft[]>([]);
 
-    const updateFromWebSocket = useCallback((data: ExtendedAircraft[]) => {
+    const updateData = useCallback((data: ExtendedAircraft[]) => {
         currentAircraftRef.current = data;
         lastUpdateRef.current = Date.now();
-
-        if (onData) {
-            onData(data);
-        }
+        onData?.(data);
     }, [onData]);
 
     const interpolatePositions = useCallback(() => {
@@ -43,8 +47,8 @@ export function useOpenSkyWebSocket({
 
         const now = Date.now();
         const deltaTime = (now - lastUpdateRef.current) / 1000;
-
-        const interpolated = currentAircraftRef.current.map((aircraft) => {
+        
+        const interpolated = currentAircraftRef.current.map(aircraft => {
             if (!aircraft.velocity || !aircraft.heading) return aircraft;
 
             const distance = (aircraft.velocity * deltaTime) / 3600;
@@ -57,109 +61,84 @@ export function useOpenSkyWebSocket({
             };
         });
 
-        if (onData) {
-            onData(interpolated);
-        }
-
+        onData?.(interpolated);
         interpolationFrameRef.current = requestAnimationFrame(interpolatePositions);
     }, [interpolate, onData]);
 
-    // Connection setup
-const setupConnection = useCallback(() => {
-    if (typeof window === 'undefined') return () => {};
-    
-    let cleanup = () => {};
-    
-    try {
-        // Create new instance if needed
-        if (!serviceRef.current) {
-            serviceRef.current = new OpenSkyWebSocket();
+    const fetchData = useCallback(async () => {
+        if (!await rateLimiter.tryAcquire()) {
+            setStatus('rate-limited');
+            onStatusChange?.('rate-limited');
+            return;
         }
 
-        const service = serviceRef.current;
-        setStatus('connecting');
-        onStatusChange?.('connecting');
+        try {
+            const response = await fetch('/api/aircraft/positions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    icao24List,
+                    manufacturer 
+                })
+            });
 
-        // Authentication check using instance method
-        const authStatus = service.getAuthStatus();
-        if (!authStatus) {
-            throw new Error('WebSocket authentication failed');
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const data = await response.json();
+            updateData(data);
+            rateLimiter.decreasePollingInterval();
+            setStatus('polling');
+            onStatusChange?.('polling');
+
+        } catch (err) {
+            const error = err instanceof Error ? err : new Error('Polling failed');
+            console.error('[OpenSky] Polling error:', error);
+            errorHandler.handleError(ErrorType.POLLING, error);
+            setError(error);
+            setStatus('error');
+            onStatusChange?.('error');
+            onError?.(error);
+            rateLimiter.increasePollingInterval();
         }
+    }, [icao24List, manufacturer, onStatusChange, onError, updateData]);
 
-        // Connect and subscribe
-        service.connect();
-        
-        const topic = manufacturer 
-            ? `manufacturer/${manufacturer}`
-            : `aircraft/${icao24List.join(',')}`;
-            
-        // Use instance method to subscribe
-        service.subscribe(topic, (data: ExtendedAircraft[]) => {
-            updateFromWebSocket(data);
-        });
-
-        // Initial data fetch
-        if (icao24List.length > 0) {
-            service.getAircraft(icao24List)
-                .then(updateFromWebSocket)
-                .catch((err) => {
-                    console.error('Error fetching initial aircraft data:', err);
-                    onError?.(err);
-                });
-        }
-
-        setStatus('connected');
-        onStatusChange?.('connected');
+    const startPolling = useCallback(() => {
+        const poll = async () => {
+            await fetchData();
+            const interval = rateLimiter.getCurrentPollingInterval();
+            pollingTimeoutRef.current = setTimeout(poll, interval);
+        };
 
         if (interpolate) {
             interpolationFrameRef.current = requestAnimationFrame(interpolatePositions);
         }
 
-        cleanup = () => {
-            if (serviceRef.current) {
-                serviceRef.current.unsubscribe(topic);
-                serviceRef.current.cleanup();
-                serviceRef.current = null;
-            }
-            if (interpolationFrameRef.current) {
-                cancelAnimationFrame(interpolationFrameRef.current);
-            }
-            setStatus('disconnected');
-            onStatusChange?.('disconnected');
-        };
+        poll();
+    }, [fetchData, interpolate, interpolatePositions]);
 
-    } catch (err) {
-        const error = err instanceof Error ? err : new Error('Failed to setup connection');
-        console.error('[OpenSky] Connection error:', error);
-        setError(error);
-        setStatus('error');
-        onStatusChange?.('error');
-        onError?.(error);
-    }
-
-    return cleanup;
-}, [icao24List, manufacturer, interpolate, interpolatePositions, onStatusChange, onError, updateFromWebSocket]);
+    const stopPolling = useCallback(() => {
+        if (pollingTimeoutRef.current) {
+            clearTimeout(pollingTimeoutRef.current);
+        }
+        if (interpolationFrameRef.current) {
+            cancelAnimationFrame(interpolationFrameRef.current);
+        }
+        setStatus('idle');
+        onStatusChange?.('idle');
+    }, [onStatusChange]);
 
     useEffect(() => {
-        if (typeof window === 'undefined') return;
-
-        const cleanup = setupConnection();
-        return cleanup;
-    }, [setupConnection]);
+        startPolling();
+        return stopPolling;
+    }, [startPolling, stopPolling]);
 
     return {
         status,
         error,
-        disconnect: useCallback(() => {
-            if (serviceRef.current) {
-                serviceRef.current.cleanup();
-                setStatus('disconnected');
-            }
-        }, []),
-        reconnect: useCallback(() => {
-            if (status === 'disconnected' || status === 'error') {
-                setupConnection();
-            }
-        }, [status, setupConnection]),
+        pollingInterval: rateLimiter.getCurrentPollingInterval(),
+        stop: stopPolling,
+        start: startPolling,
     };
 }

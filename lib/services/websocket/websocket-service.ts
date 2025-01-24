@@ -1,174 +1,191 @@
-// lib/services/websocket/websocket-service.ts
-import WebSocket from 'ws';
-import { openSkyAuth } from '../opensky-auth';
+// services/opensky-websocket.ts
+import { CacheManager } from '@/lib/services/managers/cache-manager';
+import { OPENSKY_API_CONFIG } from '@/lib/config/opensky';
+import { openSkyAuth } from '@/lib/services/opensky-auth';
+import { ExtendedAircraft } from '@/lib/services/opensky-integrated';
+import { IOpenSkyService, PositionData, PositionUpdateCallback, OpenSkyState } from '@/types/opensky/index';
 import { errorHandler, ErrorType } from '../error-handler';
+import WebSocket from 'ws';
 
-export interface WebSocketConfig {
-    url: string;
-    reconnectAttempts?: number;
-    reconnectDelay?: number;
-    authRequired?: boolean;
-}
-
-export type MessageHandler = (data: any) => void;
-export type ErrorHandler = (error: Error) => void;
-export type ConnectionHandler = () => void;
-
-export class WebSocketService {
-    private ws: WebSocket | null = null;
-    private reconnectAttempts = 0;
-    private readonly config: Required<WebSocketConfig>;  // Initialize in constructor
-    private messageHandler: MessageHandler | null = null;
-    private errorHandler: ErrorHandler | null = null;
-    private onConnectHandler: ConnectionHandler | null = null;
+export class OpenSkyWebSocket implements IOpenSkyService {
+    private socket: WebSocket | null = null;
+    private cache: CacheManager<PositionData>;
+    private positionCallbacks: Set<PositionUpdateCallback> = new Set();
+    private username: string | null = null;
+    private readonly RECONNECT_DELAY = 5000;
     private reconnectTimeout: NodeJS.Timeout | null = null;
-    private isConnected = false;
+    private lastUpdate: number = Date.now();
 
-    constructor(config: WebSocketConfig) {
-        // Initialize config with defaults
-        this.config = {
-            url: config.url,
-            reconnectAttempts: config.reconnectAttempts ?? 3,
-            reconnectDelay: config.reconnectDelay ?? 5000,
-            authRequired: config.authRequired ?? true
+    constructor() {
+        this.cache = new CacheManager<PositionData>(OPENSKY_API_CONFIG.CACHE.TTL.POSITION);
+    }
+
+    
+    async getAircraft(icao24List: string[]): Promise<ExtendedAircraft[]> {
+        try {
+            const response = await fetch(
+                `${OPENSKY_API_CONFIG.BASE_URL}/extended/${icao24List.join(',')}`,
+                { headers: openSkyAuth.getAuthHeaders() }
+            );
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            return await response.json();
+        } catch (error) {
+            errorHandler.handleError(ErrorType.WEBSOCKET, 'Failed to fetch aircraft data');
+            return [];
+        }
+    }
+
+    async getPositions(icao24List?: string[]): Promise<PositionData[]> {
+        try {
+            const url = icao24List?.length 
+                ? `${OPENSKY_API_CONFIG.BASE_URL}/states/all?icao24=${icao24List.join(',')}`
+                : `${OPENSKY_API_CONFIG.BASE_URL}/states/all`;
+
+            const response = await fetch(url, { 
+                headers: openSkyAuth.getAuthHeaders() 
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const data = await response.json();
+            return this.parsePositionData(data.states || []);
+        } catch (error) {
+            errorHandler.handleError(ErrorType.WEBSOCKET, 'Failed to fetch positions');
+            return [];
+        }
+    }
+
+    async subscribeToAircraft(icao24s: string[]): Promise<void> {
+        this.connectWebSocket();
+        if (this.socket?.readyState === WebSocket.OPEN) {
+            this.socket.send(JSON.stringify({ 
+                type: 'subscribe', 
+                data: { icao24s } 
+            }));
+        }
+    }
+
+    unsubscribeFromAircraft(icao24s: string[]): void {
+        if (this.socket?.readyState === WebSocket.OPEN) {
+            this.socket.send(JSON.stringify({ 
+                type: 'unsubscribe', 
+                data: { icao24s } 
+            }));
+        }
+    }
+
+    addClient(): void {
+        // Implementation for WebSocket client management
+    }
+
+    removeClient(): void {
+        // Implementation for WebSocket client management
+    }
+
+    private connectWebSocket(): void {
+        if (this.socket) return;
+
+        const wsUrl = `${OPENSKY_API_CONFIG.WS_URL}/states/all/ws`;
+        this.socket = new WebSocket(wsUrl, {
+            headers: openSkyAuth.getAuthHeaders()
+        });
+
+        this.socket.onopen = () => {
+            console.log('WebSocket connected');
+            if (this.reconnectTimeout) {
+                clearTimeout(this.reconnectTimeout);
+                this.reconnectTimeout = null;
+            }
+        };
+
+        this.socket.onmessage = async (event) => {
+            try {
+                const data = JSON.parse(event.data.toString());
+                const positions = this.parsePositionData(data.states || []);
+                await this.notifyCallbacks(positions);
+                this.lastUpdate = Date.now();
+            } catch (error) {
+                console.error('WebSocket message error:', error);
+            }
+        };
+
+        this.socket.onerror = (error) => {
+            errorHandler.handleError(ErrorType.WEBSOCKET, 'WebSocket connection error');
+        };
+
+        this.socket.onclose = () => {
+            this.socket = null;
+            this.scheduleReconnect();
         };
     }
 
-    async connect(
-        messageHandler: MessageHandler,
-        errorHandler: ErrorHandler,
-        onConnect?: ConnectionHandler
-    ): Promise<void> {
-        this.messageHandler = messageHandler;
-        this.errorHandler = errorHandler;
-        this.onConnectHandler = onConnect ?? null;
-
-        await this.establishConnection();
-    }
-
-    // In websocket-service.ts
-    
-private async establishConnection(): Promise<void> {
-    try {
-        let headers = {};
+    private scheduleReconnect(): void {
+        if (this.reconnectTimeout) return;
         
-        if (this.config.authRequired) {
-            console.log('[WebSocket] Starting authentication...');
-            const isAuthenticated = await openSkyAuth.authenticate({
-                useEnvCredentials: true
-            });
-
-            if (!isAuthenticated) {
-                console.warn('[WebSocket] Authentication failed, may retry with polling fallback');
-                throw new Error('OpenSky authentication failed - service may be temporarily unavailable');
-            }
-
-            headers = openSkyAuth.getWebSocketHeaders();
-        }
-
-        this.ws = new WebSocket(this.config.url, { 
-            headers,
-            handshakeTimeout: 15000  // 15 second handshake timeout
-        });
-
-        this.setupEventListeners();
-
-    } catch (error: unknown) {
-        const errorMessage = error instanceof Error ? error.message : 'Unknown connection error';
-        console.error('[WebSocket] Connection error:', errorMessage);
-        this.handleError(new Error(errorMessage));
-    }
-}
-    private setupEventListeners(): void {
-        if (!this.ws) return;
-
-        this.ws.on('open', () => {
-            console.log('[WebSocket] Connection established');
-            this.isConnected = true;
-            this.reconnectAttempts = 0;
-            if (this.onConnectHandler) {
-                this.onConnectHandler();
-            }
-        });
-
-        this.ws.on('message', (data) => {
-            if (this.messageHandler) {
-                try {
-                    const parsedData = JSON.parse(data.toString());
-                    this.messageHandler(parsedData);
-                } catch (error) {
-                    console.error('[WebSocket] Message parsing error:', error);
-                    this.handleError(error as Error);
-                }
-            }
-        });
-
-        this.ws.on('error', (error) => {
-            console.error('[WebSocket] Error:', error);
-            this.handleError(error);
-        });
-
-        this.ws.on('close', (code, reason) => {
-            console.log('[WebSocket] Connection closed:', { code, reason });
-            this.isConnected = false;
-            this.handleReconnect();
-        });
-    }
-
-    private handleError(error: Error): void {
-        if (this.errorHandler) {
-            this.errorHandler(error);
-        }
-
-        if (error.message.includes('403')) {
-            openSkyAuth.reset();
-        }
-    }
-
-    private handleReconnect(): void {
-        if (this.reconnectTimeout) {
-            clearTimeout(this.reconnectTimeout);
-        }
-
-        if (this.reconnectAttempts >= this.config.reconnectAttempts) {
-            console.error('[WebSocket] Max reconnection attempts reached');
-            errorHandler.handleError(
-                ErrorType.WEBSOCKET,
-                'Failed to establish connection after multiple attempts'
-            );
-            return;
-        }
-
-        this.reconnectAttempts++;
-        const delay = Math.min(
-            this.config.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1),
-            30000
-        );
-
-        console.log(
-            `[WebSocket] Attempting to reconnect (${this.reconnectAttempts}/${this.config.reconnectAttempts}) in ${delay}ms`
-        );
-
         this.reconnectTimeout = setTimeout(() => {
-            this.establishConnection();
-        }, delay);
+            this.reconnectTimeout = null;
+            this.connectWebSocket();
+        }, this.RECONNECT_DELAY);
     }
 
-    disconnect(): void {
+    private parsePositionData(states: any[]): PositionData[] {
+        return states.map(state => ({
+            icao24: state[0],
+            latitude: state[6] || 0,
+            longitude: state[5] || 0,
+            altitude: state[7] || 0,
+            velocity: state[9] || 0,
+            heading: state[10] || 0,
+            on_ground: Boolean(state[8]),
+            last_contact: state[4] || Date.now() / 1000
+        }));
+    }
+
+    onPositionUpdate(callback: PositionUpdateCallback): void {
+        this.positionCallbacks.add(callback);
+    }
+
+    removePositionUpdateCallback(callback: PositionUpdateCallback): void {
+        this.positionCallbacks.delete(callback);
+    }
+
+    private async notifyCallbacks(positions: PositionData[]): Promise<void> {
+        for (const callback of this.positionCallbacks) {
+            try {
+                await callback(positions);
+            } catch (error) {
+                console.error('Callback error:', error);
+            }
+        }
+    }
+
+    getState(): OpenSkyState {
+        return {
+            authenticated: openSkyAuth.isAuthenticated(),
+            connected: this.socket?.readyState === WebSocket.OPEN,
+            lastUpdate: this.lastUpdate,
+            username: this.username
+        };
+    }
+
+    async cleanup(): Promise<void> {
+        if (this.socket) {
+            this.socket.close();
+            this.socket = null;
+        }
         if (this.reconnectTimeout) {
             clearTimeout(this.reconnectTimeout);
             this.reconnectTimeout = null;
         }
-
-        if (this.ws) {
-            this.ws.close();
-            this.ws = null;
-        }
-
-        this.isConnected = false;
-    }
-
-    isActive(): boolean {
-        return this.isConnected;
+        this.positionCallbacks.clear();
+        this.cache.flush();
     }
 }
+
+export default new OpenSkyWebSocket();

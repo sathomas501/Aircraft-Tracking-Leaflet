@@ -1,7 +1,7 @@
-// lib/services/aircraft-tracker.ts
 import axios, { AxiosError } from 'axios';
 import { CacheManager } from '@/lib/services/managers/cache-manager';
 import { errorHandler, ErrorType } from '@/lib/services/error-handler';
+import { PollingRateLimiter } from './rate-limiter';
 
 interface AircraftPosition {
     icao24: string;
@@ -21,17 +21,11 @@ interface ValidationRules {
     heading: { min: number; max: number };
 }
 
-interface BatchConfig {
-    size: number;
-    delayMs: number;
-}
-
 export class AircraftTracker {
     private cacheManager: CacheManager<AircraftPosition[]>;
-    private lastRequestTime: number = 0;
-    private requestCount: number = 0;
+    private rateLimiter: PollingRateLimiter;
+    private pollingInterval: NodeJS.Timeout | null = null;
 
-    // Validation rules
     private readonly validationRules: ValidationRules = {
         latitude: { min: -90, max: 90 },
         longitude: { min: -180, max: 180 },
@@ -40,83 +34,72 @@ export class AircraftTracker {
         heading: { min: 0, max: 360 }
     };
 
-    // Make batchConfig private but mutable
-    private batchConfig = {
-        size: 100,
-        delayMs: 1000
-    };
-
     constructor(
         private readonly restUrl: string,
-        cacheTTL: number,
-        batchConfig?: Partial<BatchConfig>
+        cacheTTL: number
     ) {
         this.cacheManager = new CacheManager<AircraftPosition[]>(cacheTTL);
-        if (batchConfig) {
-            this.batchConfig = { ...this.batchConfig, ...batchConfig };
-        }
+        this.rateLimiter = new PollingRateLimiter({
+            requestsPerMinute: 60,
+            requestsPerDay: 1000,
+            minPollingInterval: 5000,
+            maxPollingInterval: 30000
+        });
     }
 
-    setBatchConfig(config: Partial<BatchConfig>): void {
-        this.batchConfig = { ...this.batchConfig, ...config };
-    }
+    async startPolling(icao24s: string[], onData: (positions: AircraftPosition[]) => void): Promise<void> {
+        if (this.pollingInterval) this.stopPolling();
 
-    async getPositions(icao24s: string[]): Promise<AircraftPosition[]> {
-        if (!icao24s.length) return [];
-
-        // Process in batches
-        const batches = this.createBatches(icao24s);
-        const allPositions: AircraftPosition[] = [];
-
-        for (let i = 0; i < batches.length; i++) {
-            const batch = batches[i];
-            console.log(`Processing batch ${i + 1}/${batches.length} (${batch.length} aircraft)`);
+        const poll = async () => {
+            if (!await this.rateLimiter.tryAcquire()) {
+                errorHandler.handleError(ErrorType.POLLING, 'Rate limit exceeded');
+                return;
+            }
 
             try {
-                const positions = await this.fetchBatchPositions(batch);
-                allPositions.push(...positions);
-
-                // Add delay between batches if not the last batch
-                if (i < batches.length - 1) {
-                    await new Promise(resolve => setTimeout(resolve, this.batchConfig.delayMs));
-                }
+                const positions = await this.getPositions(icao24s);
+                onData(positions);
+                this.rateLimiter.decreasePollingInterval();
             } catch (error) {
-                console.error(`Error processing batch ${i + 1}:`, error);
-                // Continue with next batch even if current fails
+                this.handleError(error, icao24s);
+                this.rateLimiter.increasePollingInterval();
             }
-        }
+        };
 
-        return allPositions;
+        await poll();
+        const interval = this.rateLimiter.getCurrentPollingInterval();
+        this.pollingInterval = setInterval(poll, interval);
     }
 
-    private createBatches(icao24s: string[]): string[][] {
-        const batches: string[][] = [];
-        for (let i = 0; i < icao24s.length; i += this.batchConfig.size) {
-            batches.push(icao24s.slice(i, i + this.batchConfig.size));
+    stopPolling(): void {
+        if (this.pollingInterval) {
+            clearInterval(this.pollingInterval);
+            this.pollingInterval = null;
         }
-        return batches;
+        this.rateLimiter.resetPollingInterval();
     }
 
-    private async fetchBatchPositions(icao24s: string[]): Promise<AircraftPosition[]> {
+    private async getPositions(icao24s: string[]): Promise<AircraftPosition[]> {
+        if (!icao24s.length) return [];
+
         const cacheKey = icao24s.join(',');
         const cached = this.cacheManager.get(cacheKey);
         if (cached) return cached;
 
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+
         try {
             const response = await axios.get(this.restUrl, {
                 params: { icao24: icao24s.join(',') },
-                timeout: 10000
+                signal: controller.signal
             });
 
-            const rawStates = response.data.states || [];
-            const positions = this.parseStates(rawStates);
-            
-            // Only cache if we got valid positions
-            if (positions.length > 0) {
-                this.cacheManager.set(cacheKey, positions);
-            }
-
+            clearTimeout(timeoutId);
+            const positions = this.parseAircraftStates(response.data.states || []);
+            if (positions.length) this.cacheManager.set(cacheKey, positions);
             return positions;
+
         } catch (error) {
             this.handleError(error, icao24s);
             return [];
@@ -124,53 +107,42 @@ export class AircraftTracker {
     }
 
     private validatePosition(position: Partial<AircraftPosition>): position is AircraftPosition {
-        // Required fields check
         if (!position.icao24 || 
             position.latitude === undefined || 
             position.longitude === undefined) {
             return false;
         }
 
-        // Latitude validation
         if (!this.isValidRange(position.latitude, 
             this.validationRules.latitude.min, 
             this.validationRules.latitude.max)) {
-            console.warn(`Invalid latitude for ${position.icao24}: ${position.latitude}`);
             return false;
         }
 
-        // Longitude validation
         if (!this.isValidRange(position.longitude, 
             this.validationRules.longitude.min, 
             this.validationRules.longitude.max)) {
-            console.warn(`Invalid longitude for ${position.icao24}: ${position.longitude}`);
             return false;
         }
 
-        // Altitude validation (if provided)
         if (position.altitude !== undefined && 
             !this.isValidRange(position.altitude, 
                 this.validationRules.altitude.min, 
                 this.validationRules.altitude.max)) {
-            console.warn(`Invalid altitude for ${position.icao24}: ${position.altitude}`);
             return false;
         }
 
-        // Velocity validation (if provided)
         if (position.velocity !== undefined && 
             !this.isValidRange(position.velocity, 
                 this.validationRules.velocity.min, 
                 this.validationRules.velocity.max)) {
-            console.warn(`Invalid velocity for ${position.icao24}: ${position.velocity}`);
             return false;
         }
 
-        // Heading validation (if provided)
         if (position.heading !== undefined && 
             !this.isValidRange(position.heading, 
                 this.validationRules.heading.min, 
                 this.validationRules.heading.max)) {
-            console.warn(`Invalid heading for ${position.icao24}: ${position.heading}`);
             return false;
         }
 
@@ -181,7 +153,7 @@ export class AircraftTracker {
         return !isNaN(value) && isFinite(value) && value >= min && value <= max;
     }
 
-    parseStates(rawStates: any[][]): AircraftPosition[] {
+    private parseAircraftStates(rawStates: any[][]): AircraftPosition[] {
         return rawStates
             .map(state => {
                 try {
@@ -209,67 +181,31 @@ export class AircraftTracker {
                         lastContact: Number(lastContact) || Math.floor(Date.now() / 1000)
                     };
 
-                    // Validate the position
-                    if (this.validatePosition(position)) {
-                        return position;
-                    }
-                    return null;
-
+                    return this.validatePosition(position) ? position : null;
                 } catch (error) {
-                    console.error('[Parse Error] Failed to parse state:', error, state);
                     return null;
                 }
             })
             .filter((pos): pos is AircraftPosition => pos !== null);
     }
 
-    clearCache(): void {
-        this.cacheManager.flush();
-    }
-
-    // In AircraftTracker class, add this method:
-
-private handleError(error: unknown, icao24s: string[]): void {
-    if (axios.isAxiosError(error)) {
-        const axiosError = error as AxiosError;
-        
-        if (axiosError.response?.status === 429) {
-            errorHandler.handleError(
-                ErrorType.RATE_LIMIT, 
-                'OpenSky rate limit exceeded', 
-                { retryAfter: parseInt(axiosError.response.headers['retry-after'] || '300', 10) }
-            );
-        } else if (axiosError.response?.status === 403) {
-            errorHandler.handleError(
-                ErrorType.AUTH, 
-                'Authentication failed'
-            );
-        } else if (axiosError.code === 'ECONNABORTED') {
-            errorHandler.handleError(
-                ErrorType.NETWORK, 
-                'Request timeout'
-            );
+    private handleError(error: unknown, icao24s: string[]): void {
+        if (axios.isAxiosError(error)) {
+            const axiosError = error as AxiosError;
+            
+            if (axiosError.response?.status === 429) {
+                this.rateLimiter.increasePollingInterval();
+                errorHandler.handleError(ErrorType.POLLING, 'Rate limit exceeded');
+            } else if (axiosError.response?.status === 403) {
+                errorHandler.handleError(ErrorType.AUTH, 'Authentication failed');
+            } else {
+                errorHandler.handleError(ErrorType.POLLING, axiosError.message);
+            }
         } else {
             errorHandler.handleError(
-                ErrorType.NETWORK, 
-                `Network error: ${axiosError.message}`
+                ErrorType.POLLING,
+                `Failed to fetch positions for ${icao24s.length} aircraft`
             );
         }
-    } else {
-        errorHandler.handleError(
-            ErrorType.DATA,
-            `Failed to fetch positions for ${icao24s.length} aircraft`,
-            error instanceof Error ? error : new Error('Unknown error')
-        );
     }
-    
-    // Log additional debug information
-    console.error('[Aircraft Tracker] Error details:', {
-        timestamp: new Date().toISOString(),
-        icao24Count: icao24s.length,
-        sampleIcao24s: icao24s.slice(0, 5),
-        errorType: error instanceof Error ? error.constructor.name : typeof error,
-        errorMessage: error instanceof Error ? error.message : String(error)
-    });
-}
 }

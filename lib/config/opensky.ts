@@ -184,6 +184,7 @@ export const OPENSKY_CONFIG = {
 
 export const OPENSKY_API_CONFIG = {
   BASE_URL: 'https://opensky-network.org/api', // API Base URL
+  WS_URL: 'wss://opensky-network.org/api/ws',
   ENDPOINTS: {
     ALL_STATES: '/states/all', // Endpoint for fetching aircraft positions
   },
@@ -213,4 +214,8 @@ export const OPENSKY_API_CONFIG = {
       VELOCITY: 9,
     },
   },
+
+
+ 
+
 };

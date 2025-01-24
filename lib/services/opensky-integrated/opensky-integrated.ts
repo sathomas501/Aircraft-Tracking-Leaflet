@@ -1,73 +1,56 @@
-// lib/services/opensky-integrated.ts
-import { enhancedCache } from '@/lib/services/managers/enhanced-cache';
+import { unifiedCache } from '../managers/unified-cache-system';
 import { openSkyAuth } from '../opensky-auth';
 import { errorHandler, ErrorType } from '../error-handler';
 import { positionInterpolator } from '@/utils/position-interpolation';
-import type { Aircraft } from '@/types/base';
-import type { PositionData } from '@/types/base';
-import type { IOpenSkyService } from '@/lib/services/opensky-integrated/types';
-import type { WebSocketClient } from '@/types/websocket';
+import { PollingRateLimiter } from '../rate-limiter';
+import type { Aircraft, PositionData } from '@/types/base';
+import type { IOpenSkyService } from './types';
 
+interface ExtendedAircraft extends Aircraft {
+    lastUpdate?: number;
+}
 
-function toAircraft(position: PositionData): Aircraft {
+function toAircraft(position: PositionData): ExtendedAircraft {
     return {
-        ...position, // Spread properties from PositionData
-        "N-NUMBER": '', // Default or actual value
-        manufacturer: '', // Default or actual value
-        model: '', // Default or actual value
-        NAME: '', // Default or actual value
-        CITY: '', // Default or actual value
-        STATE: '', // Default or actual value
-        OWNER_TYPE: '', // Default or actual value
-        TYPE_AIRCRAFT: '', // Default or actual value
-        isTracked: true, // Default or actual value
-        altitude: position.altitude ?? 0, // Ensure altitude is a number
-        heading:  position.heading ?? 0,
+        icao24: position.icao24,
+        "N-NUMBER": '',
+        manufacturer: '',
+        model: position.model || '',
+        NAME: '',
+        CITY: '',
+        STATE: '',
+        OWNER_TYPE: '',
+        TYPE_AIRCRAFT: '',
+        isTracked: true,
+        latitude: position.latitude,
+        longitude: position.longitude,
+        altitude: position.altitude ?? 0,
+        heading: position.heading ?? 0,
         velocity: position.velocity ?? 0,
+        on_ground: position.on_ground,
+        last_contact: position.last_contact,
+        lastUpdate: Date.now()
     };
 }
 
 
-class OpenSkyIntegrated implements IOpenSkyService {
-    // Class implementation here...
-
+export class OpenSkyIntegrated implements IOpenSkyService {
     private static instance: OpenSkyIntegrated;
-    private ws: WebSocket | null = null;
-    private reconnectTimeout: NodeJS.Timeout | null = null;
     private updateInterval: NodeJS.Timeout | null = null;
-    private subscribers = new Set<(data: Aircraft[]) => void>();
-    private clients: Set<WebSocketClient> = new Set(); // Add this line to define the clients property
-    private readonly UPDATE_INTERVAL = 1000; // 1 second updates for interpolation
-    private readonly WS_RECONNECT_DELAY = 5000; // 5 seconds
+    private pollingInterval: NodeJS.Timeout | null = null;
+    private subscribers = new Set<(data: ExtendedAircraft[]) => void>();
+    private rateLimiter: PollingRateLimiter;
+    private readonly UPDATE_INTERVAL = 1000;
     private positions: Map<string, PositionData> = new Map();
 
     private constructor() {
+        this.rateLimiter = new PollingRateLimiter({
+            requestsPerMinute: 60,
+            requestsPerDay: 1000,
+            minPollingInterval: 5000,
+            maxPollingInterval: 30000
+        });
         this.startUpdateLoop();
-    }
-
-    public async getPositionsMap(): Promise<Map<string, PositionData>> {
-        return this.positions;
-    }
-    
-    public async getPositions(): Promise<PositionData[]> {
-        return Array.from(this.positions.values()); // Convert Map values to an array
-
-    }
-
-    getAuthStatus(): { authenticated: boolean; username: string | null } {
-        const isAuthenticated = openSkyAuth.isAuthenticated();
-        const username = isAuthenticated ? openSkyAuth.getUsername() : null;
-        return { authenticated: isAuthenticated, username };
-    }
-
-    addClient(client: WebSocketClient): void {
-        this.clients.add(client);
-        console.log('Client added:', client);
-    }
-
-    removeClient(client: WebSocketClient): void {
-        this.clients.delete(client);
-        console.log('Client removed:', client);
     }
 
     static getInstance(): OpenSkyIntegrated {
@@ -77,67 +60,68 @@ class OpenSkyIntegrated implements IOpenSkyService {
         return OpenSkyIntegrated.instance;
     }
 
-    private async initWebSocket() {
-        if (this.ws) return;
+    getAuthStatus(): { authenticated: boolean; username: string | null } {
+        return {
+            authenticated: openSkyAuth.isAuthenticated(),
+            username: openSkyAuth.isAuthenticated() ? 'user' : null
+        };
+    }
+
+    addClient(): void {
+        // No-op in polling implementation
+    }
+
+    removeClient(): void {
+        // No-op in polling implementation
+    }
+
+    async getPositions(manufacturer: string): Promise<PositionData[]> {
+        const positions = Array.from(this.positions.values());
+        return manufacturer ? 
+            positions.filter(pos => pos.manufacturer === manufacturer) : 
+            positions;
+    }
+
+    async getPositionsMap(): Promise<Map<string, PositionData>> {
+        return new Map(this.positions);
+    }
+
+    private async pollPositions(icao24List: string[]) {
+        if (!await this.rateLimiter.tryAcquire()) {
+            errorHandler.handleError(ErrorType.POLLING, 'Rate limit exceeded');
+            return;
+        }
+
         try {
-            // Check authentication first
-            const isAuthenticated = await openSkyAuth.authenticate({
-                useEnvCredentials: true
+            const response = await fetch('/api/opensky/positions', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...openSkyAuth.getAuthHeaders()
+                },
+                body: JSON.stringify({ icao24List })
             });
-            if (!isAuthenticated) {
-                errorHandler.handleError(ErrorType.AUTH, 'OpenSky authentication failed');
-                return;
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
             }
-            const protocol = typeof window !== 'undefined' && window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const host = typeof window !== 'undefined' ? window.location.host : 'localhost:3000';
-            const wsUrl = `${protocol}//${host}/api/opensky`;
 
-            this.ws = new WebSocket(wsUrl);
+            const data: PositionData[] = await response.json();
+data.forEach(position => {
+    this.positions.set(position.icao24, position);
+    unifiedCache.setAircraft(position.icao24, toAircraft(position)); // Use the new method
+});
 
-            this.ws.onopen = () => {
-                console.log('WebSocket connected');
-                errorHandler.clearError(ErrorType.WEBSOCKET);
-            };
-
-            this.ws.onmessage = this.handleWebSocketMessage.bind(this);
-
-            this.ws.onerror = (error) => {
-                console.error('WebSocket error:', error);
-                errorHandler.handleError(ErrorType.WEBSOCKET, 'WebSocket connection error');
-            };
-
-            this.ws.onclose = () => {
-                console.log('WebSocket closed');
-                this.ws = null;
-                this.scheduleReconnect();
-            };
+            this.rateLimiter.decreasePollingInterval();
+            this.updateSubscribers();
 
         } catch (error) {
-            console.error('WebSocket initialization error:', error);
-            errorHandler.handleError(ErrorType.WEBSOCKET, 'Failed to initialize WebSocket');
-            this.scheduleReconnect();
+            this.rateLimiter.increasePollingInterval();
+            errorHandler.handleError(
+                ErrorType.POLLING,
+                error instanceof Error ? error.message : 'Polling failed'
+            );
         }
-    }
-
-    private handleWebSocketMessage(event: MessageEvent) {
-        try {
-            const data: PositionData[] = JSON.parse(event.data); // Assume WebSocket data matches PositionData[]
-            const aircraftList: Aircraft[] = data.map(toAircraft); // Convert PositionData[] to Aircraft[]
-    
-            this.notifySubscribers(aircraftList); // Pass Aircraft[] to subscribers
-        } catch (error) {
-            console.error('Error processing WebSocket message:', error);
-        }
-    }
-    
-    
-    private scheduleReconnect() {
-        if (this.reconnectTimeout) return;
-
-        this.reconnectTimeout = setTimeout(() => {
-            this.reconnectTimeout = null;
-            this.initWebSocket();
-        }, this.WS_RECONNECT_DELAY);
     }
 
     private startUpdateLoop() {
@@ -145,10 +129,9 @@ class OpenSkyIntegrated implements IOpenSkyService {
     
         this.updateInterval = setInterval(() => {
             const now = Date.now();
-            const aircraftList: Aircraft[] = [];
+            const aircraftList: ExtendedAircraft[] = [];
     
-            // Populate aircraftList from the cache with interpolation
-            enhancedCache.getAllAircraft().forEach((aircraft) => {
+            unifiedCache.getAllAircraft().forEach((aircraft) => { // Use the new method
                 const interpolated = positionInterpolator.interpolatePosition(aircraft.icao24, now);
                 if (interpolated) {
                     aircraftList.push({ ...aircraft, ...interpolated });
@@ -157,32 +140,53 @@ class OpenSkyIntegrated implements IOpenSkyService {
                 }
             });
     
-            this.notifySubscribers(aircraftList); // Pass Aircraft[] to subscribers
+            this.notifySubscribers(aircraftList);
         }, this.UPDATE_INTERVAL);
     }
     
+    async startPolling(icao24List: string[]) {
+        if (this.pollingInterval) this.stopPolling();
 
-    private notifySubscribers(data: Aircraft[]): void {
-        this.subscribers.forEach((callback) => {
+        await this.pollPositions(icao24List);
+        const interval = this.rateLimiter.getCurrentPollingInterval();
+        this.pollingInterval = setInterval(
+            () => this.pollPositions(icao24List),
+            interval
+        );
+    }
+
+    stopPolling() {
+        if (this.pollingInterval) {
+            clearInterval(this.pollingInterval);
+            this.pollingInterval = null;
+        }
+        this.rateLimiter.resetPollingInterval();
+    }
+
+    private updateSubscribers() {
+        const aircraftList = Array.from(this.positions.values()).map(toAircraft);
+        this.notifySubscribers(aircraftList);
+    }
+
+    private notifySubscribers(data: ExtendedAircraft[]): void {
+        this.subscribers.forEach(callback => {
             try {
-                callback(data); // Call each subscriber with Aircraft[]
+                callback(data);
             } catch (error) {
                 console.error('Error in subscriber callback:', error);
             }
         });
-    }
-    
-    async getAircraft(icao24List: string[]): Promise<Aircraft[]> {
+    } 
+
+    async getAircraft(icao24List: string[]): Promise<ExtendedAircraft[]> {
         try {
-            // Try WebSocket first
-            if (!this.ws) {
-                await this.initWebSocket();
+            if (!this.pollingInterval) {
+                await this.startPolling(icao24List);
             }
 
-            // Get aircraft from cache with interpolation
             const results = await Promise.all(
                 icao24List.map(async (icao24) => {
-                    const aircraft = await enhancedCache.get(icao24);
+                    const aircraft = unifiedCache.get(icao24); // Use the new method
                     if (aircraft) {
                         const interpolated = positionInterpolator.interpolatePosition(
                             icao24, 
@@ -193,39 +197,31 @@ class OpenSkyIntegrated implements IOpenSkyService {
                     return null;
                 })
             );
+            
 
-            return results.filter((aircraft): aircraft is Aircraft => aircraft !== null);
-
+            return results.filter((aircraft): aircraft is ExtendedAircraft => aircraft !== null);
         } catch (error) {
-            console.error('Error fetching aircraft:', error);
-            errorHandler.handleError(ErrorType.DATA, 'Failed to fetch aircraft data');
+            errorHandler.handleError(ErrorType.POLLING, 'Failed to fetch aircraft data');
             return [];
         }
     }
 
-
-    
-    subscribe(callback: (data: Aircraft[]) => void): () => void {
+    subscribe(callback: (data: ExtendedAircraft[]) => void): () => void {
         this.subscribers.add(callback);
-        return () => this.subscribers.delete(callback);
+        return () => {
+            this.subscribers.delete(callback);
+            if (this.subscribers.size === 0) {
+                this.stopPolling();
+            }
+        };
     }
 
-    cleanup() {
+    async cleanup(): Promise<void> {
+        this.stopPolling();
         if (this.updateInterval) {
             clearInterval(this.updateInterval);
             this.updateInterval = null;
         }
-
-        if (this.reconnectTimeout) {
-            clearTimeout(this.reconnectTimeout);
-            this.reconnectTimeout = null;
-        }
-
-        if (this.ws) {
-            this.ws.close();
-            this.ws = null;
-        }
-
         this.subscribers.clear();
     }
 }

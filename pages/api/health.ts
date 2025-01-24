@@ -1,4 +1,3 @@
-// pages/api/health.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { getActiveDb } from '@/lib/db/trackingDatabaseManager';
 
@@ -12,13 +11,16 @@ export default async function handler(
     req: NextApiRequest,
     res: NextApiResponse<HealthResponse>
 ) {
+    console.log('Health check accessed');
     try {
         const db = await getActiveDb();
         if (!db) {
             throw new Error('No active database connection');
         }
 
+        // Run a simple query to verify the database connection
         await db.get('SELECT 1');
+
         res.status(200).json({
             status: 'healthy',
             message: 'Database connection successful'
