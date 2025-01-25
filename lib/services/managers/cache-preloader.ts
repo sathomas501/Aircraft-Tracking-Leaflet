@@ -89,11 +89,11 @@ class CachePreloaderService {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ region, maxAircraft }),
             });
-
+    
             if (!response.ok) {
                 throw new Error(`Failed to preload region: ${response.statusText}`);
             }
-
+    
             const data = await response.json();
             const validData = data.map((item: any) => ({
                 icao24: item.icao24,
@@ -106,25 +106,30 @@ class CachePreloaderService {
                 last_contact: item.last_contact || Date.now() / 1000,
                 manufacturer: item.manufacturer || 'Unknown',
             }));
-            unifiedCache.updateFromPolling(validData);
+            
+            // Replace or remove the following line as necessary
+            // unifiedCache.updateFromPolling(validData); // Removed
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error';
             throw new Error(`Preloading failed for region ${region.description}: ${errorMessage}`);
         }
     }
+    
 
     private async preloadManufacturers(manufacturers: string[]): Promise<void> {
         for (const manufacturer of manufacturers) {
             try {
                 const response = await fetch(`/api/aircraft/icao24s?manufacturer=${manufacturer}`);
                 if (!response.ok) continue;
-
+    
                 const { icao24List } = await response.json();
                 if (icao24List?.length) {
                     const positions = await fetch(`/api/opensky?icao24s=${icao24List.join(',')}`);
                     if (positions.ok) {
                         const data = await positions.json();
-                        unifiedCache.updateFromRest(manufacturer, data);
+                        
+                        // Replace or remove the following line as necessary
+                        // unifiedCache.updateFromRest(manufacturer, data); // Removed
                     }
                 }
             } catch (error) {
@@ -137,7 +142,7 @@ class CachePreloaderService {
             await this.delay(10000); // Rate limit
         }
     }
-
+    
     private delay(ms: number): Promise<void> {
         return new Promise(resolve => setTimeout(resolve, ms));
     }

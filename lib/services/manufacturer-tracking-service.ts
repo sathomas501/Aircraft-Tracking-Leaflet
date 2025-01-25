@@ -1,44 +1,59 @@
-// lib/services/manufacturer-tracking-service.ts
+// manufacturer-tracking-service.ts
+import type { Aircraft } from '@/types/base';
 import { PollingRateLimiter } from './rate-limiter';
 import { errorHandler, ErrorType } from './error-handler';
-import { unifiedCache } from './managers/unified-cache-system';
 import { openSkyAuth } from './opensky-auth';
-import { OpenSkyStateImpl } from './opensky/OpenSkyStateImpl';
+
+interface TrackingData {
+  aircraft: Aircraft[];
+}
 
 interface TrackingState {
-    activeManufacturer: string | null;
-    icao24List: string[];
-    isPolling: boolean;
-    lastPollTime: number;
-    rateLimitInfo: {
-        remainingRequests: number;
-        remainingDaily: number;
-    };
+  activeManufacturer: string | null;
+  icao24List: string[];
+  isPolling: boolean;
+  lastPollTime: number;
+  rateLimitInfo: {
+    remainingRequests: number;
+    remainingDaily: number;
+  };
 }
 
 class ManufacturerTrackingService {
-    private state: TrackingState;
-    private rateLimiter: PollingRateLimiter;
+  private state: TrackingState;
+  private rateLimiter: PollingRateLimiter;
+  private subscribers = new Set<(data: TrackingData) => void>();
 
-    constructor() {
-        this.state = {
-            activeManufacturer: null,
-            icao24List: [],
-            isPolling: false,
-            lastPollTime: 0,
-            rateLimitInfo: {
-                remainingRequests: 0,
-                remainingDaily: 0
-            }
-        };
+  constructor() {
+    this.state = {
+      activeManufacturer: null,
+      icao24List: [],
+      isPolling: false,
+      lastPollTime: 0,
+      rateLimitInfo: {
+        remainingRequests: 0,
+        remainingDaily: 0
+      }
+    };
 
-        this.rateLimiter = new PollingRateLimiter({
-            requestsPerMinute: 60,
-            requestsPerDay: 1000,
-            minPollingInterval: 5000,
-            maxPollingInterval: 30000
-        });
-    }
+    this.rateLimiter = new PollingRateLimiter({
+      requestsPerMinute: 60,
+      requestsPerDay: 1000,
+      minPollingInterval: 5000,
+      maxPollingInterval: 30000
+    });
+  }
+
+  public subscribe(callback: (data: TrackingData) => void) {
+    this.subscribers.add(callback);
+    return {
+      unsubscribe: () => this.subscribers.delete(callback)
+    };
+  }
+
+  private notifySubscribers(data: TrackingData) {
+    this.subscribers.forEach(callback => callback(data));
+  }
 
     private async pollData(): Promise<void> {
         if (!await this.rateLimiter.tryAcquire()) {
@@ -60,10 +75,7 @@ class ManufacturerTrackingService {
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
-    
-            const data = await response.json();
-            this.updateCache(data.states as OpenSkyStateImpl[]);
-            this.rateLimiter.decreasePollingInterval();
+
             
         } catch (error) {
             this.rateLimiter.increasePollingInterval();
@@ -73,6 +85,7 @@ class ManufacturerTrackingService {
             );
         }
     }
+
 
     public async startPolling(manufacturer: string, icao24List: string[]): Promise<void> {
         if (!manufacturer || icao24List.length === 0) {
@@ -103,15 +116,6 @@ class ManufacturerTrackingService {
         this.state.activeManufacturer = null;
         this.state.icao24List = [];
         this.rateLimiter.resetPollingInterval();
-    }
-
-    private updateCache(data: OpenSkyStateImpl[]): void {
-        unifiedCache.updateFromPolling(data);
-        this.state.lastPollTime = Date.now();
-        this.state.rateLimitInfo = {
-            remainingRequests: this.rateLimiter.getRemainingRequests(),
-            remainingDaily: this.rateLimiter.getRemainingDailyRequests()
-        };
     }
 
     public getTrackingStatus() {

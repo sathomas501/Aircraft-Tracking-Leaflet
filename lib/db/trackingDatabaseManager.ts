@@ -49,7 +49,7 @@ export class TrackingDatabaseManager {
 
     public async initialize(): Promise<void> {
         if (this.isInitialized) return;
-        
+
         if (!this.isServer || !sqlite3) {
             console.log('[Tracking Database] Skipping initialization in browser environment');
             return;
@@ -57,7 +57,6 @@ export class TrackingDatabaseManager {
 
         if (!this.db) {
             try {
-                // Ensure directory exists
                 const dbDir = path.dirname(TRACKING_DB_PATH);
                 if (!fs.existsSync(dbDir)) {
                     fs.mkdirSync(dbDir, { recursive: true });
@@ -68,12 +67,10 @@ export class TrackingDatabaseManager {
                     driver: sqlite3.Database,
                 });
 
-                // Set SQLite optimizations
                 await this.db.exec('PRAGMA journal_mode = WAL;');
                 await this.db.exec('PRAGMA synchronous = NORMAL;');
                 await this.db.exec('PRAGMA temp_store = MEMORY;');
 
-                // Create the active_tracking table if it doesn't exist
                 await this.db.exec(`
                     CREATE TABLE IF NOT EXISTS active_tracking (
                         icao24 TEXT PRIMARY KEY,
@@ -101,6 +98,24 @@ export class TrackingDatabaseManager {
             }
         }
     }
+
+    public async run(query: string, params: any[] = []): Promise<void> {
+        const db = await this.getDb();
+        await db.run(query, params); // Discard the result
+    }
+    
+    
+
+    public async getDb(): Promise<Database> {
+        if (!this.db) {
+            await this.initialize();
+        }
+        if (!this.db) {
+            throw new Error('[Tracking Database] Database connection not established');
+        }
+        return this.db;
+    }
+
 
     public startCleanup(): void {
         if (!this.isServer) return;

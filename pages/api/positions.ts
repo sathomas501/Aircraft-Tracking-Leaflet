@@ -1,60 +1,60 @@
 // pages/api/clientpositions.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
-import type { Aircraft } from '@/types/base';
-import { getDatabase } from '@/lib/db/databaseManager';
+import { unifiedCache } from '../../lib/services/managers/unified-cache-system';
 
-interface PositionsResponse {
-  aircraft?: Aircraft[];
-  error?: string;
-  message?: string;
+interface OpenSkyState {
+  icao24: string;
+  callsign: string | null;
+  origin_country: string;
+  time_position: number | null;
+  last_contact: number;
+  longitude: number | null;
+  latitude: number | null;
+  baro_altitude: number | null;
+  on_ground: boolean;
+  velocity: number | null;
+  true_track: number | null;
+  vertical_rate: number | null;
+  sensors: number[] | null;
+  geo_altitude: number | null;
+  squawk: string | null;
+  spi: boolean;
+  position_source: number;
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  const { icao24s } = req.body;
-
-  if (!icao24s || !Array.isArray(icao24s) || icao24s.length === 0) {
-      console.warn('Invalid payload received:', req.body);
-      return res.status(400).json({ error: 'icao24s array is required' });
-  }
-   {
-  if (req.method !== 'POST') {
-    return res.status(405).json({
-      error: 'Method not allowed',
-      message: `HTTP method ${req.method} is not supported.`,
-    });
-  }
-
-  const { icao24s } = req.body;
-
-
-  if (!icao24s || !Array.isArray(icao24s) || icao24s.length === 0) {
-    console.error('Invalid payload received:', req.body); // Log the invalid payload
-    return res.status(400).json({ error: 'icao24s array is required' });
-  }
-
   try {
-    const db = await getDatabase();
-    if (!db) {
-      throw new Error('No active database connection');
+    const key = 'opensky_positions';
+
+    // Check cache first
+    const cachedData = unifiedCache.getLiveData(key);
+    if (cachedData) {
+      return res.status(200).json({ positions: cachedData });
     }
 
-    const placeholders = icao24s.map(() => '?').join(',');
-    const query = `
-      SELECT icao24, manufacturer, model
-      FROM aircraft
-      WHERE icao24 IN (${placeholders})
-      AND icao24 IS NOT NULL;
-    `;
+    // Fetch live data from OpenSky API
+    const response = await fetch('https://opensky-network.org/api/states/all');
+    const data = await response.json();
 
-    const aircraft = await db.all<Aircraft[]>(query, icao24s);
-    res.status(200).json({ aircraft });
-  } catch (error) {
-    console.error('Error fetching aircraft:', error);
-    const statusCode =
-      (error as Error).message === 'No active database connection' ? 503 : 500;
-    res.status(statusCode).json({
-      error: statusCode === 503 ? 'Database unavailable' : 'Failed to fetch aircraft',
-      message: process.env.NODE_ENV === 'development' ? (error as Error).message : undefined,
-    });
+    if (!data.states) {
+      throw new Error('No live data received from OpenSky.');
+    }
+
+    // Map the data to a usable format
+    const positions = data.states.map((state: OpenSkyState) => ({
+      icao24: state.icao24,
+      latitude: state.latitude || 0,
+      longitude: state.longitude || 0,
+      altitude: state.geo_altitude || 0,
+      velocity: state.velocity || 0,
+    }));
+
+    // Cache the data
+    unifiedCache.setLiveData(key, positions);
+
+    res.status(200).json({ positions });
+  } catch (error: any) {
+    console.error('[API] Failed to load live data:', error.message);
+    res.status(500).json({ error: 'Failed to load live data.' });
   }
-}}
+}

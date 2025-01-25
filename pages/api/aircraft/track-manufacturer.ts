@@ -12,14 +12,14 @@ interface TrackResponse {
         isTracking: boolean;
         manufacturer: string | null;
         pollingStatus: {
-            interval: number,
-            nextPoll: Date,
-            isRateLimited: boolean
-        },
+            interval: number;
+            nextPoll: Date;
+            isRateLimited: boolean;
+        };
         rateLimitInfo: {
-            remainingRequests: number,
-            remainingDaily: number
-        }
+            remainingRequests: number;
+            remainingDaily: number;
+        };
     };
 }
 
@@ -27,29 +27,29 @@ const rateLimiter = new PollingRateLimiter({
     requestsPerMinute: 60,
     requestsPerDay: 1000,
     minPollingInterval: 5000,
-    maxPollingInterval: 30000
+    maxPollingInterval: 30000,
 });
 
 async function fetchIcao24s(manufacturer: string): Promise<string[]> {
-    // Fetch ICAO24s (either from cache or an external source)
-    const data = (await unifiedCache.getLatestData()) as { aircraft: any[] }; // Ensure this is not rate-limited
+    const data = (await unifiedCache.getLatestData()) as { aircraft: any[] };
 
-    if (!data || !Array.isArray(data.aircraft)) {
-        throw new Error('Cache data is invalid or not properly initialized.');
+    if (!data || !Array.isArray(data.aircraft) || data.aircraft.length === 0) {
+        throw new Error('Cache is empty or invalid. Please ensure the cache is initialized.');
     }
 
-    // Filter and map to get ICAO24s
     const icao24s = data.aircraft
         .filter((aircraft) => aircraft.manufacturer === manufacturer)
         .map((aircraft: any) => aircraft.icao24);
 
+    if (icao24s.length === 0) {
+        throw new Error(`No aircraft found for manufacturer: ${manufacturer}`);
+    }
+
     return icao24s;
 }
 
-
-
 export default async function handler(
-    req: NextApiRequest, 
+    req: NextApiRequest,
     res: NextApiResponse<TrackResponse>
 ) {
     const { method, body } = req;
@@ -59,9 +59,9 @@ export default async function handler(
             const { manufacturer } = body;
 
             if (!manufacturer) {
-                return res.status(400).json({ 
-                    success: false, 
-                    message: 'Manufacturer is required' 
+                return res.status(400).json({
+                    success: false,
+                    message: 'Manufacturer is required',
                 });
             }
 
@@ -77,19 +77,23 @@ export default async function handler(
                             pollingStatus: {
                                 interval: rateLimiter.getCurrentPollingInterval(),
                                 nextPoll,
-                                isRateLimited: true
+                                isRateLimited: true,
                             },
                             rateLimitInfo: {
                                 remainingRequests: rateLimiter.getRemainingRequests(),
-                                remainingDaily: rateLimiter.getRemainingDailyRequests()
-                            }
-                        }
+                                remainingDaily: rateLimiter.getRemainingDailyRequests(),
+                            },
+                        },
                     });
                 }
 
                 const icao24List = await fetchIcao24s(manufacturer);
                 await manufacturerTracking.startPolling(manufacturer, icao24List);
                 const status = manufacturerTracking.getTrackingStatus();
+
+                if (!status.isTracking) {
+                    throw new Error(`Tracking failed to start for manufacturer: ${manufacturer}`);
+                }
 
                 return res.status(200).json({
                     success: true,
@@ -101,21 +105,21 @@ export default async function handler(
                         pollingStatus: {
                             interval: rateLimiter.getCurrentPollingInterval(),
                             nextPoll,
-                            isRateLimited: false
+                            isRateLimited: false,
                         },
                         rateLimitInfo: {
                             remainingRequests: rateLimiter.getRemainingRequests(),
-                            remainingDaily: rateLimiter.getRemainingDailyRequests()
-                        }
-                    }
+                            remainingDaily: rateLimiter.getRemainingDailyRequests(),
+                        },
+                    },
                 });
-            } catch (error) {
-                const errorMsg = error instanceof Error ? error.message : 'Failed to start tracking';
-                errorHandler.handleError(ErrorType.DATA, errorMsg, { manufacturer });
-                
+            } catch (error: any) {
+                console.error('Error starting tracking:', error.message, error.stack);
+                errorHandler.handleError(ErrorType.DATA, error.message, { manufacturer });
+
                 return res.status(500).json({
                     success: false,
-                    message: errorMsg
+                    message: error.message || 'Failed to start tracking',
                 });
             }
         }
@@ -125,7 +129,7 @@ export default async function handler(
             rateLimiter.resetPollingInterval();
             return res.status(200).json({
                 success: true,
-                message: 'Stopped tracking'
+                message: 'Stopped tracking',
             });
         }
 
@@ -133,7 +137,7 @@ export default async function handler(
             res.setHeader('Allow', ['POST', 'DELETE']);
             return res.status(405).json({
                 success: false,
-                message: `Method ${method} not allowed`
+                message: `Method ${method} not allowed`,
             });
     }
 }
