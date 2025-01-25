@@ -14,6 +14,22 @@ export interface PollingConfig {
 export type PollingHandler = (data: any) => void;
 export type ErrorHandler = (error: Error) => void;
 
+
+export async function pollForActiveAircraft(
+    icao24List: string[],
+    pollingHandler: PollingHandler,
+    errorHandler: ErrorHandler
+): Promise<void> {
+    const pollingService = new PollingService({
+        url: 'https://opensky-network.org/api/states/all', // Replace with your OpenSky endpoint
+        pollingInterval: 30000, // 30 seconds
+        batchSize: 100,
+        authRequired: true,
+    });
+
+    await pollingService.startPolling(icao24List, pollingHandler, errorHandler);
+}
+
 export class PollingService {
     private readonly config: Required<PollingConfig>;
     private pollingIntervalId: NodeJS.Timeout | null = null;
@@ -117,6 +133,7 @@ export class PollingService {
             }
         }
     }
+    
 
     public async fetchBatchPositions(batch: string[]): Promise<void> {
         try {

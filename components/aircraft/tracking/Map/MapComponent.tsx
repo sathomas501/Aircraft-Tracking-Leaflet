@@ -1,55 +1,46 @@
-import { useEffect } from 'react';
+import React from 'react';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
 import type { Aircraft } from '@/types/base';
-import { MAP } from '@/constants/map';
-import { AIRCRAFT } from '@/constants/aircraft';
+import { createAircraftIcon } from './components/AircraftIcon/AircraftIcon';
 
-interface MapComponentProps {
+export interface MapComponentProps {
   aircraft: Aircraft[];
-}
+ }
 
-const MapComponent = ({ aircraft = [] }: MapComponentProps) => {
-  useEffect(() => {
-    console.log('MapComponent mounted');
-    return () => {
-      console.log('MapComponent unmounted');
-    };
-  }, []);
+const MapComponent: React.FC<MapComponentProps> = ({ aircraft }) => {
+  const usCenter: [number, number] = [39.8283, -98.5795];
 
-  console.log('Rendering map with', aircraft.length, 'aircraft');
-  
   return (
-    <MapContainer
-      center={MAP.DEFAULT_CENTER}
-      zoom={MAP.DEFAULT_ZOOM}
-      {...MAP.OPTIONS}
-      className="w-full h-full"
+    <MapContainer 
+      center={usCenter}
+      zoom={4} 
+      style={{ height: '100%', width: '100%' }}
+      minZoom={3}
+      maxBounds={[
+        [24.396308, -125.000000], // Southwest
+        [49.384358, -66.934570]   // Northeast
+      ]}
     >
       <TileLayer
-  url={`${MAP.TILE_LAYER.URL}?v=${Date.now()}`}
-  attribution={MAP.TILE_LAYER.ATTRIBUTION}
-/>
+        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+      />
       
       {aircraft.map((plane) => (
         <Marker
           key={plane.icao24}
           position={[plane.latitude, plane.longitude]}
-          zIndexOffset={plane.on_ground ? AIRCRAFT.LAYERS.GROUNDED : AIRCRAFT.LAYERS.AIRBORNE}
-          opacity={plane.on_ground ? AIRCRAFT.MARKERS.OPACITY.GROUNDED : AIRCRAFT.MARKERS.OPACITY.ACTIVE}
+          icon={createAircraftIcon(plane)}
         >
           <Popup>
             <div className="p-2">
-              <h3 className="font-semibold">{plane.manufacturer}</h3>
-              <p>Model: {plane.model}</p>
-              <p>ICAO24: {plane.icao24}</p>
-              <p className={plane.on_ground ? AIRCRAFT.STATUS.GROUNDED.COLOR : AIRCRAFT.STATUS.AIRBORNE.COLOR}>
-                {plane.on_ground ? AIRCRAFT.STATUS.GROUNDED.LABEL : AIRCRAFT.STATUS.AIRBORNE.LABEL}
-              </p>
-              {!plane.on_ground && (
-                <>
-                  <p>Altitude: {Math.round(plane.altitude * AIRCRAFT.CONVERSIONS.METERS_TO_FEET)} ft</p>
-                  <p>Speed: {Math.round(plane.velocity * AIRCRAFT.CONVERSIONS.MPS_TO_MPH)} mph</p>
-                </>
+              <h3 className="font-bold">{plane.registration || plane.icao24}</h3>
+              <p>Altitude: {Math.round(plane.altitude * 3.28084)} ft</p>
+              <p>Speed: {Math.round(plane.velocity * 1.944)} knots</p>
+              <p>Heading: {Math.round(plane.heading)}°</p>
+              {plane.on_ground && (
+                <p className="text-yellow-600">On Ground</p>
               )}
             </div>
           </Popup>

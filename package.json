@@ -2,12 +2,11 @@
   "name": "aircraft-tracking",
   "version": "0.1.0",
   "private": true,
-  
-    "scripts": {
-      "dev": "cross-env NODE_ENV=development next dev -p 3001",
-      "build": "cross-env NODE_ENV=production next build",
-      "start": "cross-env NODE_ENV=production next start -p 3001"
-    },
+  "scripts": {
+    "dev": "cross-env NODE_ENV=development next dev -p 3001",
+    "build": "cross-env NODE_ENV=production next build",
+    "start": "cross-env NODE_ENV=production next start -p 3001"
+  },
   "dependencies": {
     "@tanstack/react-query": "^5.62.2",
     "axios": "^1.7.9",
@@ -15,7 +14,6 @@
     "clsx": "^2.1.1",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
-    "ioredis": "^5.4.2",
     "leaflet": "^1.9.4",
     "lodash": "^4.17.21",
     "lucide-react": "^0.468.0",
@@ -23,8 +21,8 @@
     "node-cache": "^5.1.2",
     "node-fetch": "^3.3.2",
     "pg": "^8.13.1",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
     "react-leaflet": "^4.2.1",
     "sqlite": "^5.1.1",
     "sqlite3": "^5.1.7",
@@ -45,6 +43,7 @@
     "@types/webpack": "^5.28.5",
     "@types/ws": "^8.5.13",
     "autoprefixer": "^10.4.20",
+    "cross-env": "^7.0.3",
     "dependency-cruiser": "^16.8.0",
     "eslint": "^8",
     "eslint-config-next": "15.0.3",
