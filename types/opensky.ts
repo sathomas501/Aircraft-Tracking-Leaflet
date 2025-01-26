@@ -48,6 +48,7 @@ export interface AircraftMessage {
     onGround?: boolean;
     lastContact?: number;
     N_N?: string;
+<<<<<<< HEAD
     'N-NUMBER'?: string;
     manufacturer?: string;
     model?: string;
@@ -65,4 +66,11 @@ export interface OpenSkyPositionData {
     longitude: number;
     altitude: number | null;
     velocity: number | null;
+=======
+    manufacturer?: string;
+    model?: string;
+    NAME?: string;
+    CITY?: string;
+    STATE?: string;
+>>>>>>> 798df221367966fbfa340eee7bccf054863206c6
 }
