@@ -278,4 +278,13 @@ export interface IManufacturer {
   activeCount?: number;
 }
 
+export interface ManufacturerData {
+  id: number;
+  name: string;
+  country: string;
+}
+
+
+
+
 

@@ -3,7 +3,7 @@ import dynamic from 'next/dynamic';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 
 const MapWithNoSSR = dynamic(
-  () => import('@/components/aircraft/tracking/Map/MapWrapper').then(mod => mod.MapWrapper),
+  () => import('../components/aircraft/tracking/mapWrapper').then(mod => mod.MapWrapper),
   {
     ssr: false,
     loading: () => (

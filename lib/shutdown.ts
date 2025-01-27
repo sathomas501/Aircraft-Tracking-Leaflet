@@ -20,7 +20,7 @@ async function shutdownHandler(signal: string) {
         
         // Stop cleanup service first
         const cleanupService = CleanupService.getInstance();
-        await cleanupService.stop();
+        await cleanupService.shutdown();
         console.log('Cleanup service stopped');
 
         // Stop OpenSky service

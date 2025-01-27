@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { chunk } from 'lodash';
-import { openSkyAuth } from './opensky-auth';
+import { PollingRateLimiter } from './rate-limiter';
+import { openSkyAuth } from '../services/opensky-auth';
 
 export interface PollingConfig {
     url: string;
@@ -13,7 +14,6 @@ export interface PollingConfig {
 
 export type PollingHandler = (data: any) => void;
 export type ErrorHandler = (error: Error) => void;
-
 
 export async function pollForActiveAircraft(
     icao24List: string[],
@@ -32,57 +32,76 @@ export async function pollForActiveAircraft(
 
 export class PollingService {
     private readonly config: Required<PollingConfig>;
-    private pollingIntervalId: NodeJS.Timeout | null = null;
-    private isPolling = false;
-    private retries = 0;
-    private cache: Set<string> = new Set(); // Cache for processed data to avoid redundant calls
-    private activeBatches: Set<string> = new Set(); // Track active batches being processed
-
+    private rateLimiter: PollingRateLimiter;
     private pollingHandler: PollingHandler | null = null;
     private errorHandler: ErrorHandler | null = null;
+    private cache: Set<string> = new Set();
+    private activeBatches: Set<string> = new Set();
+    private pollingIntervalId: NodeJS.Timeout | null = null; // Declare pollingIntervalId
+    private isPolling = false; // Declare isPolling
 
     constructor(config: PollingConfig) {
         this.config = {
             url: config.url,
-            pollingInterval: config.pollingInterval ?? 30000, // Default: 30 seconds
-            batchSize: config.batchSize ?? 100,
-            authRequired: config.authRequired ?? true,
-            maxRetries: config.maxRetries ?? 3,
-            cacheEnabled: config.cacheEnabled ?? true,
+            pollingInterval: config.pollingInterval || 30000,
+            batchSize: config.batchSize || 100,
+            authRequired: config.authRequired || false,
+            maxRetries: config.maxRetries || 5,
+            cacheEnabled: config.cacheEnabled || true,
         };
+        this.rateLimiter = new PollingRateLimiter({
+            requestsPerMinute: 60,
+            requestsPerDay: 1000,
+            maxWaitTime: 60000,
+            minPollingInterval: 1000,
+            maxPollingInterval: 30000,
+        });
+    }
+    
+
+    // Main polling function with integrated rate limiter
+    private async fetchBatchPositions(batch: string[]): Promise<void> {
+        try {
+            const data = await this.fetchBatch(batch);
+            if (this.pollingHandler) {
+                this.pollingHandler(data);
+            }
+        } catch (error) {
+            if (error instanceof Error && this.errorHandler) {
+                this.errorHandler(error);
+            }
+        }
     }
 
-    public async startPolling(
-        icao24List: string[],
+    private async fetchBatch(batch: string[]): Promise<any> {
+        await this.rateLimiter.waitForSlot(); // Single rate limit check
+        if (!await openSkyAuth.ensureAuthenticated()) {
+            throw new Error('Authentication failed');
+        }
+        
+        const response = await axios.get(this.config.url, {
+            params: { icao24: batch.join(',') },
+            headers: openSkyAuth.getAuthHeaders(),
+        });
+        return response.data;
+    }
+
+    public startPolling(
+        batch: string[],
         pollingHandler: PollingHandler,
         errorHandler: ErrorHandler
-    ): Promise<void> {
-        if (this.isPolling) {
-            console.log('[PollingService] Already polling. Ignoring start request.');
-            return;
-        }
-
-        if (!icao24List || icao24List.length === 0) {
-            console.warn('[PollingService] No aircraft to poll. Exiting.');
-            return;
-        }
-
+    ): void {
         this.pollingHandler = pollingHandler;
         this.errorHandler = errorHandler;
         this.isPolling = true;
 
-        console.log('[PollingService] Starting polling...');
-        await this.poll(icao24List); // Initial poll
-
         this.pollingIntervalId = setInterval(async () => {
             if (!this.isPolling) return;
-
             try {
-                await this.poll(icao24List);
-            } catch (error: unknown) {
-                if (error instanceof Error) {
-                    console.error('[PollingService] Error during polling:', error.message);
-                    if (this.errorHandler) this.errorHandler(error);
+                await this.fetchBatchPositions(batch);
+            } catch (error) {
+                if (error instanceof Error && this.errorHandler) {
+                    this.errorHandler(error);
                 }
             }
         }, this.config.pollingInterval);
@@ -97,6 +116,10 @@ export class PollingService {
         this.isPolling = false;
         this.cache.clear();
         this.activeBatches.clear();
+    }
+
+    public isActive(): boolean {
+        return this.isPolling;
     }
 
     public async poll(icao24List: string[]): Promise<void> {
@@ -133,47 +156,9 @@ export class PollingService {
             }
         }
     }
-    
-
-    public async fetchBatchPositions(batch: string[]): Promise<void> {
-        try {
-            if (this.config.authRequired && !(await openSkyAuth.ensureAuthenticated())) {
-                throw new Error('[PollingService] Authentication failed.');
-            }
-
-            const headers = this.config.authRequired ? openSkyAuth.getAuthHeaders() : {};
-
-            const response = await axios.get(this.config.url, {
-                headers,
-                params: { icao24: batch.join(',') },
-            });
-
-            if (response.data && this.pollingHandler) {
-                console.log(`[PollingService] Data received for batch: ${batch.length} aircraft.`);
-                this.pollingHandler(response.data);
-            } else {
-                console.warn('[PollingService] No data received for batch.');
-            }
-        } catch (error: unknown) {
-            if (axios.isAxiosError(error)) {
-                const retryAfter = error.response?.headers['retry-after'];
-                if (retryAfter) {
-                    console.warn(`[PollingService] Rate limited. Retrying after ${retryAfter} seconds.`);
-                    await this.delay(parseInt(retryAfter) * 1000);
-                    return this.fetchBatchPositions(batch); // Retry after delay
-                }
-            }
-
-            throw error; // Rethrow for higher-level handling
-        }
-    }
 
     private delay(ms: number): Promise<void> {
         return new Promise((resolve) => setTimeout(resolve, ms));
-    }
-
-    public isActive(): boolean {
-        return this.isPolling;
     }
 
     public clearCache(): void {
@@ -181,3 +166,4 @@ export class PollingService {
         this.cache.clear();
     }
 }
+

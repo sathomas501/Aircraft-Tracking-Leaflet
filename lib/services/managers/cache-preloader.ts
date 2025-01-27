@@ -1,5 +1,4 @@
 // lib/services/managers/cache-preloader.ts
-import { unifiedCache } from './unified-cache-system';
 import { errorHandler, ErrorType } from '../error-handler';
 
 interface Region {
@@ -119,7 +118,7 @@ class CachePreloaderService {
     private async preloadManufacturers(manufacturers: string[]): Promise<void> {
         for (const manufacturer of manufacturers) {
             try {
-                const response = await fetch(`/api/aircraft/icao24s?manufacturer=${manufacturer}`);
+                const response = await fetch(`/api/manufacturers/icao24s?manufacturer=${manufacturer}`);
                 if (!response.ok) continue;
     
                 const { icao24List } = await response.json();

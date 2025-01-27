@@ -1,7 +1,7 @@
 // server/init.ts
 import { CleanupService } from '../lib/services/CleanupService';
 import { initializeAircraftCache } from '../lib/services/managers/initializeAircraftCache';
-import { trackingDb } from '../lib/db/trackingDatabaseManager';
+import { TrackingDatabaseManager } from '../lib/db/trackingDatabaseManager';
 
 let initPromise: Promise<void> | null = null;
 let isInitialized = false;
@@ -13,7 +13,7 @@ function createInitPromise() {
         if (isInitialized) return;
 
         try {
-            await trackingDb.initialize();
+            await TrackingDatabaseManager.getInstance();
             console.log('[Init] Database initialized');
             
             const cleanupService = CleanupService.getInstance();
@@ -53,8 +53,8 @@ function setupShutdown() {
 
         try {
             await Promise.all([
-                cleanupService.stop(),
-                trackingDb.close()
+                cleanupService.shutdown(),
+                TrackingDatabaseManager.getInstance().stop()
             ]);
             process.exit(0);
         } catch (error) {

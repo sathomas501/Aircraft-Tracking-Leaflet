@@ -2,7 +2,7 @@
 import { open, Database } from 'sqlite';
 import path from 'path';
 import { STATIC_SCHEMA } from './schema';
-import { access, constants } from 'fs/promises';
+import { ManufacturerData } from '@/types/base';
 
 // Conditional sqlite3 import
 let sqlite3: typeof import('sqlite3') | null = null;
@@ -16,7 +16,7 @@ if (typeof window === 'undefined') {
 const STATIC_DB_PATH = path.join(process.cwd(), 'lib', 'db', 'static.db');
 console.log('[Database] Database path:', STATIC_DB_PATH);
 
-class DatabaseManager {
+export class DatabaseManager {
     private static instance: DatabaseManager;
     private db: Database | null = null;
     private isInitialized: boolean = false;
@@ -72,6 +72,37 @@ class DatabaseManager {
         }
     }
 
+    // Public method to initialize the database
+    public async initialize(): Promise<void> {
+        if (this.isInitialized) {
+            console.log('[DatabaseManager] Database is already initialized.');
+            return;
+        }
+
+        await this.initializeConnection();
+        await this.initializeDatabase();
+
+        this.isInitialized = true;
+        console.log('[DatabaseManager] Database successfully initialized.');
+    }
+
+
+    public async ensureInitialized(): Promise<void> {
+        if (typeof window !== 'undefined') {
+            console.log('[DatabaseManager] Skipping initialization in browser');
+            return;
+        }
+    
+        if (!this.isInitialized) {
+            console.log('[DatabaseManager] Starting database initialization...');
+            await this.initializeConnection();
+            await this.initializeDatabase();
+            this.isInitialized = true;
+            console.log('[DatabaseManager] Database successfully initialized');
+        }
+    }
+
+
     public async getDb(): Promise<Database> {
         return this.initializeConnection();
     }
@@ -91,6 +122,24 @@ class DatabaseManager {
         return db.all(query, params) as Promise<T[]>;
     }
 
+    public async getManufacturerByName(name: string): Promise<ManufacturerData | null> {
+        const db = await this.getDb();
+        const result = await db.get(
+            `SELECT 
+                manufacturer as name,
+                COUNT(*) as count
+             FROM aircraft
+             WHERE 
+                manufacturer = ?
+             GROUP BY manufacturer
+             LIMIT 1;`,
+            [name]
+        );
+    
+        return result || null;
+    }
+    
+    
     public async vacuum(): Promise<void> {
         const db = await this.getDb();
         await db.exec('VACUUM;');
@@ -125,6 +174,25 @@ class DatabaseManager {
             this.db = null;
             this.isInitialized = false;
         }
+    }
+}
+
+export class StaticDatabaseManager {
+    private static instance: StaticDatabaseManager | null = null;
+
+    private constructor() {}
+
+    // Define the singleton instance method
+    public static getInstance(): StaticDatabaseManager {
+        if (!StaticDatabaseManager.instance) {
+            StaticDatabaseManager.instance = new StaticDatabaseManager();
+        }
+        return StaticDatabaseManager.instance;
+    }
+
+    // Example: Return a database connection
+    public async getDb(): Promise<any> {
+        // Your logic for returning the static database connection
     }
 }
 

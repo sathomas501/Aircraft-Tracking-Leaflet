@@ -1,4 +1,4 @@
-
+import { CachedAircraftData } from "../../../utils/polling-utils";
 
 class UnifiedCacheService {
     private static instance: UnifiedCacheService;
@@ -9,8 +9,11 @@ class UnifiedCacheService {
     private constructor() {
         this.aircraftCache = new Map(); // Initialize the cache in the constructor
     }
-    
 
+    get(icao24: string): CachedAircraftData | null {
+        return this.aircraftCache.get(icao24) || null;
+    }
+    
     static getInstance(): UnifiedCacheService {
         if (!UnifiedCacheService.instance) {
             UnifiedCacheService.instance = new UnifiedCacheService();

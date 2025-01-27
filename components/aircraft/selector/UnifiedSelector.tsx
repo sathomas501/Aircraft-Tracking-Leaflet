@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import type { SelectOption } from '@/types/base';
-import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 import { Search, ChevronDown, Plane } from 'lucide-react';
 
 export interface UnifiedSelectorProps {
@@ -69,7 +68,7 @@ const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
       setLoading(true);
       setError(null);
 
-      const response = await fetch(`/api/aircraft/track-manufacturer`, {
+      const response = await fetch(`/api/manufacturers`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ manufacturer: selectedManufacturer }),
@@ -101,14 +100,18 @@ const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
       setLoading(true);
       setError(null);
       
-      const response = await fetch(`/api/aircraft/n-number/${encodeURIComponent(nNumber)}`);
+      const response = await fetch('/api/n-number-search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nNumber: nNumber.trim() })
+      });
       
       if (!response.ok) {
         throw new Error(`Aircraft not found`);
       }
 
       const data = await response.json();
-      onAircraftUpdate([data]);
+      onAircraftUpdate(data.positions || []);
     } catch (err) {
       setError('Aircraft not found or invalid N-Number');
     } finally {

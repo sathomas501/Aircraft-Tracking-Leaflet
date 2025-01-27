@@ -19,7 +19,7 @@ interface ModelsResponse {
 
 export const fetchManufacturers = async (activeOnly: boolean): Promise<SelectOption[]> => {
     try {
-        const response = await axios.get<{ manufacturers: ManufacturerRow[] }>('/api/aircraft', {
+        const response = await axios.get<{ manufacturers: ManufacturerRow[] }>('/api/manufacturer', {
             params: { activeOnly }
         });
 
@@ -45,7 +45,7 @@ export const fetchIcao24FromAPI = async (manufacturer: string): Promise<string[]
     }
 
     try {
-        const response = await axios.get<Icao24Response>('/api/aircraft/icao24s', { 
+        const response = await axios.get<Icao24Response>('/api/manufacturers/icao24s', { 
             params: { manufacturer: manufacturer.trim() }
         });
         return response.data.icao24List || [];

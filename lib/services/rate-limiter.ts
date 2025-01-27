@@ -4,7 +4,10 @@ export interface RateLimiterOptions {
     maxWaitTime?: number;
     minPollingInterval?: number;
     maxPollingInterval?: number;
+    batchSize?: number;
+    retryLimit?: number;
 }
+
 
 export class PollingRateLimiter {
     private requests: number[] = [];
@@ -15,27 +18,51 @@ export class PollingRateLimiter {
     private readonly maxWaitTime: number;
     private readonly minPollingInterval: number;
     private readonly maxPollingInterval: number;
+    private readonly batchSize: number;
+    private readonly retryLimit: number;
+    private lastRequestTime: number = 0;
     private readonly dayInMs = 24 * 60 * 60 * 1000;
     private readonly minuteInMs = 60 * 1000;
 
     constructor(options: RateLimiterOptions) {
         this.requestsPerMinute = options.requestsPerMinute;
         this.requestsPerDay = options.requestsPerDay;
-        this.maxWaitTime = options.maxWaitTime || this.minuteInMs;
-        this.minPollingInterval = options.minPollingInterval || 1000;
-        this.maxPollingInterval = options.maxPollingInterval || 30000;
+        this.maxWaitTime = options.maxWaitTime || 60000; // Default: 60 seconds
+        this.minPollingInterval = options.minPollingInterval || 1000; // Default: 1 second
+        this.maxPollingInterval = options.maxPollingInterval || 30000; // Default: 30 seconds
+        this.batchSize = options.batchSize || 100; // Default: 100
+        this.retryLimit = options.retryLimit || 3; // Default: 3 retries
         this.currentPollingInterval = this.minPollingInterval;
     }
 
+
     public canProceed(): boolean {
         const now = Date.now();
-    
-        // Clean up old requests
-        this.requests = this.requests.filter((timestamp) => now - timestamp < this.minuteInMs);
-        this.dailyRequests = this.dailyRequests.filter((timestamp) => now - timestamp < this.dayInMs);
-    
-        // Check if request can proceed
-        return this.requests.length < this.requestsPerMinute && this.dailyRequests.length < this.requestsPerDay;
+        if (now - this.lastRequestTime >= this.currentPollingInterval) {
+            return true;
+        }
+        return false;
+    }
+
+    public recordRequest(): void {
+        this.lastRequestTime = Date.now();
+        this.requests.push(this.lastRequestTime);
+
+        // Maintain requests within the last minute
+        this.requests = this.requests.filter(
+            (timestamp) => Date.now() - timestamp < 60000
+        );
+
+        // Maintain daily requests
+        this.dailyRequests.push(this.lastRequestTime);
+        this.dailyRequests = this.dailyRequests.filter(
+            (timestamp) => Date.now() - timestamp < 86400000
+        );
+    }
+
+    public getWaitTime(): number {
+        const now = Date.now();
+        return Math.max(0, this.minPollingInterval - (now - this.lastRequestTime));
     }
 
     private cleanOldRequests(): void {

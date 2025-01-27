@@ -1,5 +1,5 @@
 import { NextApiRequest, NextApiResponse } from 'next';
-import { getActiveDb } from '@/lib/db/trackingDatabaseManager';
+import { TrackingDatabaseManager } from '@/lib/db/trackingDatabaseManager';
 import { Database } from 'sqlite';
 
 // Define our own interface for SQLite run result
@@ -31,10 +31,9 @@ interface OpenSkyState {
 async function withDatabase<T>(
     operation: (db: Database) => Promise<T>
 ): Promise<T | null> {
-    const db = await getActiveDb();
-    if (!db) {
-        throw new Error('Failed to connect to database');
-    }
+    const dbManager = TrackingDatabaseManager.getInstance();
+    await dbManager.initialize(); // Ensure the database connection is initialized
+    const db = dbManager.getDb(); // Add a method to return the raw `sqlite` instance if needed
 
     try {
         return await operation(db);
@@ -43,12 +42,13 @@ async function withDatabase<T>(
         throw error;
     } finally {
         try {
-            await db.close();
+            await dbManager.stop(); // Gracefully close the connection
         } catch (error) {
             console.error('Error closing database connection:', error);
         }
     }
 }
+
 
 async function updatePositions(positions: OpenSkyState[]): Promise<number> {
     return await withDatabase(async (db) => {

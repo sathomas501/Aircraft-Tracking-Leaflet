@@ -1,12 +1,13 @@
 import type { WebSocketClient, WebSocketMessage } from '@/types/websocket';
 import type { IOpenSkyService } from '@/types/opensky/index';
 import type { Aircraft } from '@/types/base';
-import type { AircraftStatus } from '@/types/database';
-import { enhancedCache } from './enhanced-cache';
+import { enhancedCache } from '../services/managers/enhanced-cache';
 import { errorHandler, ErrorType } from './error-handler';
-import DatabaseManager from '@/lib/db/databaseManager';
+import { TrackingDatabaseManager } from '../db/trackingDatabaseManager';
+import { AircraftStatus } from '@/types/database';
 
-const { getDb, updateAircraftStatus, clearActiveStatus } = DatabaseManager;
+
+
 
 export class WebSocketHandler {
     private clients: Set<WebSocketClient> = new Set();
@@ -104,53 +105,45 @@ export class WebSocketHandler {
 
     private async updateDatabaseWithPositions(aircraft: Aircraft[]): Promise<void> {
         try {
-            const updatePromises = aircraft.map((plane) =>
-                updateAircraftStatus(plane.icao24, {
-                    latitude: plane.latitude,
-                    longitude: plane.longitude,
-                    altitude: plane.altitude,
-                    velocity: plane.velocity,
-                    heading: plane.heading,
-                    on_ground: plane.on_ground,
-                } as AircraftStatus)
+            const dbManager = TrackingDatabaseManager.getInstance();
+            await Promise.all(
+                aircraft.map((plane) =>
+                    dbManager.upsertActiveAircraft(plane.icao24, {
+                        latitude: plane.latitude,
+                        longitude: plane.longitude,
+                        altitude: plane.altitude,
+                        velocity: plane.velocity,
+                        heading: plane.heading,
+                        on_ground: plane.on_ground,
+                    })
+                )
             );
-    
-            await Promise.all(updatePromises);
-        } catch (error) {
-            errorHandler.handleError(
-                ErrorType.DATA,
-                'Failed to update aircraft positions in database',
-                error instanceof Error ? error : new Error('Unknown error')
-            );
+        } catch (error: unknown) {
+            console.error('Failed to update database with positions:', error);
         }
     }
 
     public async setCurrentManufacturer(manufacturer: string | null): Promise<void> {
         try {
-            console.log('[DEBUG] Setting current manufacturer:', manufacturer);
-    
             if (this.currentManufacturer && this.currentManufacturer !== manufacturer) {
-                console.log('[DEBUG] Clearing active status for:', this.currentManufacturer);
-                await clearActiveStatus(this.currentManufacturer);
+                const dbManager = TrackingDatabaseManager.getInstance();
+                await dbManager.clearActiveStatus(this.currentManufacturer);
             }
-    
+
             this.currentManufacturer = manufacturer;
-    
+
             if (manufacturer) {
-                const db = await getDb();
-                const icao24s = await db.all<{ icao24: string }[]>(
-                    'SELECT icao24 FROM aircraft WHERE manufacturer = ?',
-                    [manufacturer]
-                );
-    
-                console.log('[DEBUG] Retrieved ICAO24 list for manufacturer:', icao24s);
-    
+                const db = TrackingDatabaseManager.getInstance();
+const icao24s = await db.getAll<{ icao24: string }>(
+    'SELECT icao24 FROM aircraft WHERE manufacturer = ?',
+    [manufacturer]
+);
+
                 this.clients.forEach((client) => {
-                    client.aircraftFilter = icao24s.map((row) => row.icao24);
+                    client.aircraftFilter = icao24s.map((row: { icao24: string }) => row.icao24);
                 });
             }
-        } catch (error) {
-            console.error('[DEBUG] Error setting manufacturer:', error);
+        } catch (error: unknown) {
             errorHandler.handleError(
                 ErrorType.DATA,
                 'Failed to set current manufacturer',
@@ -158,7 +151,6 @@ export class WebSocketHandler {
             );
         }
     }
-    
 
     public addClient(client: WebSocketClient): void {
         this.clients.add(client);
@@ -219,7 +211,8 @@ export class WebSocketHandler {
         this.clients.clear();
 
         if (this.currentManufacturer) {
-            clearActiveStatus(this.currentManufacturer).catch((error) => {
+            const dbManager = TrackingDatabaseManager.getInstance();
+dbManager.clearActiveStatus(this.currentManufacturer).catch((error: unknown) => {
                 errorHandler.handleError(
                     ErrorType.DATA,
                     'Failed to clear active status during cleanup',

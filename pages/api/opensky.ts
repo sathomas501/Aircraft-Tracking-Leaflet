@@ -23,19 +23,28 @@ interface OpenSkyResponse {
     message?: string;
 }
 
-export default async function handler(
-    req: NextApiRequest,
-    res: NextApiResponse<OpenSkyResponse>
-) {
-    const { method, query, body } = req;
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+    if (req.method === 'OPTIONS') {
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+        res.status(200).end(); // Respond with 200 to preflight
+        return;
+    }
 
-    if (method !== 'POST' && method !== 'GET') {
+    if (req.method !== 'POST') {
         return res.status(405).json({ error: 'Method not allowed' });
     }
 
     try {
+        const { body, query } = req; // Extract `body` and `query` from `req`
+
         const service = getPollingService();
-        const icao24s = Array.isArray(body?.icao24s) ? body.icao24s : query.icao24s ? [query.icao24s] : [];
+        const icao24s = Array.isArray(body?.icao24s)
+            ? body.icao24s
+            : query.icao24s
+            ? [query.icao24s]
+            : [];
 
         await service.startPolling(
             icao24s,

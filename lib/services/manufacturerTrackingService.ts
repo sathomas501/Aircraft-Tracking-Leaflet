@@ -1,6 +1,5 @@
 // lib/services/manufacturerTrackingService.ts
-import { getActiveDb } from '@/lib/db/databaseManager';
-import { OpenSkyManager } from '@/lib/services/openSkyService';
+
 import { CacheManager } from '@/lib/services/managers/cache-manager';
 import type { PositionData } from '@/types/base';
 import WebSocket from 'ws';

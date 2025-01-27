@@ -1,10 +1,11 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { manufacturerTracking } from '@/lib/services/manufacturer-tracking-service';
-import { errorHandler, ErrorType } from '@/lib/services/error-handler';
 import { PollingRateLimiter } from '@/lib/services/rate-limiter';
-import { unifiedCache } from '../../../lib/services/managers/unified-cache-system';
+import { DatabaseManager } from '../../../lib/db/databaseManager';
+
+const databaseManagerInstance = DatabaseManager.getInstance();
 
 interface TrackResponse {
+    data?: any;
     success: boolean;
     message: string;
     aircraftCount?: number;
@@ -23,6 +24,10 @@ interface TrackResponse {
     };
 }
 
+interface ICAO24Row {
+    icao24: string;
+ }
+
 const rateLimiter = new PollingRateLimiter({
     requestsPerMinute: 60,
     requestsPerDay: 1000,
@@ -30,114 +35,65 @@ const rateLimiter = new PollingRateLimiter({
     maxPollingInterval: 30000,
 });
 
-async function fetchIcao24s(manufacturer: string): Promise<string[]> {
-    const data = (await unifiedCache.getLatestData()) as { aircraft: any[] };
+export default async function handler(req: NextApiRequest, res: NextApiResponse<TrackResponse>) {
+    try {
+        await databaseManagerInstance.initialize();
 
-    if (!data || !Array.isArray(data.aircraft) || data.aircraft.length === 0) {
-        throw new Error('Cache is empty or invalid. Please ensure the cache is initialized.');
-    }
+        const { method, body } = req;
 
-    const icao24s = data.aircraft
-        .filter((aircraft) => aircraft.manufacturer === manufacturer)
-        .map((aircraft: any) => aircraft.icao24);
+        switch (method) {
+            case 'POST': {
+                const { manufacturer } = body;
 
-    if (icao24s.length === 0) {
-        throw new Error(`No aircraft found for manufacturer: ${manufacturer}`);
-    }
-
-    return icao24s;
-}
-
-export default async function handler(
-    req: NextApiRequest,
-    res: NextApiResponse<TrackResponse>
-) {
-    const { method, body } = req;
-
-    switch (method) {
-        case 'POST': {
-            const { manufacturer } = body;
-
-            if (!manufacturer) {
-                return res.status(400).json({
-                    success: false,
-                    message: 'Manufacturer is required',
-                });
-            }
-
-            try {
-                const nextPoll = await rateLimiter.getNextAvailableSlot();
-                if (rateLimiter.isRateLimited()) {
-                    return res.status(429).json({
+                if (!manufacturer) {
+                    return res.status(400).json({
                         success: false,
-                        message: 'Rate limit exceeded',
-                        tracking: {
-                            isTracking: false,
-                            manufacturer: null,
-                            pollingStatus: {
-                                interval: rateLimiter.getCurrentPollingInterval(),
-                                nextPoll,
-                                isRateLimited: true,
-                            },
-                            rateLimitInfo: {
-                                remainingRequests: rateLimiter.getRemainingRequests(),
-                                remainingDaily: rateLimiter.getRemainingDailyRequests(),
-                            },
-                        },
+                        message: 'Manufacturer is required',
                     });
                 }
 
-                const icao24List = await fetchIcao24s(manufacturer);
-                await manufacturerTracking.startPolling(manufacturer, icao24List);
-                const status = manufacturerTracking.getTrackingStatus();
+                const result = await databaseManagerInstance.getManufacturerByName(manufacturer);
 
-                if (!status.isTracking) {
-                    throw new Error(`Tracking failed to start for manufacturer: ${manufacturer}`);
+                if (!result) {
+                    return res.status(404).json({
+                        success: false,
+                        message: `Manufacturer '${manufacturer}' not found.`,
+                    });
                 }
 
                 return res.status(200).json({
                     success: true,
-                    message: `Tracking started for ${manufacturer}`,
-                    aircraftCount: icao24List.length,
-                    tracking: {
-                        isTracking: status.isTracking,
-                        manufacturer: status.manufacturer,
-                        pollingStatus: {
-                            interval: rateLimiter.getCurrentPollingInterval(),
-                            nextPoll,
-                            isRateLimited: false,
-                        },
-                        rateLimitInfo: {
-                            remainingRequests: rateLimiter.getRemainingRequests(),
-                            remainingDaily: rateLimiter.getRemainingDailyRequests(),
-                        },
-                    },
-                });
-            } catch (error: any) {
-                console.error('Error starting tracking:', error.message, error.stack);
-                errorHandler.handleError(ErrorType.DATA, error.message, { manufacturer });
-
-                return res.status(500).json({
-                    success: false,
-                    message: error.message || 'Failed to start tracking',
+                    message: `Manufacturer '${manufacturer}' found.`,
+                    data: result, // Include `data` in the response
                 });
             }
-        }
 
-        case 'DELETE': {
-            manufacturerTracking.stopPolling();
-            rateLimiter.resetPollingInterval();
-            return res.status(200).json({
-                success: true,
-                message: 'Stopped tracking',
-            });
+            default:
+                return res.status(405).json({
+                    success: false,
+                    message: `The HTTP method '${method}' is not supported at this endpoint.`,
+                });
         }
-
-        default:
-            res.setHeader('Allow', ['POST', 'DELETE']);
-            return res.status(405).json({
-                success: false,
-                message: `Method ${method} not allowed`,
-            });
+    } catch (error) {
+        console.error('[Error] Handler encountered an issue:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Internal server error. Please try again later.',
+        });
     }
-}
+
+async function fetchIcao24s(manufacturer: string): Promise<string[]> {
+    const icao24s = await databaseManagerInstance.allQuery<ICAO24Row>(`
+        SELECT DISTINCT icao24
+        FROM aircraft
+        WHERE manufacturer = ?
+          AND icao24 IS NOT NULL
+          AND icao24 != ''
+    `, [manufacturer]);
+ 
+    if (!icao24s.length) {
+        throw new Error(`No aircraft found for manufacturer: ${manufacturer}`);
+    }
+ 
+    return icao24s.map(row => row.icao24);
+}}
