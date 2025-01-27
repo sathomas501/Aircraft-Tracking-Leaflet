@@ -54,7 +54,11 @@ const MapWrapper: React.FC = () => {
     setState((prev) => ({ ...prev, isLoading: true, error: null }));
 
     try {
+<<<<<<< HEAD
       const response = await fetch('/api/manufacturer/icao24s', {
+=======
+      const response = await fetch('/api/manufacturers/icao24s', {
+>>>>>>> 314bd49f0f3f6d37433272baaae05e8f3b9af939
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ manufacturer }),
@@ -87,11 +91,15 @@ const MapWrapper: React.FC = () => {
   };
 
   const handleAircraftUpdate = (data: { aircraft: Aircraft[] }) => {
+<<<<<<< HEAD
     console.log('Received aircraft update:', data.aircraft);
+=======
+>>>>>>> 314bd49f0f3f6d37433272baaae05e8f3b9af939
     if (!data.aircraft) {
       console.error('Invalid aircraft data received');
       return;
     }
+<<<<<<< HEAD
   
     setState((prev) => {
       console.log('Updating state with aircraft:', data.aircraft);
@@ -100,6 +108,13 @@ const MapWrapper: React.FC = () => {
         aircraft: data.aircraft,
       };
     });
+=======
+
+    setState((prev) => ({
+      ...prev,
+      aircraft: data.aircraft,
+    }));
+>>>>>>> 314bd49f0f3f6d37433272baaae05e8f3b9af939
   };
 
   return (
