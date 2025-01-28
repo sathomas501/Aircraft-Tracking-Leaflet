@@ -282,6 +282,8 @@ export interface ManufacturerData {
   id: number;
   name: string;
   country: string;
+  count: number;
+  activeCount?: number;
 }
 
 

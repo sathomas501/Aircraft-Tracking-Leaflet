@@ -74,17 +74,48 @@ export class PollingService {
     }
 
     private async fetchBatch(batch: string[]): Promise<any> {
-        await this.rateLimiter.waitForSlot(); // Single rate limit check
-        if (!await openSkyAuth.ensureAuthenticated()) {
-            throw new Error('Authentication failed');
+        if (!batch || batch.length === 0) {
+            throw new Error('Batch cannot be empty');
         }
-        
-        const response = await axios.get(this.config.url, {
-            params: { icao24: batch.join(',') },
-            headers: openSkyAuth.getAuthHeaders(),
-        });
-        return response.data;
+    
+        if (!batch.every(icao24 => typeof icao24 === 'string')) {
+            throw new Error('Batch contains invalid ICAO24 values');
+        }
+    
+        try {
+            await this.rateLimiter.waitForSlot();
+    
+            if (!await openSkyAuth.ensureAuthenticated()) {
+                throw new Error('Authentication failed');
+            }
+    
+            const response = await axios.get(this.config.url, {
+                params: { icao24: batch.join(',') },
+                headers: openSkyAuth.getAuthHeaders(),
+            }).catch(error => {
+                if (error.response && error.response.status === 429) {
+                    const retryAfter = error.response.headers['retry-after'] || 1; // Default retry after 1 second
+                    console.warn(`Rate limited. Retrying after ${retryAfter} seconds.`);
+                    return new Promise(resolve => setTimeout(resolve, retryAfter * 1000))
+                        .then(() => axios.get(this.config.url, {
+                            params: { icao24: batch.join(',') },
+                            headers: openSkyAuth.getAuthHeaders(),
+                        }));
+                }
+                throw error;
+            });
+    
+            if (!response.data || typeof response.data !== 'object') {
+                throw new Error('Invalid response data received');
+            }
+    
+            return response.data;
+        } catch (error) {
+            console.error('Error fetching batch data:', error instanceof Error ? error.message : error);
+            throw new Error('Failed to fetch batch data. Please try again.');
+        }
     }
+    
 
     public startPolling(
         batch: string[],

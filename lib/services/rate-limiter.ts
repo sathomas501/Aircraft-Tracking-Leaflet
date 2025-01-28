@@ -19,7 +19,7 @@ export class PollingRateLimiter {
     private readonly minPollingInterval: number;
     private readonly maxPollingInterval: number;
     private readonly batchSize: number;
-    private readonly retryLimit: number;
+    public readonly retryLimit: number;
     private lastRequestTime: number = 0;
     private readonly dayInMs = 24 * 60 * 60 * 1000;
     private readonly minuteInMs = 60 * 1000;

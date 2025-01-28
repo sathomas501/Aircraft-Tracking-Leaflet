@@ -37,50 +37,53 @@ const rateLimiter = new PollingRateLimiter({
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse<TrackResponse>) {
     try {
-        await databaseManagerInstance.initialize();
-
-        const { method, body } = req;
-
-        switch (method) {
-            case 'POST': {
-                const { manufacturer } = body;
-
-                if (!manufacturer) {
-                    return res.status(400).json({
-                        success: false,
-                        message: 'Manufacturer is required',
-                    });
-                }
-
-                const result = await databaseManagerInstance.getManufacturerByName(manufacturer);
-
-                if (!result) {
-                    return res.status(404).json({
-                        success: false,
-                        message: `Manufacturer '${manufacturer}' not found.`,
-                    });
-                }
-
-                return res.status(200).json({
-                    success: true,
-                    message: `Manufacturer '${manufacturer}' found.`,
-                    data: result, // Include `data` in the response
-                });
-            }
-
-            default:
-                return res.status(405).json({
-                    success: false,
-                    message: `The HTTP method '${method}' is not supported at this endpoint.`,
-                });
+      await databaseManagerInstance.initialize();
+  
+      const { method, body } = req;
+  
+      switch (method) {
+        case 'POST': {
+          const { manufacturer } = body;
+  
+          if (!manufacturer) {
+            return res.status(400).json({
+              success: false,
+              message: 'Manufacturer is required',
+            });
+          }
+  
+          const icao24List = await fetchIcao24s(manufacturer);
+          return res.status(200).json({
+            success: true,
+            message: `Manufacturer '${manufacturer}' found.`,
+            data: icao24List,
+          });
         }
-    } catch (error) {
-        console.error('[Error] Handler encountered an issue:', error);
-        return res.status(500).json({
+  
+        default:
+          return res.status(405).json({
             success: false,
-            message: 'Internal server error. Please try again later.',
+            message: `The HTTP method '${method}' is not supported at this endpoint.`,
+          });
+      }
+    } catch (error) {
+      // Safely handle the unknown error
+      if (error instanceof Error) {
+        console.error('[Error] Handler encountered an issue:', error.message);
+        return res.status(500).json({
+          success: false,
+          message: 'Internal server error: ' + error.message,
         });
+      } else {
+        console.error('[Error] Unknown error occurred:', error);
+        return res.status(500).json({
+          success: false,
+          message: 'An unknown error occurred.',
+        });
+      }
     }
+  }
+  
 
 async function fetchIcao24s(manufacturer: string): Promise<string[]> {
     const icao24s = await databaseManagerInstance.allQuery<ICAO24Row>(`
@@ -90,10 +93,11 @@ async function fetchIcao24s(manufacturer: string): Promise<string[]> {
           AND icao24 IS NOT NULL
           AND icao24 != ''
     `, [manufacturer]);
- 
+
     if (!icao24s.length) {
         throw new Error(`No aircraft found for manufacturer: ${manufacturer}`);
     }
- 
+
     return icao24s.map(row => row.icao24);
-}}
+}
+
