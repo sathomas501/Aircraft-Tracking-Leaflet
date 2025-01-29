@@ -10,7 +10,7 @@ interface ManufacturersGetResponse {
 }
 
 interface ManufacturersPostResponse {
-    positions: any[];  // Replace 'any' with your aircraft position type
+    positions: any[]; // Replace 'any' with your aircraft position type
     error?: string;
     message?: string;
 }
@@ -18,7 +18,7 @@ interface ManufacturersPostResponse {
 type ManufacturersResponse = ManufacturersGetResponse | ManufacturersPostResponse;
 
 export default async function handler(
-    req: NextApiRequest, 
+    req: NextApiRequest,
     res: NextApiResponse<ManufacturersResponse>
 ) {
     // GET Method: Fetch Top Manufacturers
@@ -31,7 +31,7 @@ export default async function handler(
                 SELECT 
                     manufacturer AS name, 
                     COUNT(*) AS count 
-                FROM aircraft 
+                FROM aircraft
                 WHERE manufacturer IS NOT NULL 
                   AND TRIM(manufacturer) != ''
                 GROUP BY manufacturer 
@@ -42,16 +42,19 @@ export default async function handler(
             const manufacturers: SelectOption[] = result.map(m => ({
                 value: m.name,
                 label: m.name,
-                count: m.count
+                count: m.count,
             }));
 
             console.log('[Debug] GET Query result:', manufacturers.slice(0, 3));
-            return res.status(200).json({ manufacturers });
+            return res.status(200).json({
+                manufacturers,
+                message: 'Manufacturers fetched successfully!',
+            });
         } catch (error) {
             console.error('[Error] Database error on GET:', error);
-            return res.status(500).json({ 
+            return res.status(500).json({
                 manufacturers: [],
-                error: 'Failed to fetch manufacturers. Please try again later.'
+                error: 'Failed to fetch manufacturers. Please try again later.',
             });
         }
     }
@@ -61,9 +64,9 @@ export default async function handler(
         const { manufacturer } = req.body;
 
         if (!manufacturer) {
-            return res.status(400).json({ 
+            return res.status(400).json({
                 positions: [],
-                error: 'Manufacturer is required.'
+                error: 'Manufacturer is required to fetch aircraft data.',
             });
         }
 
@@ -78,20 +81,24 @@ export default async function handler(
                 ORDER BY model;
             `, [manufacturer]);
 
+            
             console.log('[Debug] POST Query result:', result);
-            return res.status(200).json({ positions: result });
+            return res.status(200).json({
+                positions: result,
+                message: `Aircraft data for '${manufacturer}' fetched successfully!`,
+            });
         } catch (error) {
             console.error('[Error] Database error on POST:', error);
-            return res.status(500).json({ 
+            return res.status(500).json({
                 positions: [],
-                error: 'Failed to fetch aircraft for the selected manufacturer.'
+                error: 'Failed to fetch aircraft for the selected manufacturer.',
             });
         }
     }
 
     // Method Not Allowed
-    return res.status(405).json({ 
+    return res.status(405).json({
         manufacturers: [],
-        error: `Method ${req.method} not allowed`
+        error: `Method ${req.method} not allowed.`,
     } as ManufacturersGetResponse);
 }

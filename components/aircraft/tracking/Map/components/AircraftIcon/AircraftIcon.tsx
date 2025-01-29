@@ -2,6 +2,7 @@
 import L from 'leaflet';
 import { Aircraft } from '@/types/base';
 import { AIRCRAFT_MARKERS } from './constants';
+import clsx from 'clsx';
 
 interface IconOptions {
   isSelected?: boolean;
@@ -22,30 +23,37 @@ export const createAircraftIcon = (
     AIRCRAFT_MARKERS.SIZE.SELECTED : 
     AIRCRAFT_MARKERS.SIZE.DEFAULT;
   
-  const rotation = aircraft.heading;
+  // Use heading directly since PNG is oriented north (0 degrees)
+  const rotation = (aircraft.heading || 0) % 360;
+  
   const opacity = isGrounded ? 
     AIRCRAFT_MARKERS.OPACITY.GROUNDED : 
     AIRCRAFT_MARKERS.OPACITY.ACTIVE;
 
-  const markerStyles = [
-    `transform: rotate(${rotation}deg)`,
+  const color = isSelected ? 
+    AIRCRAFT_MARKERS.COLORS.SELECTED : 
+    AIRCRAFT_MARKERS.COLORS.DEFAULT;
+
+  const containerStyles = [
     `width: ${size}px`,
     `height: ${size}px`,
     `transition: all ${AIRCRAFT_MARKERS.ANIMATION.DURATION}ms ease`,
-    isSelected ? `filter: drop-shadow(0 0 4px ${highlightColor})` : ''
+    isSelected ? `filter: drop-shadow(0 0 4px ${color})` : ''
   ].filter(Boolean).join(';');
 
   const imageStyles = [
     'width: 100%',
     'height: 100%',
+    'transform-origin: center',
+    `transform: rotate(${rotation}deg)`,
     `opacity: ${opacity}`,
-    `transition: opacity ${AIRCRAFT_MARKERS.ANIMATION.DURATION}ms ease`
+    'transition: all 300ms ease'
   ].join(';');
 
   const html = `
     <div 
-      style="${markerStyles}"
-      class="${cn(
+      style="${containerStyles}"
+      class="${clsx(
         'aircraft-marker',
         isSelected && 'selected',
         isGrounded && 'grounded'
@@ -54,9 +62,9 @@ export const createAircraftIcon = (
       data-n-number="${aircraft['N-NUMBER']}"
     >
       <img 
-        src="${isGrounded ? '/aircraft-pin.png' : '/aircraft-pin-blue.png'}"
+        src="${isGrounded ? '/icons/aircraft-pin-grounded.png' : '/icons/aircraft-pin-active.png'}"
         style="${imageStyles}"
-        alt="${aircraft.manufacturer} ${aircraft.model}"
+        alt="${aircraft.manufacturer} ${aircraft.model || 'aircraft'}"
         class="aircraft-icon-image"
       />
     </div>
@@ -64,7 +72,7 @@ export const createAircraftIcon = (
 
   return L.divIcon({
     html,
-    className: cn(
+    className: clsx(
       'aircraft-icon',
       isSelected && 'selected',
       isGrounded && 'grounded',
@@ -74,8 +82,4 @@ export const createAircraftIcon = (
     iconAnchor: [size/2, size/2],
     popupAnchor: [0, -size/2]
   });
-};
-
-const cn = (...classes: (string | boolean | undefined)[]) => {
-  return classes.filter(Boolean).join(' ');
 };

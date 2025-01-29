@@ -1,3 +1,5 @@
+import React from 'react';
+
 export enum ErrorType {
     NETWORK = 'NETWORK',
     AUTH = 'AUTH',
@@ -6,10 +8,11 @@ export enum ErrorType {
     POLLING = 'POLLING',
     POLLING_TIMEOUT = 'POLLING_TIMEOUT',
     CRITICAL = 'CRITICAL',
-    WEBSOCKET = 'WEBSOCKET'
+    WEBSOCKET = 'WEBSOCKET',
+    RATE_LIMIT = 'RATE_LIMIT'
 }
 
-interface ErrorDetails {
+export interface ErrorDetails {
     type: ErrorType;
     message: string;
     timestamp: number;
@@ -26,7 +29,20 @@ interface ErrorState {
     retryTimeouts: Map<ErrorType, NodeJS.Timeout>;
 }
 
-class ErrorHandler {
+// User-friendly messages for errors
+export const userMessages: Record<ErrorType, string> = {
+    [ErrorType.NETWORK]: 'A network issue occurred. Please check your connection.',
+    [ErrorType.AUTH]: 'Authentication failed. Please log in again.',
+    [ErrorType.AUTH_REQUIRED]: 'Authentication is required to proceed.',
+    [ErrorType.DATA]: 'An issue occurred while processing data.',
+    [ErrorType.POLLING]: 'An error occurred during polling. Please try again later.',
+    [ErrorType.POLLING_TIMEOUT]: 'Polling timed out. Please try again.',
+    [ErrorType.CRITICAL]: 'A critical error occurred. Please contact support.',
+    [ErrorType.WEBSOCKET]: 'A WebSocket error occurred. Reconnecting...',
+    [ErrorType.RATE_LIMIT]: 'Rate limit exceeded. Please wait before making more requests.'
+};
+
+export class ErrorHandler {
     private static instance: ErrorHandler;
     private state: ErrorState = {
         errors: new Map(),
@@ -38,129 +54,118 @@ class ErrorHandler {
     private readonly BASE_RETRY_DELAY = 2000;
     private readonly MAX_RETRY_DELAY = 32000;
 
-    private constructor() {
-        Object.values(ErrorType).forEach(type => {
+    private constructor() {}
+
+    public static getInstance(): ErrorHandler {
+        if (!this.instance) {
+            this.instance = new ErrorHandler();
+        }
+        return this.instance;
+    }
+
+    public handleError(errorOrType: ErrorType | ErrorDetails, message?: string | Error, context?: any): void {
+        let error: ErrorDetails;
+
+        // Create ErrorDetails object from parameters if needed
+        if (typeof errorOrType === 'string') {
+            error = {
+                type: errorOrType,
+                message: message instanceof Error ? message.message : message || 'An error occurred',
+                timestamp: Date.now(),
+                retryCount: 0,
+                resolved: false,
+                context: context
+            };
+        } else {
+            error = errorOrType;
+        }
+
+        console.error('Error occurred:', error);
+
+        // Add the error to the state
+        this.state.errors.set(error.type, error);
+
+        // Notify subscribed handlers
+        this.notifyHandlers(error);
+
+        // Log the error to an external service like Sentry
+        this.logError(error);
+
+        // Retry logic
+        if (error.retryCount < this.MAX_RETRY_COUNT) {
+            this.scheduleRetry(error);
+        }
+    }
+
+    private notifyHandlers(error: ErrorDetails): void {
+        const handlers = this.state.handlers.get(error.type);
+        if (handlers) {
+            handlers.forEach((handler) => handler(error));
+        }
+    }
+
+    public subscribeToError(type: ErrorType, handler: (error: ErrorDetails) => void): void {
+        if (!this.state.handlers.has(type)) {
             this.state.handlers.set(type, new Set());
-        });
-    }
-
-    static getInstance(): ErrorHandler {
-        if (!ErrorHandler.instance) {
-            ErrorHandler.instance = new ErrorHandler();
         }
-        return ErrorHandler.instance;
+        this.state.handlers.get(type)?.add(handler);
     }
 
-    handleError(type: ErrorType, error: Error | string, context?: any) {
-        const message = error instanceof Error ? error.message : error;
-        const existingError = this.state.errors.get(type);
-        
-        const details: ErrorDetails = {
-            type,
-            message,
-            timestamp: Date.now(),
-            context,
-            retryCount: existingError ? existingError.retryCount + 1 : 0,
-            resolved: false,
-            lastRetryTimestamp: Date.now()
-        };
-
-        this.logError(details);
-        this.state.errors.set(type, details);
-        this.notifyHandlers(type, details);
-
-        if (this.shouldRetry(type, details)) {
-            this.scheduleRetry(type, details);
-        }
+    public unsubscribeFromError(type: ErrorType, handler: (error: ErrorDetails) => void): void {
+        this.state.handlers.get(type)?.delete(handler);
     }
 
-    private shouldRetry(type: ErrorType, details: ErrorDetails): boolean {
-        if (details.retryCount >= this.MAX_RETRY_COUNT) return false;
-        if (type === ErrorType.CRITICAL) return false;
-        if (type === ErrorType.AUTH_REQUIRED) return false;
-
-        return true;
-    }
-
-    private scheduleRetry(type: ErrorType, details: ErrorDetails) {
-        const existingTimeout = this.state.retryTimeouts.get(type);
-        if (existingTimeout) {
-            clearTimeout(existingTimeout);
-        }
-
-        const retryDelay = Math.min(
-            this.BASE_RETRY_DELAY * Math.pow(2, details.retryCount),
+    private getRetryDelay(attempt: number): number {
+        const delay = Math.min(
+            this.BASE_RETRY_DELAY * Math.pow(2, attempt),
             this.MAX_RETRY_DELAY
         );
+        return delay + Math.random() * 500; // Adding jitter
+    }
 
+    private scheduleRetry(error: ErrorDetails): void {
+        const retryDelay = this.getRetryDelay(error.retryCount);
         const timeout = setTimeout(() => {
-            this.state.retryTimeouts.delete(type);
-            this.notifyHandlers(type, { ...details, resolved: true });
+            error.retryCount++;
+            error.lastRetryTimestamp = Date.now();
+            this.handleError(error);
         }, retryDelay);
 
-        this.state.retryTimeouts.set(type, timeout);
+        this.state.retryTimeouts.set(error.type, timeout);
     }
 
-    private logError(details: ErrorDetails) {
-        const logMessage = {
-            type: details.type,
-            message: details.message,
-            retryCount: details.retryCount,
-            timestamp: new Date(details.timestamp).toISOString(),
-            context: details.context
-        };
-        
-        if (details.type === ErrorType.POLLING || 
-            details.type === ErrorType.POLLING_TIMEOUT) {
-            console.warn('[Polling Error]', logMessage);
-        } else {
-            console.error('[Error]', logMessage);
-        }
-    }
-
-    subscribe(type: ErrorType, handler: (error: ErrorDetails) => void): () => void {
-        const handlers = this.state.handlers.get(type);
-        if (handlers) {
-            handlers.add(handler);
-        }
-        return () => {
-            if (handlers) {
-                handlers.delete(handler);
-            }
-        };
-    }
-
-    private notifyHandlers(type: ErrorType, details: ErrorDetails) {
-        const handlers = this.state.handlers.get(type);
-        handlers?.forEach(handler => {
-            try {
-                handler(details);
-            } catch (error) {
-                console.error('Handler execution failed:', error);
-            }
+    private logError(error: ErrorDetails): void {
+        // Example integration with Sentry
+        console.log('Logging error to external service (e.g., Sentry)...', {
+            type: error.type,
+            message: error.message,
+            context: error.context,
+            retryCount: error.retryCount
         });
-    }
-
-    getError(type: ErrorType): ErrorDetails | null {
-        return this.state.errors.get(type) || null;
-    }
-
-    clearError(type: ErrorType) {
-        const timeout = this.state.retryTimeouts.get(type);
-        if (timeout) clearTimeout(timeout);
-        
-        this.state.errors.delete(type);
-        this.state.retryTimeouts.delete(type);
-    }
-
-    hasActiveError(type: ErrorType): boolean {
-        const error = this.state.errors.get(type);
-        return !!error && !error.resolved;
-    }
-
-    getRetryCount(type: ErrorType): number {
-        return this.state.errors.get(type)?.retryCount || 0;
     }
 }
 
+// React hook for using the error handler
+export function useErrorHandler(type: ErrorType) {
+    const [error, setError] = React.useState<ErrorDetails | null>(null);
+
+    React.useEffect(() => {
+        const handler = (errorDetails: ErrorDetails) => {
+            setError(errorDetails);
+        };
+
+        errorHandler.subscribeToError(type, handler);
+
+        return () => {
+            errorHandler.unsubscribeFromError(type, handler);
+        };
+    }, [type]);
+
+    return {
+        error,
+        clearError: () => setError(null),
+    };
+}
+
+// Create and export a singleton instance
 export const errorHandler = ErrorHandler.getInstance();

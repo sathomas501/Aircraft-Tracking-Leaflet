@@ -1,16 +1,18 @@
 // pages/api/proxy/opensky.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { PollingRateLimiter } from '@/lib/services/rate-limiter';
+import { openSkyAuth } from '@/lib/services/opensky-auth';
+import { ErrorType } from '@/lib/services/error-handler';
 
 // Initialize rate limiter with OpenSky's limits
 const rateLimiter = new PollingRateLimiter({
-    requestsPerMinute: 4,      // OpenSky's anonymous limit is 4 requests per minute
-    requestsPerDay: 1000,      // Conservative daily limit
-    maxWaitTime: 15000,        // Maximum 15s wait for a slot
-    minPollingInterval: 15000, // Minimum 15s between requests
-    maxPollingInterval: 30000, // Maximum 30s between requests
-    batchSize: 100,           // Process in batches of 100 aircraft
-    retryLimit: 3             // Maximum 3 retries
+    requestsPerMinute: 60,     // Using authenticated limits
+    requestsPerDay: 10000,     // Using authenticated limits
+    maxWaitTime: 15000,
+    minPollingInterval: 5000,  // More aggressive for authenticated
+    maxPollingInterval: 30000,
+    batchSize: 100,
+    retryLimit: 3
 });
 
 async function fetchWithRetry(url: string, options: RequestInit): Promise<Response> {
@@ -30,7 +32,6 @@ async function fetchWithRetry(url: string, options: RequestInit): Promise<Respon
             rateLimiter.recordRequest();
 
             if (response.status === 503) {
-                // Service unavailable - we should increase the polling interval
                 rateLimiter.increasePollingInterval();
                 const waitTime = rateLimiter.getCurrentPollingInterval();
                 console.log(`[OpenSky Proxy] 503 received, increasing polling interval to ${waitTime}ms`);
@@ -38,7 +39,12 @@ async function fetchWithRetry(url: string, options: RequestInit): Promise<Respon
                 continue;
             }
 
-            // If request was successful, we can try decreasing the interval
+            if (response.status === 401 || response.status === 403) {
+                // Handle auth errors specifically
+                await openSkyAuth.handleAuthError();
+                throw new Error('Authentication failed, retrying with new credentials');
+            }
+
             rateLimiter.decreasePollingInterval();
             return response;
 
@@ -46,8 +52,6 @@ async function fetchWithRetry(url: string, options: RequestInit): Promise<Respon
             lastError = error instanceof Error ? error : new Error(String(error));
             console.error(`[OpenSky Proxy] Attempt ${attempt + 1} failed:`, error);
             
-            // If it's not a 503, increase polling interval more aggressively
-            rateLimiter.increasePollingInterval();
             rateLimiter.increasePollingInterval();
             
             const waitTime = rateLimiter.getCurrentPollingInterval();
@@ -58,7 +62,10 @@ async function fetchWithRetry(url: string, options: RequestInit): Promise<Respon
     throw lastError || new Error('Maximum retries exceeded');
 }
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+export default async function handler(
+    req: NextApiRequest,
+    res: NextApiResponse
+) {
     if (req.method !== 'POST') {
         return res.status(405).json({ error: 'Method not allowed' });
     }
@@ -70,6 +77,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     try {
+        // Ensure we're authenticated before proceeding
+        const isAuthenticated = await openSkyAuth.ensureAuthenticated();
+        if (!isAuthenticated) {
+            return res.status(401).json({ 
+                error: 'Authentication failed',
+                message: 'Could not authenticate with OpenSky Network'
+            });
+        }
+
         if (rateLimiter.isRateLimited()) {
             const nextSlot = await rateLimiter.getNextAvailableSlot();
             return res.status(429).json({ 
@@ -82,9 +98,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
         const icao24String = Array.isArray(icao24List) ? icao24List.join(',') : icao24List;
         
-        const auth = Buffer.from(
-            `${process.env.OPENSKY_USERNAME}:${process.env.OPENSKY_PASSWORD}`
-        ).toString('base64');
+        // Get authentication headers from the auth class
+        const headers = {
+            'Accept': 'application/json',
+            ...openSkyAuth.getAuthHeaders()
+        };
 
         console.log(`[OpenSky Proxy] Requesting data for ${icao24List.length} aircraft. Rate limits:`, {
             remainingMinute: rateLimiter.getRemainingRequests(),
@@ -94,16 +112,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
         const response = await fetchWithRetry(
             `https://opensky-network.org/api/states/all?icao24=${icao24String}`,
-            {
-                headers: {
-                    'Authorization': `Basic ${auth}`,
-                    'Accept': 'application/json'
-                }
-            }
+            { headers }
         );
 
         if (!response.ok) {
-            throw new Error(`OpenSky API error: ${response.status}`);
+            const errorText = await response.text().catch(() => 'No error text available');
+            console.error('[OpenSky Proxy] Response error:', {
+                status: response.status,
+                statusText: response.statusText,
+                headers: Object.fromEntries(response.headers.entries()),
+                errorText
+            });
+            throw new Error(`OpenSky API error: ${response.status} - ${errorText}`);
         }
 
         const data = await response.json();

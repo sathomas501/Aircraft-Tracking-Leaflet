@@ -1,7 +1,8 @@
 import { PollingRateLimiter } from './rate-limiter';
 import { errorHandler, ErrorType } from './error-handler';
 import { openSkyAuth } from './opensky-auth';
-import type { Aircraft } from '@/types/base';
+import type { Aircraft, OpenSkyState, PositionData } from '@/types/base';
+import { mapPositionDataToAircraft, mapStateToPosition } from '@/types/base';
 
 interface TrackingData {
     aircraft: Aircraft[];
@@ -80,15 +81,66 @@ class ManufacturerTrackingService {
             throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
         }
 
-        const data = await response.json();
+        const { data, meta } = await response.json();
+        
+        // Validate response data
+        if (!data || !Array.isArray(data.states)) {
+            console.error('[Error] Invalid response format:', data);
+            throw new Error('Invalid response format from OpenSky API');
+        }
+
+        // Transform OpenSky states into OpenSkyState objects first
+        const states: OpenSkyState[] = data.states.map((state: any[]) => {
+            if (!Array.isArray(state) || state.length < 17) {
+                console.warn('[Warning] Invalid state format:', state);
+                return null;
+            }
+
+            return {
+                icao24: state[0],
+                latitude: state[6],
+                longitude: state[5],
+                baro_altitude: state[7],
+                velocity: state[9],
+                true_track: state[10],
+                on_ground: state[8],
+                last_contact: state[4]
+            };
+        }).filter((state: unknown): state is OpenSkyState => 
+            state !== null && 
+            typeof state === 'object' && 
+            state !== null &&
+            'icao24' in state
+        );
+
+        // Convert OpenSkyState to PositionData and then to Aircraft
+        const positions = states.map(state => {
+            try {
+                return mapStateToPosition(state);
+            } catch (error) {
+                console.warn('[Warning] Failed to map state to position:', error);
+                return null;
+            }
+        }).filter((pos): pos is PositionData => pos !== null);
+
+        // Map to full Aircraft objects
+        const aircraft = mapPositionDataToAircraft(positions);
+
         console.log('[OpenSky Proxy] Response:', {
             status: response.status,
-            hasData: !!data,
-            statesCount: data?.states?.length,
-            sampleState: data?.states?.[0]
+            hasData: true,
+            statesCount: aircraft.length,
+            sampleState: aircraft[0],
+            rateLimits: meta
         });
 
-        this.notifySubscribers({ aircraft: data.states || [] });
+        // Update rate limit info
+        this.state.rateLimitInfo = {
+            remainingRequests: meta.remainingRequests,
+            remainingDaily: meta.remainingDaily
+        };
+
+        this.notifySubscribers({ aircraft });
     } catch (error) {
         console.error('[Error] OpenSky proxy request failed:', error);
         this.rateLimiter.increasePollingInterval();
