@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import type { SelectOption } from '@/types/base';
-import { Search, ChevronDown, Plane } from 'lucide-react';
+import { Search, ChevronDown } from 'lucide-react';
+import { toast } from 'react-toastify';
 
 export interface UnifiedSelectorProps {
   selectedType: string;
@@ -32,13 +33,12 @@ const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
   const [manufacturers, setManufacturers] = useState<SelectOption[]>([]);
   const [models, setModels] = useState<SelectOption[]>([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [isManufacturerOpen, setIsManufacturerOpen] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const fetchManufacturers = useCallback(async () => {
-    console.log('Fetching manufacturers...'); // Debug log
+    console.log('Fetching manufacturers...');
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
     }
@@ -48,28 +48,26 @@ const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
 
     try {
       setLoading(true);
-      setError(null);
-
       const response = await fetch('/api/manufacturers', { signal: controller.signal });
-      console.log('Response status:', response.status); // Debug log
-      
+      console.log('Response received:', response.status);  // Add this
       if (!response.ok) {
-        throw new Error('Failed to fetch manufacturers.');
+          console.error('Response not OK:', await response.text());  // Add this
+          throw new Error('Failed to fetch manufacturers.');
       }
 
       const data = await response.json();
-      console.log('Manufacturers data received:', data); // Debug log
-
       if (!data.manufacturers?.length) {
         throw new Error('No manufacturers data received.');
       }
 
       setManufacturers(data.manufacturers);
-      
+      toast.success('Manufacturers loaded successfully!');
     } catch (err) {
       if (!controller.signal.aborted) {
         console.error('Manufacturer fetch error:', err);
-        setError('Failed to load aircraft data.');
+        toast.error(
+          err instanceof Error ? err.message : 'Failed to load manufacturers data.'
+        );
         setManufacturers([]);
       }
     } finally {
@@ -80,9 +78,8 @@ const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
 
   // Call fetchManufacturers when component mounts
   useEffect(() => {
-    console.log('Component mounted, fetching manufacturers...'); // Debug log
     fetchManufacturers();
-    
+
     return () => {
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
@@ -90,33 +87,23 @@ const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
     };
   }, [fetchManufacturers]);
 
-  // Debug useEffect to monitor state changes
-  useEffect(() => {
-    console.log('Manufacturers state updated:', manufacturers);
-  }, [manufacturers]);
-
-  // Filter manufacturers based on search term
   const filteredManufacturers = useMemo(() => {
-    console.log('Filtering manufacturers with search term:', searchTerm); // Debug log
     if (!searchTerm) return manufacturers;
     return manufacturers.filter((manufacturer) =>
       manufacturer.label.toLowerCase().includes(searchTerm.toLowerCase().trim())
     );
   }, [manufacturers, searchTerm]);
 
-  // Models showing either static or active counts based on selection
   const modelOptions = useMemo(() => {
     if (!propSelectedManufacturer) {
-      // Show static counts before manufacturer selection
-      return models.map(model => ({
+      return models.map((model) => ({
         ...model,
-        label: `${model.value} (${model.count} registered)`
+        label: `${model.value} (${model.count} registered)`,
       }));
     } else {
-      // Show active counts after manufacturer selection
-      return models.map(model => ({
+      return models.map((model) => ({
         ...model,
-        label: `${model.value} (${modelCounts.get(model.value) || 0} active)`
+        label: `${model.value} (${modelCounts.get(model.value) || 0} active)`,
       }));
     }
   }, [models, modelCounts, propSelectedManufacturer]);
@@ -150,7 +137,15 @@ const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
               <button
                 key={manufacturer.value}
                 onClick={() => {
-                  onManufacturerSelect(manufacturer.value);
+                  onManufacturerSelect(manufacturer.value)
+                    .then(() => toast.success(`Tracking aircraft for ${manufacturer.value}.`))
+                    .catch((err) =>
+                      toast.error(
+                        err instanceof Error
+                          ? err.message
+                          : 'Error selecting manufacturer.'
+                      )
+                    );
                   setIsManufacturerOpen(false);
                 }}
                 className="w-full px-4 py-2 text-left hover:bg-gray-100 focus:outline-none focus:bg-gray-100"
@@ -169,9 +164,7 @@ const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
 
       {/* Model Select */}
       <div className="space-y-2 mt-4">
-        <label className="block text-sm font-medium text-gray-600">
-          Model
-        </label>
+        <label className="block text-sm font-medium text-gray-600">Model</label>
         <div className="relative">
           <select
             value={selectedModel}
@@ -194,16 +187,9 @@ const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
         </div>
       </div>
 
-      {/* Loading and Error States */}
+      {/* Loading State */}
       {loading && (
-        <div className="text-gray-600 text-sm py-2 animate-pulse">
-          Loading...
-        </div>
-      )}
-      {error && (
-        <div className="text-red-600 text-sm py-2">
-          {error}
-        </div>
+        <div className="text-gray-600 text-sm py-2 animate-pulse">Loading...</div>
       )}
     </div>
   );

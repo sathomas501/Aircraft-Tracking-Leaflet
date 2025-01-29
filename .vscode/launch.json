@@ -1,21 +1,26 @@
 {
+    "version": "0.2.0",
     "configurations": [
-        {
-            "command": "npm start",
-            "name": "Run npm start",
-            "request": "launch",
-            "type": "node-terminal"
-        },
-        {
-            "name": "Docker Node.js Launch",
-            "type": "docker",
-            "request": "launch",
-            "preLaunchTask": "docker-run: debug",
-            "platform": "node",
-            "node": {
-                "package": "${workspaceFolder}/node_modules/anymatch/package.json",
-                "localRoot": "${workspaceFolder}/node_modules/anymatch"
-            }
-        }
+      {
+        "type": "node",
+        "request": "launch",
+        "name": "Debug Next.js App",
+        "runtimeExecutable": "npm",
+        "runtimeArgs": ["run", "dev"],
+        "port": 9229,  // Default debugger port for Node.js
+        "cwd": "${workspaceFolder}",
+        "skipFiles": ["<node_internals>/**"],
+        "outputCapture": "std"
+      },
+      {
+        "type": "node",
+        "request": "attach",
+        "name": "Attach to Next.js Dev Server",
+        "port": 9229,
+        "restart": true,
+        "skipFiles": ["<node_internals>/**"],
+        "cwd": "${workspaceFolder}"
+      }
     ]
-}
+  }
+  
