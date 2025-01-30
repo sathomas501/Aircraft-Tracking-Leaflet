@@ -287,6 +287,28 @@ export interface ManufacturerData {
 }
 
 
+/**
+ * Cached aircraft data format used in UnifiedCacheService
+ */
+export interface CachedAircraftData {
+  icao24: string;
+  latitude: number;
+  longitude: number;
+  altitude: number;
+  velocity: number;
+  heading: number;
+  on_ground: boolean;
+  last_contact: number;
+  lastUpdate: number; // ✅ Ensure consistency across modules
+}
+/**
+ * Tracking data structure for aircraft updates
+ */
+export interface TrackingData {
+  aircraft: CachedAircraftData[];
+}
+
+
 
 
 

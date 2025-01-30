@@ -2,7 +2,7 @@ import { NextApiRequest, NextApiResponse } from 'next';
 import { DatabaseManager } from '@/lib/db/databaseManager';
 import type { SelectOption } from '@/types/base';
 
-// Separate response types for GET and POST
+// Response types for GET and POST
 interface ManufacturersGetResponse {
     manufacturers: SelectOption[];
     error?: string;
@@ -14,24 +14,25 @@ interface ManufacturersPostResponse {
     error?: string;
     message?: string;
 }
-
+const requestCache = new Set<string>();  // ✅ Prevents duplicate requests
 type ManufacturersResponse = ManufacturersGetResponse | ManufacturersPostResponse;
 
-export default async function handler(
-    req: NextApiRequest,
-    res: NextApiResponse<ManufacturersResponse>
-) {
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Expires', '0');
+    res.setHeader('Pragma', 'no-cache');
+
     // GET Method: Fetch Top Manufacturers
     if (req.method === 'GET') {
         try {
             const staticDb = DatabaseManager.getInstance();
-            await staticDb.initialize();
+          
 
-            const result = await staticDb.allQuery<{ name: string; count: number; }>(`
+            const result = await staticDb.executeQuery<{ name: string; count: number; }>(`
                 SELECT 
                     manufacturer AS name, 
                     COUNT(*) AS count 
-                FROM aircraft
+                FROM aircraft 
                 WHERE manufacturer IS NOT NULL 
                   AND TRIM(manufacturer) != ''
                 GROUP BY manufacturer 
@@ -42,19 +43,16 @@ export default async function handler(
             const manufacturers: SelectOption[] = result.map(m => ({
                 value: m.name,
                 label: m.name,
-                count: m.count,
+                count: m.count
             }));
 
             console.log('[Debug] GET Query result:', manufacturers.slice(0, 3));
-            return res.status(200).json({
-                manufacturers,
-                message: 'Manufacturers fetched successfully!',
-            });
+            return res.status(200).json({ manufacturers });
         } catch (error) {
             console.error('[Error] Database error on GET:', error);
-            return res.status(500).json({
+            return res.status(500).json({ 
                 manufacturers: [],
-                error: 'Failed to fetch manufacturers. Please try again later.',
+                error: 'Failed to fetch manufacturers. Please try again later.'
             });
         }
     }
@@ -64,41 +62,31 @@ export default async function handler(
         const { manufacturer } = req.body;
 
         if (!manufacturer) {
-            return res.status(400).json({
+            return res.status(400).json({ 
                 positions: [],
-                error: 'Manufacturer is required to fetch aircraft data.',
+                error: 'Manufacturer is required.'
             });
         }
 
         try {
             const staticDb = DatabaseManager.getInstance();
-            await staticDb.initialize();
+          
 
-            const result = await staticDb.allQuery(`
+            const result = await staticDb.executeQuery(`
                 SELECT * 
                 FROM aircraft 
                 WHERE manufacturer = ? 
                 ORDER BY model;
             `, [manufacturer]);
 
-            
             console.log('[Debug] POST Query result:', result);
-            return res.status(200).json({
-                positions: result,
-                message: `Aircraft data for '${manufacturer}' fetched successfully!`,
-            });
+            return res.status(200).json({ positions: result });
         } catch (error) {
             console.error('[Error] Database error on POST:', error);
-            return res.status(500).json({
+            return res.status(500).json({ 
                 positions: [],
-                error: 'Failed to fetch aircraft for the selected manufacturer.',
+                error: 'Failed to fetch aircraft for the selected manufacturer.'
             });
         }
     }
-
-    // Method Not Allowed
-    return res.status(405).json({
-        manufacturers: [],
-        error: `Method ${req.method} not allowed.`,
-    } as ManufacturersGetResponse);
 }

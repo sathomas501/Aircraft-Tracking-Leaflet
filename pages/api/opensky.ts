@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { PollingService } from '@/lib/services/polling-service';
+import { subscribe, startPolling } from '@/lib/services/polling-service';   
 import { OPENSKY_API_CONFIG } from '@/lib/config/opensky';
 import type { PositionData } from '@/types/base';
 
@@ -46,15 +47,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             ? [query.icao24s]
             : [];
 
-        await service.startPolling(
-            icao24s,
-            (data: PositionData[]) => {
-                res.status(200).json({ data });
-            },
-            (error: Error) => {
-                throw error;
-            }
-        );
+            subscribe(
+                (data: PositionData[]) => {
+                    res.status(200).json({ data });
+                },
+                (error: Error) => {
+                    throw error;
+                }
+            );
+            startPolling(icao24s);
+        
     } catch (error) {
         console.error('OpenSky API error:', error);
         res.status(500).json({

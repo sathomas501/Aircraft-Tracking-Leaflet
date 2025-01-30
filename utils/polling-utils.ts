@@ -1,12 +1,6 @@
-// Define and export the CachedAircraftData type
-export interface CachedAircraftData {
-    icao24: string;
-    latitude: number;
-    longitude: number;
-    velocity: number; // Speed in meters per second
-    heading: number;  // Heading in degrees
-    lastUpdate: number; // Timestamp in milliseconds
-}
+
+import { CachedAircraftData } from '@/types/base';
+
 
 // Export the handlePollingData function
 export function handlePollingData(data: CachedAircraftData[]): void {

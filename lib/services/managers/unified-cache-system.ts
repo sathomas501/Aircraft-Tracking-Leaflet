@@ -1,64 +1,61 @@
-import { CachedAircraftData } from "../../../utils/polling-utils";
+import { CachedAircraftData } from "../../../types/base";
 
 class UnifiedCacheService {
     private static instance: UnifiedCacheService;
-    private dataCache: Map<string, any> = new Map();
-    private liveDataCache: Map<string, any> = new Map();
-    private aircraftCache: Map<string, any>; // Define the aircraftCache property
+    private aircraftCache: Map<string, CachedAircraftData> = new Map();
+    private cache: Map<string, CachedAircraftData[]> = new Map(); // ✅ Fix: Define `cache` as a Map
 
-    private constructor() {
-        this.aircraftCache = new Map(); // Initialize the cache in the constructor
-    }
 
-    get(icao24: string): CachedAircraftData | null {
-        return this.aircraftCache.get(icao24) || null;
-    }
-    
-    static getInstance(): UnifiedCacheService {
+    private constructor() {}
+
+    public static getInstance(): UnifiedCacheService {
         if (!UnifiedCacheService.instance) {
             UnifiedCacheService.instance = new UnifiedCacheService();
         }
         return UnifiedCacheService.instance;
     }
 
-    getLatestData(): { aircraft: any[] } {
-        const aircraft = Array.from(this.dataCache.values());
-        return { aircraft }; // Ensure this matches the structure expected by waitForCache
+    // Existing methods
+    public get(icao24: string): CachedAircraftData | null {
+        return this.aircraftCache.get(icao24) || null;
     }
 
-    set(key: string, value: any): void {
-        this.dataCache.set(key, value);
+    public set(key: string, data: CachedAircraftData | CachedAircraftData[]): void {
+        if (!Array.isArray(data)) {
+            data = [data]; // ✅ Wrap single object in an array
+        }
+        this.cache.set(key, data);
+    }
+    
+    public getLatestData(): { aircraft: CachedAircraftData[] } {
+        return { aircraft: Array.from(this.aircraftCache.values()) };
     }
 
-// Method to store an aircraft in the cache
-setAircraft(icao24: string, aircraft: any): void {
-    console.log(`[UnifiedCache] Storing aircraft with ICAO24 "${icao24}"`);
-    this.aircraftCache.set(icao24, aircraft);
-}
-
-// Method to retrieve an aircraft by ICAO24
-getAircraft(icao24: string): any | null {
-    console.log(`[UnifiedCache] Retrieving aircraft with ICAO24 "${icao24}"`);
-    return this.aircraftCache.get(icao24) || null;
-}
-
-// Method to retrieve all cached aircraft
-getAllAircraft(): any[] {
-    console.log(`[UnifiedCache] Retrieving all cached aircraft`);
-    return Array.from(this.aircraftCache.values());
-}
-    // Method to store live data in the cache
-    setLiveData(key: string, data: any): void {
-        console.log(`[UnifiedCache] Storing live data with key "${key}"`);
-        this.liveDataCache.set(key, data);
+    public remove(icao24: string): void {
+        this.aircraftCache.delete(icao24);
     }
 
-    // Method to retrieve live data from the cache
-    getLiveData(key: string): any | null {
-        console.log(`[UnifiedCache] Retrieving live data with key "${key}"`);
-        return this.liveDataCache.get(key) || null;
+    public clear(): void {
+        this.aircraftCache.clear();
     }
+
+    // ✅ New Methods to fix missing properties
+
+    /** Store aircraft data (alias for set) */
+    public setAircraft(key: string, data: CachedAircraftData[]): void {
+        this.setLiveData(key, data);
+    }
+
+    /** ✅ Get live aircraft data from cache */
+    public getLiveData(key: string): CachedAircraftData[] | null {
+        return this.cache.get(key) || null;
+    }
+
+    /** ✅ Store live aircraft data in cache */
+    public setLiveData(key: string, data: CachedAircraftData[]): void {
+        this.cache.set(key, data);
+    }
+    
 }
 
-const unifiedCache = UnifiedCacheService.getInstance();
-export { unifiedCache };
+export default UnifiedCacheService;

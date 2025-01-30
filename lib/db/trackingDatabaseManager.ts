@@ -46,36 +46,47 @@ export class TrackingDatabaseManager {
 
     // Insert or update live aircraft in the tracking database
     public async upsertActiveAircraft(icao24: string, data: Partial<AircraftStatus>): Promise<void> {
-        if (!this.db) throw new Error('Database not initialized.');
+        if (!this.db) {
+            console.error("[TrackingDatabaseManager] Database not initialized. Cannot upsert.");
+            throw new Error("Database not initialized.");
+        }
     
-        await this.db.run(
-            `INSERT INTO aircraft (icao24, latitude, longitude, altitude, velocity, heading, on_ground, last_contact)
-             VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-             ON CONFLICT(icao24) DO UPDATE SET
-                 latitude = excluded.latitude,
-                 longitude = excluded.longitude,
-                 altitude = excluded.altitude,
-                 velocity = excluded.velocity,
-                 heading = excluded.heading,
-                 on_ground = excluded.on_ground,
-                 last_contact = CURRENT_TIMESTAMP`,
-            [
-                icao24,
-                data.latitude,
-                data.longitude,
-                data.altitude,
-                data.velocity,
-                data.heading,
-                data.on_ground ? 1 : 0,
-            ]
-        );
-        console.log(`[TrackingDatabaseManager] Upserted aircraft: ${icao24}`);
+        try {
+            await this.db.run(
+                `INSERT INTO aircraft (icao24, latitude, longitude, altitude, velocity, heading, on_ground, last_contact)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                 ON CONFLICT(icao24) DO UPDATE SET
+                 latitude=excluded.latitude,
+                 longitude=excluded.longitude,
+                 altitude=excluded.altitude,
+                 velocity=excluded.velocity,
+                 heading=excluded.heading,
+                 on_ground=excluded.on_ground,
+                 last_contact=excluded.last_contact`,
+                [
+                    icao24,
+                    data.latitude,
+                    data.longitude,
+                    data.altitude,
+                    data.velocity,
+                    data.heading,
+                    data.on_ground,
+                    data.last_contact,
+                ]
+            );
+            console.log(`[TrackingDatabaseManager] Aircraft ${icao24} upserted successfully.`);
+        } catch (error) {
+            console.error(`[TrackingDatabaseManager] Failed to upsert aircraft ${icao24}:`, error);
+        }
     }
+    
     
     // Generic save method to insert or update aircraft data
     public async save(icao24: string, data: any): Promise<void> {
-        await this.upsertActiveAircraft(icao24, data);
-    }
+        console.log(`[TrackingDatabaseManager] Upserting aircraft data: ${JSON.stringify(data)}`);
+await this.upsertActiveAircraft(icao24, data);
+console.log(`[TrackingDatabaseManager] Upsert completed.`);
+}
 
     // Retrieve aircraft data by ICAO24
     public async getAircraft(icao24: string): Promise<any | null> {
@@ -92,7 +103,6 @@ export class TrackingDatabaseManager {
         return result || null; // Return the result or null if nothing is found
     }
     
-
     public async getStaleAircraft(): Promise<{ icao24: string }[]> {
         if (!this.db) throw new Error('Database not initialized.');
     
@@ -118,8 +128,6 @@ export class TrackingDatabaseManager {
         );
         console.log(`[TrackingDatabaseManager] Cleared active status for manufacturer: ${manufacturer}`);
     }
-    
-    
 
     // Clear the entire tracking database (for testing or cleanup)
     public async clearDatabase(): Promise<void> {

@@ -1,69 +1,51 @@
-// pages/api/aircraft/models.ts
-import type { NextApiRequest, NextApiResponse } from 'next';
-import { getDatabase } from '@/lib/db/databaseManager';
-import type { SelectOption } from '@/types/base';
-import type { ModelsResponse } from '@/types/api/common/responses';
+import { NextApiRequest, NextApiResponse } from 'next';
+import databaseManager from '../../../lib/db/databaseManager';
 
-export default async function handler(
-  req: NextApiRequest,
-  res: NextApiResponse<ModelsResponse>
-) {
-  if (req.method !== 'GET' && req.method !== 'POST') {
-    return res.status(405).json({ 
-      error: 'Method not allowed',
-      message: 'Only GET and POST methods are supported'
-    });
-  }
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+    try {
+      // Removed unnecessary initialization
 
-  const manufacturer = req.method === 'GET' 
-    ? req.query.manufacturer 
-    : req.body.manufacturer;
 
-  if (!manufacturer || typeof manufacturer !== 'string') {
-    return res.status(400).json({ 
-      error: 'Missing manufacturer',
-      message: 'Manufacturer parameter is required'
-    });
-  }
+        const { method, query } = req;
 
-  try {
-    const db = await getDatabase();
-    
-    const query = `
-      SELECT DISTINCT
-        model AS value,
-        model AS label,
-        COUNT(*) AS count
-      FROM aircraft
-      WHERE 
-        manufacturer = ?
-        AND model IS NOT NULL
-        AND model != ''
-      GROUP BY model
-      HAVING count > 0
-      ORDER BY 
-        count DESC,
-        model ASC
-    `;
+        if (method === 'GET') {
+            const manufacturer = query.manufacturer as string;
+            if (!manufacturer) {
+                return res.status(400).json({ success: false, message: "Manufacturer query parameter is required." });
+            }
 
-    const models = await db.all<SelectOption[]>(query, [manufacturer]);
+            console.log(`[API] Fetching models for manufacturer: ${manufacturer}`);
 
-    console.log(`Fetched ${models.length} models for ${manufacturer}`);
+            const sqlQuery = `
+                SELECT DISTINCT model 
+                FROM aircraft 
+                WHERE UPPER(manufacturer) = UPPER(?) 
+                ORDER BY model
+            `;
 
-    return res.status(200).json({ 
-      models,
-      meta: {
-        total: models.length,
-        manufacturer,
-        timestamp: new Date().toISOString()
-      }
-    });
+            try {
+                const models: { model: string }[] = await databaseManager.executeQuery(sqlQuery, [manufacturer]);
 
-  } catch (error) {
-    console.error('Error fetching models:', error);
-    return res.status(500).json({ 
-      error: 'Failed to fetch models',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    });
-  }
+                if (!models || models.length === 0) {
+                    console.warn(`[API] No models found for manufacturer: ${manufacturer}`);
+                }
+
+                console.log(`[API] Retrieved ${models.length} models for ${manufacturer}`);
+
+                return res.status(200).json({
+                    success: true,
+                    message: `Found ${models.length} models for ${manufacturer}`,
+                    data: models,
+                });
+            } catch (error) {
+                console.error(`[API] Error executing models query:`, error);
+                return res.status(500).json({ success: false, message: "Database query failed." });
+            }
+        }
+
+        return res.status(405).json({ success: false, message: "Method not allowed" });
+    } catch (error) {
+        console.error("[API] Error:", error);
+        return res.status(500).json({ success: false, message: "Internal server error" });
+    }
 }
