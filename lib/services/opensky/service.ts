@@ -3,7 +3,7 @@ import type {PositionData } from '@/types/base';
 import { positionToAircraft } from './utils';
 import WebSocket from 'ws';
 import { errorHandler, ErrorType } from '../error-handler';
-import { unifiedCache } from '../managers/unified-cache-system';
+import  UnifiedCacheService  from '../managers/unified-cache-system';
 import { positionInterpolator } from '@/utils/position-interpolation';
 import type {
     IOpenSkyService,
@@ -15,6 +15,8 @@ import type {
 import type { WebSocketClient } from '@/types/websocket'
 
 export class OpenSkyManager implements IOpenSkyService {
+    private readonly key = 'opensky_positions'; // ✅ Define as a class property
+    private cacheService: UnifiedCacheService;
     private static instance: OpenSkyManager;
     private ws: WebSocket | null = null;
     private clients: Set<WebSocketClient> = new Set();
@@ -43,6 +45,8 @@ export class OpenSkyManager implements IOpenSkyService {
             this.initializeWebSocket();
         }
         this.startPingInterval();
+
+        this.cacheService = UnifiedCacheService.getInstance();
     }
 
     private initializeWebSocket(): void {
@@ -89,6 +93,12 @@ export class OpenSkyManager implements IOpenSkyService {
         this.state.connected = true;
         this.broadcastStatus();
     }
+    
+        /** ✅ Define broadcastPositions() */
+        public broadcastPositions(positions: any[]): void {
+            console.log("Broadcasting positions:", positions);
+            // Implement WebSocket or other logic here
+        }
 
     private handleWebSocketMessage(data: WebSocket.Data): void {
         try {
@@ -143,13 +153,15 @@ export class OpenSkyManager implements IOpenSkyService {
 
         return validPositions;
     }
-
-    private broadcastPositions(positions: PositionData[]): void {
+    processAircraftData(positions: any[]) {
         positions.forEach(position => {
-            const aircraft = positionToAircraft(position);
-            unifiedCache.setAircraft(position.icao24, aircraft); // Use the new method
-            positionInterpolator.updatePosition(aircraft);
+            const aircraft = {
+                ...positionToAircraft(position),
+                lastUpdate: Date.now() // Add lastUpdate property
+            };
+            this.cacheService.setAircraft(this.key, [aircraft]); // ✅ Use 'this'
         });
+    
     
         this.positionCallbacks.forEach(callback => {
             callback(positions).catch(error => {
@@ -299,12 +311,6 @@ export class OpenSkyManager implements IOpenSkyService {
         this.subscribedIcao24s.clear();
     }
 }
-
-export const openSkyService = OpenSkyManager.getInstance({
-    username: process.env.OPENSKY_USERNAME,
-    password: process.env.OPENSKY_PASSWORD,
-    enableWebSocket: true
-});
 
 const defaultConfig: OpenSkyConfig = {
     // Add your default config here

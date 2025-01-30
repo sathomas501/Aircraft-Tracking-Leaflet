@@ -2,7 +2,6 @@ import React, { useState, useMemo, useEffect } from 'react';
 import MapComponent from '../Map/MapComponent';
 import UnifiedSelector from '../../selector/UnifiedSelector';
 import { manufacturerTracking } from '@/lib/services/manufacturer-tracking-service';
-import { toast } from 'react-toastify'; // Add toast notification library
 import type { Aircraft } from '@/types/base';
 
 interface TrackingData {
@@ -34,13 +33,8 @@ interface State {
   selectedManufacturer: string;
 }
 
-const userFriendlyErrors: Record<string, string> = {
-  NETWORK: 'Network error: Please check your connection.',
-  DATA: 'Error fetching aircraft data. Please try again.',
-  DEFAULT: 'An unexpected error occurred. Please try again later.',
-};
-
 const MapWrapper: React.FC = () => {
+  console.log('MapWrapper rendering');
   const [state, setState] = useState<State>({
     aircraft: [],
     isLoading: false,
@@ -60,64 +54,7 @@ const MapWrapper: React.FC = () => {
     return counts;
   }, [state.aircraft]);
 
-  useEffect(() => {
-    const subscription = manufacturerTracking.subscribe((data: TrackingData) => {
-      handleAircraftUpdate(data);
-    });
-
-    return () => {
-      subscription.unsubscribe();
-      manufacturerTracking.stopPolling();
-    };
-  }, []);
-
-  const handleAircraftUpdate = (data: TrackingData) => {
-    if (!data.aircraft) {
-      console.error('Invalid aircraft data received');
-      toast.error(userFriendlyErrors.DATA);
-      return;
-    }
-
-    console.log('Raw aircraft data:', {
-        sampleAircraft: data.aircraft[0],
-        totalAircraft: data.aircraft.length,
-        hasSpeedButNoAlt: data.aircraft.filter(a => 
-            a.velocity && (!a.baro_altitude || a.baro_altitude === 0)).length,
-        zeroHeading: data.aircraft.filter(a => 
-            !a.true_track || a.true_track === 0).length
-    });
-
-    setState((prev) => ({
-      ...prev,
-      aircraft: data.aircraft.map((aircraftData) => ({
-        ...aircraftData,
-        model: '',
-        "N-NUMBER": '',
-        manufacturer: state.selectedManufacturer,
-        NAME: '',
-        CITY: '',
-        STATE: '',
-        OWNER_TYPE: '',
-        TYPE_AIRCRAFT: '',
-        isTracked: true,
-        heading: aircraftData.true_track || 0,
-        latitude: aircraftData.latitude || 0,
-        longitude: aircraftData.longitude || 0,
-        altitude: aircraftData.baro_altitude || 0,
-        velocity: aircraftData.velocity || 0,
-        on_ground: aircraftData.on_ground || false,
-        last_contact: aircraftData.last_contact || 0,
-        icao24: aircraftData.icao24,
-      })),
-    }));
-  };
-
   const handleManufacturerSelect = async (manufacturer: string) => {
-    if (!manufacturer) {
-      toast.error('No manufacturer selected.');
-      return;
-    }
-
     setState((prev) => ({ ...prev, isLoading: true, error: null }));
 
     try {
@@ -127,41 +64,65 @@ const MapWrapper: React.FC = () => {
         body: JSON.stringify({ manufacturer }),
       });
 
-      const responseData = await response.json();
-
       if (!response.ok) {
-        throw new Error(responseData.error || userFriendlyErrors.NETWORK);
+        throw new Error('Failed to fetch aircraft data.');
       }
 
-      if (!responseData.icao24List) {
-        throw new Error(userFriendlyErrors.DATA);
+      const data = await response.json();
+      
+      if (!data.icao24List) {
+        throw new Error('Invalid data format received from server.');
       }
-
-      const formattedIcao24s = responseData.icao24List.map((icao24: string) => ({
-        icao24: icao24.toLowerCase(),
-      }));
-
-      await manufacturerTracking.startPolling(formattedIcao24s);
 
       setState((prev) => ({
         ...prev,
         selectedManufacturer: manufacturer,
+        aircraft: data.icao24List,
         isLoading: false,
       }));
-
-      toast.success('Manufacturer aircraft data loaded successfully.');
     } catch (error) {
-      console.error('Error in handleManufacturerSelect:', error);
-      manufacturerTracking.stopPolling();
+      console.error('Error:', error);
       setState((prev) => ({
         ...prev,
-        error: error instanceof Error ? error.message : userFriendlyErrors.DEFAULT,
+        error: 'Failed to load aircraft data.',
         isLoading: false,
       }));
-      toast.error(
-        error instanceof Error ? error.message : userFriendlyErrors.DEFAULT
-      );
     }
+  };
+
+  const handleAircraftUpdate = (data: TrackingData) => {
+    console.log('Received aircraft update:', data.aircraft);
+    if (!data.aircraft) {
+      console.error('Invalid aircraft data received');
+      return;
+    }
+  
+    setState((prev) => {
+      console.log('Updating state with aircraft:', data.aircraft);
+      return {
+        ...prev,
+        aircraft: data.aircraft.map((aircraftData) => ({
+          ...aircraftData,
+          model: '', // Add required Aircraft properties
+          "N-NUMBER": '',
+          manufacturer: state.selectedManufacturer,
+          NAME: '',
+          CITY: '',
+          STATE: '',
+          OWNER_TYPE: '',
+          TYPE_AIRCRAFT: '',
+          isTracked: true,
+          heading: aircraftData.true_track || 0,
+          latitude: aircraftData.latitude || 0,
+          longitude: aircraftData.longitude || 0,
+          altitude: aircraftData.baro_altitude || 0,
+          velocity: aircraftData.velocity || 0,
+          on_ground: aircraftData.on_ground || false,
+          last_contact: aircraftData.last_contact || 0,
+          icao24: aircraftData.icao24
+        })),
+      };
+    });
   };
 
   return (
@@ -182,6 +143,12 @@ const MapWrapper: React.FC = () => {
       <div className="absolute inset-0 z-0">
         {!state.isLoading && <MapComponent aircraft={state.aircraft} />}
       </div>
+
+      {state.error && (
+        <div className="absolute top-4 left-4 z-50 bg-red-100 border border-red-400 text-red-700 px-4 py-2 rounded">
+          {state.error}
+        </div>
+      )}
 
       {state.isLoading && (
         <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center z-40">

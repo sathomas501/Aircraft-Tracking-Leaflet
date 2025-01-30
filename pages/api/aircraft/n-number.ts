@@ -23,9 +23,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         }
 
         const staticDb = DatabaseManager.getInstance();
-        await staticDb.initialize();
+        await staticDb.initializeDatabase();  // ✅ Correct method
 
-        const result = await staticDb.runQuery<AircraftRecord>(
+        const result = await staticDb.executeQuery<AircraftRecord>(
             'SELECT * FROM aircraft WHERE n_number = ? LIMIT 1',
             [nNumber.trim()]
         );

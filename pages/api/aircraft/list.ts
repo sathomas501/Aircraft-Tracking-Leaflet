@@ -4,10 +4,10 @@ import { DatabaseManager } from '@/lib/db/databaseManager';
 
 async function fetchManufacturers() {
     const staticDb = DatabaseManager.getInstance();
-    await staticDb.initialize();
+        await staticDb.initializeDatabase();  // ✅ Correct method
 
     // Query to get manufacturers with their counts
-    const result = await staticDb.allQuery(`
+    const result = await staticDb.executeQuery(`
         SELECT 
             manufacturer AS name, 
             COUNT(*) AS count 

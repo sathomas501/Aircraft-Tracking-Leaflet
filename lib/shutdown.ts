@@ -1,5 +1,4 @@
 // lib/shutdown.ts
-import { openSkyService } from './services/opensky/service';
 import { CleanupService } from './services/CleanupService';  // Fixed casing
 import { getDatabase } from './db/databaseManager';
 
@@ -22,10 +21,6 @@ async function shutdownHandler(signal: string) {
         const cleanupService = CleanupService.getInstance();
         await cleanupService.shutdown();
         console.log('Cleanup service stopped');
-
-        // Stop OpenSky service
-        openSkyService.cleanup();
-        console.log('OpenSky service cleaned up');
 
         // 2. Run final cleanup
         console.log('Running final cleanup...');

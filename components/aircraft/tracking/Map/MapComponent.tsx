@@ -1,16 +1,35 @@
 import React from 'react';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
-import type { Aircraft } from '@/types/base';
+import type { Aircraft } from '@/types/base';  // Ensure this path is correct
 import { createAircraftIcon } from './components/AircraftIcon/AircraftIcon';
 
+// ✅ Define or import MapComponentProps if missing
 export interface MapComponentProps {
   aircraft: Aircraft[];
- }
+}
 
 const MapComponent: React.FC<MapComponentProps> = ({ aircraft }) => {
   const usCenter: [number, number] = [39.8283, -98.5795];
 
+  // ✅ Filter out aircraft with missing coordinates
+  console.log("[Map Debug] Aircraft Data Before Rendering:", aircraft);
+
+ 
+
+  const validAircraft = aircraft.filter(
+    (plane) => plane.latitude != null && plane.longitude != null
+  );
+
+  console.log("[Map Debug] Valid Aircraft:", validAircraft);
+  
+  console.log("[Map Debug] Valid Aircraft for Leaflet:", validAircraft);
+  
+  if (validAircraft.length === 0) {
+    console.error("[Map Debug] No valid aircraft to display.");
+    return <div>No active aircraft found.</div>;
+  }
+  
   return (
     <MapContainer 
       center={usCenter}
@@ -27,7 +46,7 @@ const MapComponent: React.FC<MapComponentProps> = ({ aircraft }) => {
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
       />
       
-      {aircraft.map((plane) => (
+      {validAircraft.map((plane: Aircraft) => (
         <Marker
           key={plane.icao24}
           position={[plane.latitude, plane.longitude]}
@@ -36,12 +55,10 @@ const MapComponent: React.FC<MapComponentProps> = ({ aircraft }) => {
           <Popup>
             <div className="p-2">
               <h3 className="font-bold">{plane.registration || plane.icao24}</h3>
-              <p>Altitude: {Math.round(plane.altitude * 3.28084)} ft</p>
-              <p>Speed: {Math.round(plane.velocity * 1.944)} knots</p>
-              <p>Heading: {Math.round(plane.heading)}°</p>
-              {plane.on_ground && (
-                <p className="text-yellow-600">On Ground</p>
-              )}
+              <p>Altitude: {plane.altitude ? Math.round(plane.altitude * 3.28084) + " ft" : "N/A"}</p>
+              <p>Speed: {plane.velocity ? Math.round(plane.velocity * 1.944) + " knots" : "N/A"}</p>
+              <p>Heading: {plane.heading ? Math.round(plane.heading) + "°" : "N/A"}</p>
+              {plane.on_ground && <p className="text-yellow-600">On Ground</p>}
             </div>
           </Popup>
         </Marker>

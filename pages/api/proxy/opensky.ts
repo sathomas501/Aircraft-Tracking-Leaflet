@@ -2,151 +2,129 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { PollingRateLimiter } from '@/lib/services/rate-limiter';
 import { openSkyAuth } from '@/lib/services/opensky-auth';
-import { ErrorType } from '@/lib/services/error-handler';
+import { errorHandler, ErrorType } from '@/lib/services/error-handler';
+import { OPENSKY_CONSTANTS } from '../../../constants/opensky';
 
-// Initialize rate limiter with OpenSky's limits
+// Initialize rate limiter with OpenSky's authenticated limits
 const rateLimiter = new PollingRateLimiter({
-    requestsPerMinute: 60,     // Using authenticated limits
-    requestsPerDay: 10000,     // Using authenticated limits
-    maxWaitTime: 15000,
-    minPollingInterval: 5000,  // More aggressive for authenticated
-    maxPollingInterval: 30000,
-    batchSize: 100,
-    retryLimit: 3
+    requireAuthentication: true,
+    minPollingInterval: OPENSKY_CONSTANTS.API.MIN_POLLING_INTERVAL,
+    maxPollingInterval: OPENSKY_CONSTANTS.API.MAX_POLLING_INTERVAL,
+    maxWaitTime: OPENSKY_CONSTANTS.API.TIMEOUT_MS,
+    maxBatchSize: OPENSKY_CONSTANTS.AUTHENTICATED.MAX_BATCH_SIZE,
+    retryLimit: OPENSKY_CONSTANTS.API.DEFAULT_RETRY_LIMIT,
+    requestsPerMinute: OPENSKY_CONSTANTS.AUTHENTICATED.REQUESTS_PER_10_MIN,
+    requestsPerDay:OPENSKY_CONSTANTS.AUTHENTICATED.REQUESTS_PER_DAY
 });
 
-async function fetchWithRetry(url: string, options: RequestInit): Promise<Response> {
-    let lastError: Error | null = null;
-    
-    for (let attempt = 0; attempt < rateLimiter.retryLimit; attempt++) {
-        try {
-            // Wait for a rate limit slot
-            const canProceed = await rateLimiter.tryAcquire(true);
-            if (!canProceed) {
-                throw new Error('Rate limit exceeded');
-            }
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+    console.log("[OpenSky Proxy] Received request:", req.method, req.url);
 
-            const response = await fetch(url, options);
-            
-            // Record the request
-            rateLimiter.recordRequest();
-
-            if (response.status === 503) {
-                rateLimiter.increasePollingInterval();
-                const waitTime = rateLimiter.getCurrentPollingInterval();
-                console.log(`[OpenSky Proxy] 503 received, increasing polling interval to ${waitTime}ms`);
-                await new Promise(resolve => setTimeout(resolve, waitTime));
-                continue;
-            }
-
-            if (response.status === 401 || response.status === 403) {
-                // Handle auth errors specifically
-                await openSkyAuth.handleAuthError();
-                throw new Error('Authentication failed, retrying with new credentials');
-            }
-
-            rateLimiter.decreasePollingInterval();
-            return response;
-
-        } catch (error) {
-            lastError = error instanceof Error ? error : new Error(String(error));
-            console.error(`[OpenSky Proxy] Attempt ${attempt + 1} failed:`, error);
-            
-            rateLimiter.increasePollingInterval();
-            
-            const waitTime = rateLimiter.getCurrentPollingInterval();
-            await new Promise(resolve => setTimeout(resolve, waitTime));
-        }
+    if (req.method !== 'GET') {
+        return res.status(405).json({ 
+            error: "Method Not Allowed. Use GET.",
+            errorType: ErrorType.OPENSKY_SERVICE 
+        });
     }
 
-    throw lastError || new Error('Maximum retries exceeded');
-}
+    // Extract and validate ICAO24 codes
+    const { icao24 } = req.query;
 
-export default async function handler(
-    req: NextApiRequest,
-    res: NextApiResponse
-) {
-    if (req.method !== 'POST') {
-        return res.status(405).json({ error: 'Method not allowed' });
+    if (!icao24) {
+        errorHandler.handleError(
+            ErrorType.OPENSKY_INVALID_ICAO,
+            'Missing ICAO24 parameter'
+        );
+        return res.status(400).json({ 
+            error: "icao24 parameter is required.",
+            errorType: ErrorType.OPENSKY_INVALID_ICAO
+        });
     }
 
-    const { icao24List } = req.body;
+    // Ensure icao24List is properly formatted
+    const icao24List: string[] = Array.isArray(icao24) ? icao24 : [icao24];
 
-    if (!icao24List) {
-        return res.status(400).json({ error: 'icao24List is required' });
+    // Check batch size limits
+    if (icao24List.length > OPENSKY_CONSTANTS.AUTHENTICATED.MAX_BATCH_SIZE) {
+        errorHandler.handleError(
+            ErrorType.OPENSKY_INVALID_ICAO,
+            'Too many ICAO24 codes in single request',
+            { 
+                provided: icao24List.length, 
+                maximum: OPENSKY_CONSTANTS.AUTHENTICATED.MAX_BATCH_SIZE 
+            }
+        );
+        return res.status(400).json({
+            error: `Maximum of ${OPENSKY_CONSTANTS.AUTHENTICATED.MAX_BATCH_SIZE} ICAO24 codes per request.`,
+            errorType: ErrorType.OPENSKY_INVALID_ICAO
+        });
     }
 
     try {
-        // Ensure we're authenticated before proceeding
-        const isAuthenticated = await openSkyAuth.ensureAuthenticated();
-        if (!isAuthenticated) {
-            return res.status(401).json({ 
-                error: 'Authentication failed',
-                message: 'Could not authenticate with OpenSky Network'
-            });
-        }
+        await openSkyAuth.ensureAuthenticated();
 
         if (rateLimiter.isRateLimited()) {
             const nextSlot = await rateLimiter.getNextAvailableSlot();
-            return res.status(429).json({ 
-                error: 'Rate limit exceeded',
-                nextAvailableSlot: nextSlot,
-                remainingRequests: rateLimiter.getRemainingRequests(),
-                remainingDaily: rateLimiter.getRemainingDailyRequests()
+            errorHandler.handleError(
+                ErrorType.OPENSKY_RATE_LIMIT,
+                'Rate limit reached',
+                { nextAvailable: nextSlot }
+            );
+            return res.status(429).json({
+                error: "Rate limit reached. Please try again later.",
+                errorType: ErrorType.OPENSKY_RATE_LIMIT,
+                nextAvailable: nextSlot
             });
         }
-
-        const icao24String = Array.isArray(icao24List) ? icao24List.join(',') : icao24List;
         
-        // Get authentication headers from the auth class
-        const headers = {
-            'Accept': 'application/json',
-            ...openSkyAuth.getAuthHeaders()
-        };
+        // After successful request:
+        rateLimiter.recordRequest();
 
-        console.log(`[OpenSky Proxy] Requesting data for ${icao24List.length} aircraft. Rate limits:`, {
-            remainingMinute: rateLimiter.getRemainingRequests(),
-            remainingDaily: rateLimiter.getRemainingDailyRequests(),
-            currentInterval: rateLimiter.getCurrentPollingInterval()
+        const timeParam = Math.floor(Date.now() / 1000);
+        const proxyUrl = `${OPENSKY_CONSTANTS.API.BASE_URL}${OPENSKY_CONSTANTS.API.STATES_ENDPOINT}?time=${timeParam}&icao24=${icao24List.join(",")}`;
+
+        const response = await fetch(proxyUrl, {
+            headers: {
+                ...openSkyAuth.getAuthHeaders(),
+                'Accept': 'application/json'
+            }
         });
 
-        const response = await fetchWithRetry(
-            `https://opensky-network.org/api/states/all?icao24=${icao24String}`,
-            { headers }
-        );
-
         if (!response.ok) {
-            const errorText = await response.text().catch(() => 'No error text available');
-            console.error('[OpenSky Proxy] Response error:', {
-                status: response.status,
-                statusText: response.statusText,
-                headers: Object.fromEntries(response.headers.entries()),
-                errorText
-            });
-            throw new Error(`OpenSky API error: ${response.status} - ${errorText}`);
+            throw new Error(`OpenSky API error: ${response.status}`);
         }
 
         const data = await response.json();
-        
-        return res.status(200).json({
-            data,
-            meta: {
-                remainingRequests: rateLimiter.getRemainingRequests(),
-                remainingDaily: rateLimiter.getRemainingDailyRequests(),
-                currentInterval: rateLimiter.getCurrentPollingInterval(),
-                nextSlot: await rateLimiter.getNextAvailableSlot()
-            }
-        });
+        rateLimiter.recordRequest(); // Record successful request
+        return res.status(200).json(data);
+
     } catch (error) {
-        console.error('[OpenSky Proxy] Error:', error);
-        return res.status(500).json({ 
-            error: 'Failed to fetch from OpenSky',
-            message: error instanceof Error ? error.message : 'Unknown error',
-            meta: {
-                remainingRequests: rateLimiter.getRemainingRequests(),
-                remainingDaily: rateLimiter.getRemainingDailyRequests(),
-                currentInterval: rateLimiter.getCurrentPollingInterval()
-            }
-        });
+        handleProxyError(error, res);
     }
+}
+
+function handleProxyError(error: unknown, res: NextApiResponse): void {
+    console.error("[OpenSky Proxy] Error:", error);
+    rateLimiter.increasePollingInterval();  // Increase interval on errors
+
+    if (error instanceof Error) {
+        if (error.message.includes('authentication')) {
+            return res.status(401).json({
+                error: "OpenSky authentication failed.",
+                errorType: ErrorType.OPENSKY_AUTH
+            });
+        }
+        if (error.message.includes('rate limit')) {
+            return res.status(429).json({
+                error: "OpenSky rate limit exceeded.",
+                errorType: ErrorType.OPENSKY_RATE_LIMIT
+            });
+        }
+    }
+
+    return res.status(500).json({
+        error: "Failed to fetch data from OpenSky.",
+        errorType: ErrorType.OPENSKY_SERVICE,
+        details: error instanceof Error ? error.message : String(error)
+    });
 }

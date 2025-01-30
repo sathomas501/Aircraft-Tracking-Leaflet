@@ -1,60 +1,37 @@
-// pages/api/clientpositions.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { unifiedCache } from '../../lib/services/managers/unified-cache-system';
-
-interface OpenSkyState {
-  icao24: string;
-  callsign: string | null;
-  origin_country: string;
-  time_position: number | null;
-  last_contact: number;
-  longitude: number | null;
-  latitude: number | null;
-  baro_altitude: number | null;
-  on_ground: boolean;
-  velocity: number | null;
-  true_track: number | null;
-  vertical_rate: number | null;
-  sensors: number[] | null;
-  geo_altitude: number | null;
-  squawk: string | null;
-  spi: boolean;
-  position_source: number;
-}
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  try {
-    const key = 'opensky_positions';
+    console.log("[Aircraft Positions] Received Request:", req.method, req.query);
 
-    // Check cache first
-    const cachedData = unifiedCache.getLiveData(key);
-    if (cachedData) {
-      return res.status(200).json({ positions: cachedData });
+    if (req.method !== "GET") {
+        return res.status(405).json({ error: "Method Not Allowed. Use GET instead." });
     }
 
-    // Fetch live data from OpenSky API
-    const response = await fetch('https://opensky-network.org/api/states/all');
-    const data = await response.json();
+    const { icao24List } = req.query;
 
-    if (!data.states) {
-      throw new Error('No live data received from OpenSky.');
+    if (!icao24List) {
+        return res.status(400).json({ error: "icao24List parameter is required" });
     }
 
-    // Map the data to a usable format
-    const positions = data.states.map((state: OpenSkyState) => ({
-      icao24: state.icao24,
-      latitude: state.latitude || 0,
-      longitude: state.longitude || 0,
-      altitude: state.geo_altitude || 0,
-      velocity: state.velocity || 0,
-    }));
+    // Ensure ICAO24 list is correctly formatted
+    const icao24String = Array.isArray(icao24List) ? icao24List.join(',') : icao24List;
 
-    // Cache the data
-    unifiedCache.setLiveData(key, positions);
+    // Use the proxy instead of direct OpenSky requests
+    const proxyUrl = `http://localhost:3001/api/proxy/opensky?icao24=${icao24String}`;
+    console.log(`[Aircraft Positions] Forwarding request to Proxy: ${proxyUrl}`);
 
-    res.status(200).json({ positions });
-  } catch (error: any) {
-    console.error('[API] Failed to load live data:', error.message);
-    res.status(500).json({ error: 'Failed to load live data.' });
-  }
+    try {
+        const response = await fetch(proxyUrl, { method: "GET" });
+
+        if (!response.ok) {
+            console.error("[Aircraft Positions] Proxy Response Error:", response.status, response.statusText);
+            return res.status(response.status).json({ error: "Proxy request failed" });
+        }
+
+        const data = await response.json();
+        return res.status(200).json(data);
+    } catch (error) {
+        console.error("[Aircraft Positions] Error:", error);
+        return res.status(500).json({ error: "Failed to fetch aircraft positions from proxy" });
+    }
 }
