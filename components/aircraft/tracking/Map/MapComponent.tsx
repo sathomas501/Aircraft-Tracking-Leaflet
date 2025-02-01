@@ -1,86 +1,98 @@
-import React, { useEffect, useState } from 'react';
+// MapComponent.tsx
+import React from 'react';
+import { MapContainer, TileLayer } from 'react-leaflet';
 import dynamic from 'next/dynamic';
-import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
-import 'leaflet/dist/leaflet.css';
+import { EnhancedAircraftMarker } from './components/AircraftMarker';
 import type { Aircraft } from '@/types/base';
+import { MAP_CONFIG } from './constants';
+import 'leaflet/dist/leaflet.css';
 
-// Define MapComponentProps
-export interface MapComponentProps {
+interface MapComponentProps {
   aircraft: Aircraft[];
 }
 
-// Dynamically import the map to avoid SSR issues
-const MapWithNoSSR = dynamic(() =>
-  Promise.all([
-    import('react-leaflet'),
-    import('leaflet'),
-  ]).then(([{ MapContainer, TileLayer, Marker, Popup }]) => {
-    return function Map({ aircraft }: MapComponentProps) {
-      const [mounted, setMounted] = useState(false);
-      const usCenter: [number, number] = [39.8283, -98.5795]; // Centered on the US
+// Helper function to determine aircraft type
+const getAircraftType = (aircraft: Aircraft): string => {
+  console.log('Processing aircraft:', {
+    icao24: aircraft.icao24,
+    TYPE_AIRCRAFT: aircraft.TYPE_AIRCRAFT,
+    rawData: aircraft
+  });
 
-      // Debugging aircraft data when received
-      useEffect(() => {
-        console.log("[Map Debug] Aircraft Data Received:", {
-          total: aircraft.length,
-          sample: aircraft.slice(0, 5),
-        });
-      }, [aircraft]);
-
-      useEffect(() => {
-        setMounted(true);
-        return () => setMounted(false);
-      }, []);
-
-      // ✅ Filter only valid aircraft (ensure lat/long exist)
-      const validAircraft = aircraft.filter(ac => ac.latitude !== undefined && ac.longitude !== undefined);
-
-      if (!mounted) return null;
-
-      return (
-        <MapContainer
-          center={usCenter}
-          zoom={4}
-          style={{ height: '100%', width: '100%' }}
-          minZoom={3}
-          maxBounds={[
-            [24.396308, -125.000000], // Southwest coordinates
-            [49.384358, -66.934570],  // Northeast coordinates
-          ]}
-        >
-          <TileLayer
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-          />
-
-          {/* ✅ Ensure aircraft markers are added dynamically */}
-          {validAircraft.map((ac) => (
-            <Marker key={ac.icao24} position={[ac.latitude, ac.longitude]}>
-              <Popup>
-                <strong>ICAO24:</strong> {ac.icao24} <br />
-                <strong>Altitude:</strong> {ac.altitude ? `${ac.altitude} ft` : "Unknown"} <br />
-                <strong>Velocity:</strong> {ac.velocity ? `${ac.velocity} kt` : "Unknown"} <br />
-                <strong>Heading:</strong> {ac.heading ? `${ac.heading}°` : "Unknown"} <br />
-              </Popup>
-            </Marker>
-          ))}
-        </MapContainer>
-      );
-    };
-  }),
-  {
-    ssr: false, // Disable server-side rendering for the map
-    loading: () => (
-      <div className="h-full w-full flex items-center justify-center bg-gray-100">
-        <p className="text-gray-600">Loading map...</p>
-      </div>
-    ),
+  // If TYPE_AIRCRAFT is already set to '3' from MapWrapper, use it
+  if (aircraft.TYPE_AIRCRAFT === '3') {
+    console.log('Using preset type (jet) for:', aircraft.icao24);
+    return 'jet';
   }
+
+  switch (aircraft.TYPE_AIRCRAFT) {
+    case '2': // Fixed Wing Multi Engine
+    case '3': // Jet Aircraft
+    case '4': // Turbo Prop
+    case '8': // Military
+      console.log('Mapped to jet based on type code:', aircraft.TYPE_AIRCRAFT);
+      return 'jet';
+    case '6': // Helicopter
+      return 'helicopter';
+    default:
+      // If manufacturer is Learjet, force jet type
+      if (aircraft.manufacturer?.toLowerCase().includes('learjet')) {
+        console.log('Forced jet type based on Learjet manufacturer');
+        return 'jet';
+      }
+      console.log('No mapping found, defaulting to balloon for:', aircraft.icao24);
+      return 'balloon';
+  }
+};
+
+const Map = dynamic(
+  () => import('react-leaflet').then((mod) => {
+    const { MapContainer } = mod;
+    return MapContainer;
+  }),
+  { ssr: false }
 );
 
-// ✅ Main MapComponent wrapper
 const MapComponent: React.FC<MapComponentProps> = ({ aircraft }) => {
-  return <MapWithNoSSR aircraft={aircraft} />;
+  console.log('MapComponent received aircraft:', aircraft);
+
+  // Transform aircraft data
+  const enhancedAircraft = aircraft
+    .filter(ac => ac.latitude !== undefined && ac.longitude !== undefined)
+    .map(ac => ({
+      ...ac,
+      type: getAircraftType(ac),
+      isGovernment: ac.OWNER_TYPE === '5'
+    }));
+
+  console.log('Enhanced aircraft data:', enhancedAircraft[0]);
+
+  if (typeof window === 'undefined') return null;
+
+  return (
+    <div className="relative w-full h-full" style={{ minHeight: '600px' }}>
+      <Map
+        center={MAP_CONFIG.CENTER}
+        zoom={MAP_CONFIG.DEFAULT_ZOOM}
+        style={{ height: '100%', width: '100%' }}
+        minZoom={MAP_CONFIG.MIN_ZOOM}
+        maxBounds={MAP_CONFIG.US_BOUNDS}
+        scrollWheelZoom={true}
+      >
+        <TileLayer
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        />
+        
+        {enhancedAircraft.map((ac) => (
+          <EnhancedAircraftMarker 
+            key={ac.icao24} 
+            aircraft={ac}
+          />
+        ))}
+      </Map>
+    </div>
+  );
 };
 
 export default MapComponent;

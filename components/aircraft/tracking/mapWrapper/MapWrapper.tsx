@@ -3,6 +3,18 @@ import  UnifiedSelector  from '../../selector/UnifiedSelector';
 import MapComponent from '../Map/MapComponent';
 import type { Aircraft, TrackingData } from '@/types/base';
 
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
+;
+
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: '/icons/aircraft-jet.png',
+  iconUrl: '/icons/aircraft-jet.png',
+  shadowUrl: ''
+});
+
+
+
 interface State {
   aircraft: Aircraft[];
   isLoading: boolean;
@@ -100,31 +112,45 @@ const handleAircraftUpdate = (updateData: TrackingData) => {
       return;
   }
 
-  console.log("[MapWrapper] Received updates for", updateData.aircraft.length, "aircraft");
+  console.log("[MapWrapper] Pre-mapping aircraft data:", updateData.aircraft[0]);
 
   setState(prev => {
-      const liveAircraft = updateData.aircraft.map(aircraftData => ({
-          icao24: aircraftData.icao24,
-          latitude: aircraftData.latitude,
-          longitude: aircraftData.longitude,
-          altitude: aircraftData.altitude,
-          velocity: aircraftData.velocity,
-          heading: aircraftData.heading,
-          on_ground: aircraftData.on_ground,
-          last_contact: aircraftData.last_contact,
-          lastSeen: aircraftData.lastUpdate,
-          // Required fields
-          "N-NUMBER": "",
-          manufacturer: prev.selectedManufacturer,
-          model: "Unknown",
-          operator: "Unknown",
-          NAME: "",
-          CITY: "",
-          STATE: "",
-          TYPE_AIRCRAFT: "Unknown",
-          OWNER_TYPE: "Unknown",
-          isTracked: true
-      }));
+      const liveAircraft = updateData.aircraft.map(aircraftData => {
+          const mappedAircraft = {
+              // Base tracking data
+              icao24: aircraftData.icao24,
+              latitude: aircraftData.latitude,
+              longitude: aircraftData.longitude,
+              altitude: aircraftData.altitude,
+              velocity: aircraftData.velocity,
+              heading: aircraftData.heading,
+              on_ground: aircraftData.on_ground,
+              last_contact: aircraftData.last_contact,
+              lastSeen: aircraftData.lastUpdate,
+
+              // Required Aircraft type fields
+              "N-NUMBER": "",
+              NAME: "",
+              CITY: "",
+              STATE: "",
+              
+              // Aircraft identification - Learjet specific
+              TYPE_AIRCRAFT: '3',  // 3 = Jet Aircraft
+              OWNER_TYPE: '2',     // 2 = Corporate
+              manufacturer: prev.selectedManufacturer || 'LEARJET INC',
+              isTracked: true
+          };
+
+          console.log("[MapWrapper] Mapped single aircraft:", {
+              icao24: mappedAircraft.icao24,
+              TYPE_AIRCRAFT: mappedAircraft.TYPE_AIRCRAFT,
+              manufacturer: mappedAircraft.manufacturer
+          });
+
+          return mappedAircraft;
+      });
+
+      console.log("[MapWrapper] Post-mapping first aircraft:", liveAircraft[0]);
 
       setActiveCount(liveAircraft.length);
 
@@ -135,7 +161,6 @@ const handleAircraftUpdate = (updateData: TrackingData) => {
       };
   });
 };
-
   
   
   return (
@@ -155,9 +180,12 @@ const handleAircraftUpdate = (updateData: TrackingData) => {
         />
       </div>
 
-      <div className="absolute inset-0 z-0">
-        {!state.isLoading && <MapComponent aircraft={state.aircraft} />}
-      </div>
+       {/* Map Component Rendering */}
+       <div className="absolute inset-0 z-0">
+                {!state.isLoading && (
+                    <MapComponent aircraft={state.aircraft} />
+                )}
+            </div>
 
       {state.error && (
         <div className="absolute top-4 left-4 z-50 bg-red-100 border border-red-400 text-red-700 px-4 py-2 rounded">

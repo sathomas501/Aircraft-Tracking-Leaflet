@@ -1,125 +1,103 @@
-// components/aircraft/tracking/Map/components/AircraftMarker.tsx
 import React from 'react';
 import { Marker, Popup, Tooltip } from 'react-leaflet';
 import L from 'leaflet';
-import { AircraftDisplay } from '@/components/aircraft/AircraftDisplay';
-import { getAircraftIcon, getIconSize } from '@/utils/aircraft-icons';
 import type { Aircraft } from '@/types/base';
-import styles from '@/styles/AircraftMarker.module.css';
 
-interface AircraftMarkerProps {
-    aircraft: Aircraft;
+interface EnhancedAircraftMarkerProps {
+  aircraft: Aircraft & {
+    type: string;
+    isGovernment: boolean;
+  };
 }
 
-const getAircraftTypeLabel = (typeCode: string): string => {
-    const types: Record<string, string> = {
-        '1': 'Fixed Wing Single Engine',
-        '2': 'Fixed Wing Multi Engine',
-        '3': 'Jet',
-        '4': 'Turbo Prop',
-        '5': 'Amphibian',
-        '6': 'Helicopter',
-        '7': 'Glider',
-        '8': 'Military',
-        '9': 'Experimental'
-    };
-    return types[typeCode] || 'Unknown Type';
+const getAircraftIconUrl = (type: string | null | undefined, isGovernment: boolean): string => {
+  const baseIconPath = '/icons/';
+  
+  if (isGovernment) {
+    return type === 'helicopter'
+      ? `${baseIconPath}aircraft-government-helicopter.png`
+      : `${baseIconPath}aircraft-government.png`;
+  }
+
+  // Default to 'jet' if type is null, undefined, or unrecognized
+  switch (type) {
+    case 'prop': return `${baseIconPath}aircraft-prop.png`;
+    case 'helicopter': return `${baseIconPath}aircraft-helicopter.png`;
+    case 'jet': return `${baseIconPath}aircraft-jet.png`;
+    default: return `${baseIconPath}aircraft-jet.png`;  // Default to jet
+  }
 };
 
-const getOwnerTypeLabel = (ownerCode: string): string => {
-    const types: Record<string, string> = {
-        '1': 'Private',
-        '2': 'Corporate',
-        '3': 'Commercial',
-        '4': 'Dealer',
-        '5': 'Government'
-    };
-    return types[ownerCode] || 'Unknown Owner';
-};
+const isValidField = (value: any) => value !== undefined && value !== null && value !== 'Unknown';
 
-const formatAltitude = (alt: number): string => 
-    alt > 0 ? `${alt.toLocaleString()} ft` : 'Ground Level';
+export const EnhancedAircraftMarker: React.FC<EnhancedAircraftMarkerProps> = ({ aircraft }) => {
+  if (!isValidField(aircraft.latitude) || !isValidField(aircraft.longitude)) return null;
 
-const formatSpeed = (velocity: number): string => 
-    velocity > 0 ? `${Math.round(velocity)} kts` : 'Stationary';
+  const iconUrl = getAircraftIconUrl(aircraft.type, aircraft.isGovernment || false);
+  const heading = aircraft.heading || 0;
 
-export const AircraftMarker: React.FC<AircraftMarkerProps> = ({ aircraft }) => {
-    if (!aircraft.latitude || !aircraft.longitude) {
-        return null;
-    }
-
-    const iconUrl = getAircraftIcon(
-        aircraft.TYPE_AIRCRAFT,
-        aircraft.OWNER_TYPE,
-        !aircraft.on_ground
-    );
-    
-    const [width, height] = getIconSize(aircraft.TYPE_AIRCRAFT);
-
-    // Prepare tooltip content
-    const tooltipContent = `
-        <div class="font-bold text-sm">${aircraft['N-NUMBER']}</div>
-        <div class="text-xs">
-            ${getAircraftTypeLabel(aircraft.TYPE_AIRCRAFT)} • 
-            ${getOwnerTypeLabel(aircraft.OWNER_TYPE)}
-        </div>
-        <div class="text-xs mt-1">
-            ${formatAltitude(aircraft.altitude)} • 
-            ${formatSpeed(aircraft.velocity)}
-        </div>
-    `;
-
-    const markerIcon = L.divIcon({
-      className: `${styles['aircraft-marker']} ${aircraft.TYPE_AIRCRAFT === '6' ? styles.helicopter : ''}`,
-      html: `
-          <div class="${styles['aircraft-icon']}" 
-               data-type="${aircraft.TYPE_AIRCRAFT}"
-               data-owner="${aircraft.OWNER_TYPE}">
-              <img 
-                  src="${iconUrl}"
-                  style="transform: rotate(${aircraft.heading || 0}deg);
-                         ${aircraft.TYPE_AIRCRAFT === '6' ? 'animation: rotate 2s linear infinite;' : ''}"
-                  alt="${getAircraftTypeLabel(aircraft.TYPE_AIRCRAFT)}"
-                  width="${width}"
-                  height="${height}"
-              />
-          </div>
-      `,
-      iconSize: [width, height],
-      iconAnchor: [width/2, height/2],
+  const rotatedIcon = L.divIcon({
+    className: 'custom-aircraft-marker',
+    html: `
+      <div style="
+        width: 32px;
+        height: 32px;
+        transform: rotate(${heading}deg);
+        transition: transform 0.3s ease;
+      ">
+        <img 
+          src="${iconUrl}"
+          width="32"
+          height="32"
+          style="width: 100%; height: 100%;"
+          alt="Aircraft"
+        />
+      </div>
+    `,
+    iconSize: [32, 32],
+    iconAnchor: [16, 16],
+    popupAnchor: [0, -16],
   });
 
   return (
-      <Marker
-          key={aircraft.icao24}
-          position={[aircraft.latitude, aircraft.longitude]}
-          icon={markerIcon}
-          zIndexOffset={getZIndexOffset(aircraft)}
-      >
-          <Tooltip 
-              direction="top" 
-              offset={[0, -height/2]} 
-              opacity={1.0}
-              permanent={false}
-              className="aircraft-tooltip"
-          >
-              <div className={styles['tooltip-content']}>
-                  {/* ... tooltip content ... */}
-              </div>
-          </Tooltip>
+    <Marker
+      position={[aircraft.latitude, aircraft.longitude]}
+      icon={rotatedIcon}
+      zIndexOffset={aircraft.type === 'helicopter' ? 1000 : 0}
+    >
+      <Tooltip direction="top" offset={[0, -16]} opacity={1.0}>
+        <div>
+          <strong>{isValidField(aircraft['N-NUMBER']) ? aircraft['N-NUMBER'] : aircraft.icao24}</strong><br />
+          {isValidField(aircraft.operator) && <span>{aircraft.operator}<br /></span>}
+          {isValidField(aircraft.NAME) && <span>{aircraft.NAME}<br /></span>}
+          {isValidField(aircraft.altitude) && <span>{Math.round(aircraft.altitude)} ft<br /></span>}
+          {isValidField(aircraft.velocity) && <span>{Math.round(aircraft.velocity)} kts</span>}
+        </div>
+      </Tooltip>
 
-          <Popup>
-              <div className="min-w-[200px]">
-                  <AircraftDisplay aircraft={aircraft} displayMode="popup" />
-              </div>
-          </Popup>
-      </Marker>
+      <Popup>
+        <div className="min-w-[200px]">
+          <h3 className="font-bold mb-2">{isValidField(aircraft['N-NUMBER']) ? aircraft['N-NUMBER'] : aircraft.icao24}</h3>
+          {isValidField(aircraft.manufacturer) && <p><strong>Manufacturer:</strong> {aircraft.manufacturer}</p>}
+          {isValidField(aircraft.model) && <p><strong>Model:</strong> {aircraft.model}</p>}
+          {isValidField(aircraft.NAME) && <p><strong>Owner:</strong> {aircraft.NAME}</p>}
+          {isValidField(aircraft.operator) && <p><strong>Operator:</strong> {aircraft.operator}</p>}
+          {(isValidField(aircraft.CITY) || isValidField(aircraft.STATE)) && (
+            <p><strong>Location:</strong> {[aircraft.CITY, aircraft.STATE].filter(isValidField).join(', ')}</p>
+          )}
+          {isValidField(aircraft.altitude) && (
+            <p><strong>Altitude:</strong> {aircraft.altitude.toLocaleString()} ft</p>
+          )}
+          {isValidField(aircraft.velocity) && (
+            <p><strong>Speed:</strong> {Math.round(aircraft.velocity)} kts</p>
+          )}
+          {isValidField(aircraft.heading) && (
+            <p><strong>Heading:</strong> {Math.round(aircraft.heading)}°</p>
+          )}
+        </div>
+      </Popup>
+    </Marker>
   );
 };
 
-function getZIndexOffset(aircraft: Aircraft): number {
-    if (aircraft.OWNER_TYPE === '5') return 1000;    // Government aircraft
-    if (aircraft.TYPE_AIRCRAFT === '6') return 900;  // Helicopters
-    if (aircraft.TYPE_AIRCRAFT === '3') return 800;  // Jets
-    return 0;
-}
+export default EnhancedAircraftMarker;

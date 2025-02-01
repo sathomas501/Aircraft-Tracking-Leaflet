@@ -1,7 +1,7 @@
 // components/aircraft/tracking/Map/components/AircraftIcon/AircraftIcon.tsx
 import L from 'leaflet';
 import { Aircraft } from '@/types/base';
-import { AIRCRAFT_MARKERS } from './constants';
+import { AIRCRAFT_MARKERS } from '../AircraftIcon/constants';
 import clsx from 'clsx';
 
 interface IconOptions {
