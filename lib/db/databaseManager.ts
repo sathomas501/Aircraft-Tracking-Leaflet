@@ -111,7 +111,41 @@ export class DatabaseManager {
         }
     }
     
-    
+    public async allQuery<T extends object = any>(query: string, params: any[] = []): Promise<T[]> {
+        if (!this.isInitialized || !this.db) {
+            console.warn("[DatabaseManager] Database not fully initialized. Ensuring completion...");
+            await this.initializeDatabase();
+        }
+
+        if (!this.db) {
+            throw new Error("[DatabaseManager] Database connection is still null after initialization.");
+        }
+
+        try {
+            console.log(`[DatabaseManager] Executing query: ${query}`, params);
+            const results: T[] = await this.db.all(query, params);
+            console.log(`[DatabaseManager] Query returned ${results.length} results`);
+            return results;
+        } catch (error) {
+            console.error(`[DatabaseManager] Query execution failed: ${query}`, error);
+            throw error;
+        }
+    }
+
+    public async close(): Promise<void> {
+        if (this.db) {
+            try {
+                await this.db.run('PRAGMA optimize');  // Optimize before closing
+                await this.db.close();
+                this.db = null;
+                this.isInitialized = false;
+                console.log('[DatabaseManager] Database connection closed successfully');
+            } catch (error) {
+                console.error('[DatabaseManager] Error closing database:', error);
+                throw error;
+            }
+        }
+    }
 
 }
 

@@ -1,52 +1,31 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
+import  UnifiedSelector  from '../../selector/UnifiedSelector';
 import MapComponent from '../Map/MapComponent';
-import UnifiedSelector from '../../selector/UnifiedSelector';
-import { manufacturerTracking } from '@/lib/services/manufacturer-tracking-service';
-import type { Aircraft } from '@/types/base';
-
-interface TrackingData {
-  aircraft: Array<{
-    icao24: string;
-    callsign?: string;
-    origin_country?: string;
-    time_position?: number;
-    last_contact?: number;
-    longitude?: number;
-    latitude?: number;
-    baro_altitude?: number;
-    on_ground?: boolean;
-    velocity?: number;
-    true_track?: number;
-    vertical_rate?: number;
-    sensors?: number[];
-    geo_altitude?: number;
-    squawk?: string;
-    spi?: boolean;
-    position_source?: number;
-  }>;
-}
+import type { Aircraft, TrackingData } from '@/types/base';
 
 interface State {
   aircraft: Aircraft[];
   isLoading: boolean;
   error: string | null;
   selectedManufacturer: string;
+  activeIcao24s: Set<string>;
 }
 
 const MapWrapper: React.FC = () => {
-  console.log('MapWrapper rendering');
   const [state, setState] = useState<State>({
     aircraft: [],
     isLoading: false,
     error: null,
     selectedManufacturer: '',
+    activeIcao24s: new Set<string>()
   });
 
   const [selectedModel, setSelectedModel] = useState<string>('');
+  const [activeCount, setActiveCount] = useState(0);
 
   const modelCounts = useMemo(() => {
     const counts = new Map<string, number>();
-    state.aircraft.forEach((plane) => {
+    state.aircraft.forEach((plane: Aircraft) => {
       if (plane.model) {
         counts.set(plane.model, (counts.get(plane.model) || 0) + 1);
       }
@@ -54,77 +33,111 @@ const MapWrapper: React.FC = () => {
     return counts;
   }, [state.aircraft]);
 
-  const handleManufacturerSelect = async (manufacturer: string) => {
-    setState((prev) => ({ ...prev, isLoading: true, error: null }));
-
-    try {
-      const response = await fetch('/api/aircraft/icao24s', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ manufacturer }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch aircraft data.');
-      }
-
-      const data = await response.json();
-      
-      if (!data.icao24List) {
-        throw new Error('Invalid data format received from server.');
-      }
-
-      setState((prev) => ({
-        ...prev,
-        selectedManufacturer: manufacturer,
-        aircraft: data.icao24List,
-        isLoading: false,
-      }));
-    } catch (error) {
-      console.error('Error:', error);
-      setState((prev) => ({
-        ...prev,
-        error: 'Failed to load aircraft data.',
-        isLoading: false,
-      }));
-    }
-  };
-
-  const handleAircraftUpdate = (data: TrackingData) => {
-    console.log('Received aircraft update:', data.aircraft);
-    if (!data.aircraft) {
-      console.error('Invalid aircraft data received');
-      return;
-    }
-  
-    setState((prev) => {
-      console.log('Updating state with aircraft:', data.aircraft);
-      return {
-        ...prev,
-        aircraft: data.aircraft.map((aircraftData) => ({
-          ...aircraftData,
-          model: '', // Add required Aircraft properties
-          "N-NUMBER": '',
-          manufacturer: state.selectedManufacturer,
-          NAME: '',
-          CITY: '',
-          STATE: '',
-          OWNER_TYPE: '',
-          TYPE_AIRCRAFT: '',
-          isTracked: true,
-          heading: aircraftData.true_track || 0,
-          latitude: aircraftData.latitude || 0,
-          longitude: aircraftData.longitude || 0,
-          altitude: aircraftData.baro_altitude || 0,
-          velocity: aircraftData.velocity || 0,
-          on_ground: aircraftData.on_ground || false,
-          last_contact: aircraftData.last_contact || 0,
-          icao24: aircraftData.icao24
-        })),
-      };
+  const handleReset = () => {
+    setState({
+      aircraft: [],
+      isLoading: false,
+      error: null,
+      selectedManufacturer: '',
+      activeIcao24s: new Set<string>()
     });
+    setSelectedModel('');
+    setActiveCount(0);
   };
 
+  const handleManufacturerSelect = async (manufacturer: string) => {
+    setState(prev => ({ ...prev, isLoading: true, error: null }));
+    try {
+        const response = await fetch('/api/aircraft/track-manufacturer', {  // Changed endpoint
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ manufacturer }),
+        });
+
+        if (!response.ok) throw new Error('Failed to fetch aircraft data.');
+
+        const responseData = await response.json();
+        if (!responseData.liveAircraft) throw new Error('Invalid data format received.');
+
+        // Map the live aircraft data correctly
+        const mappedAircraft = responseData.liveAircraft.map((aircraft: Aircraft) => ({
+            ...aircraft,
+            manufacturer, // Ensure manufacturer is set
+            isTracked: true,
+            // Set required fields if not present
+            "N-NUMBER": aircraft["N-NUMBER"] || "",
+            NAME: aircraft.NAME || "",
+            CITY: aircraft.CITY || "",
+            STATE: aircraft.STATE || "",
+            TYPE_AIRCRAFT: aircraft.TYPE_AIRCRAFT || "Unknown",
+            OWNER_TYPE: aircraft.OWNER_TYPE || "Unknown",
+            model: aircraft.model || "Unknown",
+            operator: aircraft.operator || "Unknown"
+        }));
+
+        setState(prev => ({
+          ...prev,
+          selectedManufacturer: manufacturer,
+          aircraft: responseData.liveAircraft,
+          isLoading: false,
+          activeIcao24s: new Set(responseData.liveAircraft.map((aircraft: Aircraft) => aircraft.icao24))
+      }));
+
+        setActiveCount(mappedAircraft.length);
+
+    } catch (error) {
+        setState(prev => ({
+            ...prev,
+            error: error instanceof Error ? error.message : 'Failed to load aircraft data',
+            isLoading: false
+        }));
+    }
+};
+
+const handleAircraftUpdate = (updateData: TrackingData) => {
+  if (!updateData.aircraft || updateData.aircraft.length === 0) {
+      console.warn("[MapWrapper] No aircraft updates received.");
+      return;
+  }
+
+  console.log("[MapWrapper] Received updates for", updateData.aircraft.length, "aircraft");
+
+  setState(prev => {
+      const liveAircraft = updateData.aircraft.map(aircraftData => ({
+          icao24: aircraftData.icao24,
+          latitude: aircraftData.latitude,
+          longitude: aircraftData.longitude,
+          altitude: aircraftData.altitude,
+          velocity: aircraftData.velocity,
+          heading: aircraftData.heading,
+          on_ground: aircraftData.on_ground,
+          last_contact: aircraftData.last_contact,
+          lastSeen: aircraftData.lastUpdate,
+          // Required fields
+          "N-NUMBER": "",
+          manufacturer: prev.selectedManufacturer,
+          model: "Unknown",
+          operator: "Unknown",
+          NAME: "",
+          CITY: "",
+          STATE: "",
+          TYPE_AIRCRAFT: "Unknown",
+          OWNER_TYPE: "Unknown",
+          isTracked: true
+      }));
+
+      setActiveCount(liveAircraft.length);
+
+      return {
+          ...prev,
+          aircraft: liveAircraft,
+          activeIcao24s: new Set(liveAircraft.map(a => a.icao24))
+      };
+  });
+};
+
+  
+  
   return (
     <div className="relative w-full h-screen">
       <div className="absolute top-0 left-0 right-0 z-10 max-w-sm ml-4">
@@ -132,11 +145,13 @@ const MapWrapper: React.FC = () => {
           selectedType="manufacturer"
           selectedManufacturer={state.selectedManufacturer}
           selectedModel={selectedModel}
+          setSelectedModel={setSelectedModel}
           modelCounts={modelCounts}
-          totalActive={state.aircraft.length}
+          totalActive={activeCount}
           onManufacturerSelect={handleManufacturerSelect}
           onModelSelect={setSelectedModel}
           onAircraftUpdate={handleAircraftUpdate}
+          onReset={handleReset}
         />
       </div>
 

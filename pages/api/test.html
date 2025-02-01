@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HTML Test Template</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background-color: #f4f4f4;
+        }
+        #output {
+            border: 2px solid #ddd;
+            background: #fff;
+            padding: 20px;
+            min-height: 200px;
+            margin-top: 20px;
+        }
+        textarea {
+            width: 100%;
+            height: 100px;
+            font-family: monospace;
+        }
+        button {
+            padding: 10px;
+            margin-top: 10px;
+            background-color: blue;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: darkblue;
+        }
+    </style>
+</head>
+<body>
+
+    <h2>Test HTML & JavaScript</h2>
+    <p>Type or paste your code below and click "Run Code" to see the output.</p>
+    
+    <textarea id="codeInput">
+<!-- Example Code: -->
+document.getElementById('output').innerHTML = "<h3>Hello, World!</h3>";
+    </textarea>
+    
+    <button onclick="runCode()">Run Code</button>
+    
+    <div id="output"></div>
+
+    <script>
+        function runCode() {
+            const code = document.getElementById('codeInput').value;
+            try {
+                eval(code);
+            } catch (error) {
+                document.getElementById('output').innerHTML = `<p style="color:red;">Error: ${error.message}</p>`;
+            }
+        }
+    </script>
+
+    <!-- React Testing -->
+    <h2>Test React Components</h2>
+    <div id="react-root"></div>
+    
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
+
+    <script type="text/babel">
+        const { useState } = React;
+
+        function TestComponent() {
+            const [count, setCount] = useState(0);
+            return (
+                <div style={{ padding: "10px", backgroundColor: "#ddd", borderRadius: "5px" }}>
+                    <h3>React Test Component</h3>
+                    <p>Count: {count}</p>
+                    <button onClick={() => setCount(count + 1)}>Increase</button>
+                </div>
+            );
+        }
+
+        ReactDOM.createRoot(document.getElementById('react-root')).render(<TestComponent />);
+    </script>
+
+</body>
+</html>

@@ -1,4 +1,5 @@
 import React from 'react';
+import { NextApiResponse } from 'next';
 
 export enum ErrorType {
     NETWORK = 'NETWORK',
@@ -19,6 +20,8 @@ export enum ErrorType {
     OPENSKY_SERVICE = 'OPENSKY_SERVICE'
 }
 
+
+
 export interface ErrorDetails {
     type: ErrorType;
     message: string;
@@ -35,6 +38,18 @@ export interface ErrorState {
     handlers: Map<ErrorType, Set<(error: ErrorDetails) => void>>;
     retryTimeouts: Map<ErrorType, NodeJS.Timeout>;
 }
+
+
+export function handleApiError(res: NextApiResponse, error: unknown): void {
+    errorHandler.handleError(ErrorType.OPENSKY_SERVICE, 'API Error', error);
+    
+    res.status(500).json({
+        error: userMessages[ErrorType.OPENSKY_SERVICE],
+        success: false
+    });
+}
+
+
 
 // User-friendly messages for errors
 export const userMessages: Record<ErrorType, string> = {

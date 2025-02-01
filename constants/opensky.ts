@@ -12,7 +12,9 @@ export const OPENSKY_CONSTANTS = {
     AUTHENTICATED: {
         REQUESTS_PER_10_MIN: 600,   // 600 requests per rolling window of 10 minutes
         REQUESTS_PER_DAY: 4000,     // Per user basis
-        MAX_BATCH_SIZE: 100         // Maximum number of aircraft to track at once
+        MAX_BATCH_SIZE: 100,         // Maximum number of aircraft to track at once
+        MAX_ICAO_QUERY: 500,        // New: ICAO24 batch limit for queries
+        MAX_TOTAL_ICAO_QUERY: 1000, // Max ICAOs per full OpenSky API request
     },
 
     // Time windows
@@ -28,6 +30,6 @@ export const OPENSKY_CONSTANTS = {
         TIMEOUT_MS: 15000,          // 15 seconds
         MIN_POLLING_INTERVAL: 5000,  // 5 seconds
         MAX_POLLING_INTERVAL: 30000, // 30 seconds
-        DEFAULT_RETRY_LIMIT: 3
+        DEFAULT_RETRY_LIMIT: 3,
     }
 };

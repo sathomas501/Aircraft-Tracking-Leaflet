@@ -52,7 +52,7 @@ export default async function handler(
             WHERE manufacturer = ?
             AND icao24 IS NOT NULL
             AND icao24 != ''
-            LIMIT 500
+            LIMIT 2000
         `;
 
         console.log('Executing query:', { query, params: [manufacturer] });

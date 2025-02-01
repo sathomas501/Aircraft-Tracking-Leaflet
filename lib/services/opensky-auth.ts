@@ -1,3 +1,4 @@
+// lib/services/opensky-auth.ts
 import { errorHandler, ErrorType } from './error-handler';
 
 interface AuthCredentials {
@@ -13,12 +14,6 @@ interface AuthState {
     credentials: AuthCredentials | null;
 }
 
-interface AuthOptions {
-    useEnvCredentials?: boolean;
-    username?: string;
-    password?: string;
-}
-
 export class OpenSkyAuth {
     private static instance: OpenSkyAuth;
     private state: AuthState = {
@@ -28,29 +23,29 @@ export class OpenSkyAuth {
         username: null,
         credentials: null,
     };
-    private authPromise: Promise<boolean> | null = null;
-    private readonly AUTH_TIMEOUT = 15000; // 15 seconds
+    private readonly AUTH_TIMEOUT = 15000;
     private readonly MAX_RETRIES = 3;
     private readonly BASE_DELAY = 5000;
 
-    // Endpoints for minimal requests
-    private readonly AUTH_ENDPOINTS = [
-        'https://opensky-network.org/api/states/all?time=0&icao24=a00001',
-        'https://opensky-network.org/api/flights/all?begin=0&end=1',
-    ];
-
     private constructor() {
-        const username = process.env.NEXT_PUBLIC_OPENSKY_USERNAME;
-        const password = process.env.NEXT_PUBLIC_OPENSKY_PASSWORD;
+        // Load credentials immediately in constructor
+        const username = process.env.OPENSKY_USERNAME;
+        const password = process.env.OPENSKY_PASSWORD;
+
+        console.log('[OpenSkyAuth] Environment check:', {
+            usernamePresent: !!username,
+            passwordPresent: !!password
+        });
 
         if (username && password) {
             this.updateCredentials(username, password);
+            console.log('[OpenSkyAuth] Credentials loaded from environment');
         } else {
-            console.warn('[OpenSkyAuth] Missing environment credentials for OpenSky authentication.');
+            console.error('[OpenSkyAuth] Missing environment credentials!');
         }
     }
 
-    static getInstance(): OpenSkyAuth {
+    public static getInstance(): OpenSkyAuth {
         if (!OpenSkyAuth.instance) {
             OpenSkyAuth.instance = new OpenSkyAuth();
         }
@@ -60,128 +55,96 @@ export class OpenSkyAuth {
     private updateCredentials(username: string, password: string): void {
         this.state.credentials = { username, password };
         this.state.username = username;
+        console.log('[OpenSkyAuth] Credentials updated for user:', username);
     }
 
-    /**
-     * Ensures the user is authenticated before starting polling.
-     */
     public async ensureAuthenticated(): Promise<boolean> {
+        console.log('[OpenSkyAuth] Starting authentication check');
+        
         if (this.isAuthenticated()) {
-            return true; // Already authenticated
-        }
-    
-        console.log('[OpenSkyAuth] Authenticating...');
-        const result = await this.authenticate({ useEnvCredentials: true });
-        return result; // Return true or false based on authentication success
-    }
-    
-
-    private handleError(type: ErrorType, message: string): never {
-        const error = new Error(message);
-        errorHandler.handleError(type, error);
-        throw error;
-    }
-
-
-    public async authenticate(options: AuthOptions | string, password?: string): Promise<boolean> {
-        if (this.authPromise) {
-            return this.authPromise;
+            console.log('[OpenSkyAuth] Already authenticated');
+            return true;
         }
 
-        this.authPromise = (async () => {
-            if (typeof options === 'string') {
-                if (!password) {
-                    this.handleError(ErrorType.AUTH, 'Password is required when passing username directly.');
-                }
-                this.updateCredentials(options, password!);
-            } else if (options.useEnvCredentials) {
-                const username = process.env.NEXT_PUBLIC_OPENSKY_USERNAME;
-                const password = process.env.NEXT_PUBLIC_OPENSKY_PASSWORD;
-                if (!username || !password) {
-                    console.error('[OpenSkyAuth] Missing environment credentials.');
-                    return false;
-                }
+        console.log('[OpenSkyAuth] Not authenticated, attempting authentication');
+        if (!this.state.credentials) {
+            console.error('[OpenSkyAuth] No credentials available for authentication');
+            const username = process.env.OPENSKY_USERNAME;
+            const password = process.env.OPENSKY_PASSWORD;
+            
+            if (username && password) {
+                console.log('[OpenSkyAuth] Loading credentials from environment');
                 this.updateCredentials(username, password);
-            } else if (options.username && options.password) {
-                this.updateCredentials(options.username, options.password);
             } else {
-                console.error('[OpenSkyAuth] Invalid authentication options provided.');
+                console.error('[OpenSkyAuth] No environment credentials available');
+                return false;
+            }
+        }
+
+        return this.authenticate({ useEnvCredentials: true });
+    }
+
+    public getAuthHeaders(): Record<string, string> {
+        if (!this.state.credentials) {
+            console.error('[OpenSkyAuth] No credentials available for headers');
+            throw new Error('Authentication required');
+        }
+
+        const authString = Buffer.from(
+            `${this.state.credentials.username}:${this.state.credentials.password}`
+        ).toString('base64');
+
+        return {
+            'Authorization': `Basic ${authString}`
+        };
+    }
+
+    public async authenticate(options: { useEnvCredentials: boolean }): Promise<boolean> {
+        console.log('[OpenSkyAuth] Starting authentication process');
+        
+        if (options.useEnvCredentials) {
+            const username = process.env.OPENSKY_USERNAME;
+            const password = process.env.OPENSKY_PASSWORD;
+            
+            if (!username || !password) {
+                console.error('[OpenSkyAuth] Missing environment credentials during authentication');
                 return false;
             }
 
-            const result = await this.performAuthentication();
-            this.authPromise = null;
-            return result;
-        })();
-
-        return this.authPromise;
-    }
-
-    /**
-     * Handles authentication errors during polling by resetting the state and re-authenticating.
-     */
-    public async handleAuthError(): Promise<void> {
-        console.warn('[OpenSkyAuth] Re-authenticating due to authentication failure.');
-        this.reset();
-        await this.authenticate({ useEnvCredentials: true });
-    }
-
-    private async performAuthentication(retryCount = 0): Promise<boolean> {
-        const endpoint = this.AUTH_ENDPOINTS[retryCount % this.AUTH_ENDPOINTS.length];
-        const authString = Buffer.from(`${this.state.credentials!.username}:${this.state.credentials!.password}`).toString('base64');
+            this.updateCredentials(username, password);
+        }
 
         try {
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), this.AUTH_TIMEOUT);
+            // Test authentication with a minimal request
+            const authString = Buffer.from(
+                `${this.state.credentials!.username}:${this.state.credentials!.password}`
+            ).toString('base64');
 
-            const response = await fetch(endpoint, {
+            // Make a minimal request to verify auth
+            const response = await fetch('https://opensky-network.org/api/states/all?time=0&icao24=a00001', {
                 headers: {
-                    Authorization: `Basic ${authString}`,
-                    Accept: 'application/json',
-                },
-                signal: controller.signal,
+                    'Authorization': `Basic ${authString}`,
+                    'Accept': 'application/json'
+                }
             });
 
-            clearTimeout(timeoutId);
+            console.log('[OpenSkyAuth] Auth test response status:', response.status);
 
             if (response.ok) {
                 this.state.authenticated = true;
                 this.state.lastAttempt = Date.now();
+                console.log('[OpenSkyAuth] Authentication successful');
                 return true;
+            } else {
+                console.error('[OpenSkyAuth] Authentication failed:', response.status);
+                this.state.authenticated = false;
+                return false;
             }
-
-            if (response.status === 401 || response.status === 403) {
-                this.handleError(ErrorType.AUTH, 'Invalid OpenSky credentials.');
-            }
-
-            if (retryCount < this.MAX_RETRIES - 1) {
-                const delay = this.BASE_DELAY * Math.pow(2, retryCount);
-                await new Promise(resolve => setTimeout(resolve, delay));
-                return this.performAuthentication(retryCount + 1);
-            }
-
-            return false;
         } catch (error) {
-            if (retryCount < this.MAX_RETRIES - 1) {
-                const delay = this.BASE_DELAY * Math.pow(2, retryCount);
-                await new Promise(resolve => setTimeout(resolve, delay));
-                return this.performAuthentication(retryCount + 1);
-            }
-            errorHandler.handleError(ErrorType.AUTH, error instanceof Error ? error : new Error('Authentication failed'));
+            console.error('[OpenSkyAuth] Authentication error:', error);
+            this.state.authenticated = false;
             return false;
         }
-    }
-
-
-    public getAuthHeaders(): Record<string, string> {
-        if (!this.state.authenticated) {
-            this.handleError(ErrorType.AUTH_REQUIRED, 'User not authenticated.');
-        }
-        return {
-            Authorization: `Basic ${Buffer.from(
-                `${this.state.credentials!.username}:${this.state.credentials!.password}`
-            ).toString('base64')}`,
-        };
     }
 
     public isAuthenticated(): boolean {
@@ -189,7 +152,7 @@ export class OpenSkyAuth {
     }
 
     public reset(): void {
-        console.log('[OpenSkyAuth] Resetting authentication state.');
+        console.log('[OpenSkyAuth] Resetting authentication state');
         this.state = {
             authenticated: false,
             lastAttempt: 0,
@@ -198,7 +161,6 @@ export class OpenSkyAuth {
             credentials: null,
         };
     }
-    
 }
 
-export const openSkyAuth = OpenSkyAuth.getInstance();
+export const openSkyAuth = OpenSkyAuth.getInstance(); 
