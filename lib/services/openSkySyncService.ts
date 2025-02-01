@@ -1,12 +1,15 @@
 import { TrackingDatabaseManager } from '../db/trackingDatabaseManager';
 import { manufacturerTracking } from '../services/manufacturer-tracking-service';
 import UnifiedCacheService from '../services/managers/unified-cache-system';
+import { AircraftPositionService, Position } from './aircraftPositionService';
+import type { CachedAircraftData } from '../../types/base';
+// Remove the Cleanup import if it's not needed
 
 export class OpenSkySyncService {
     private static instance: OpenSkySyncService;
     private syncInterval: NodeJS.Timeout | null = null;
     private syncIntervalTime = 5 * 60 * 1000; // 5 minutes
-    private dataExpiryTime = 15 * 60 * 1000; // 15 minutes (data older than this is stale)
+    private dataExpiryTime = 15 * 60 * 1000; // 15 minutes
 
     private constructor() {}
 
@@ -17,78 +20,63 @@ export class OpenSkySyncService {
         return OpenSkySyncService.instance;
     }
 
-    /**
-     * Starts periodic syncing of stale aircraft.
-     */
-    public startSyncing(): void {
-        if (!this.syncInterval) {
-            this.syncInterval = setInterval(() => this.syncStaleAircraft(), this.syncIntervalTime);
-        }
-    }
-
-    /**
-     * Stops the syncing process.
-     */
-    public stopSyncing(): void {
-        if (this.syncInterval) {
-            clearInterval(this.syncInterval);
-            this.syncInterval = null;
-        }
-    }
-
-    /**
-     * Syncs stale aircraft by fetching updates from OpenSky.
-     */
     private async syncStaleAircraft(): Promise<void> {
         const dbManager = await TrackingDatabaseManager.getInstance();
         const cache = UnifiedCacheService.getInstance();
+        const positionService = AircraftPositionService.getInstance();
     
         try {
-            // ✅ Step 1: Identify stale aircraft from the database (last update > 15 min ago)
             const staleAircraft = await dbManager.getAll<{ icao24: string, last_contact: number }>(
                 "SELECT icao24, last_contact FROM aircraft WHERE last_contact < ?",
                 [Date.now() - this.dataExpiryTime]
             );
     
-            // ✅ Step 2: Remove aircraft that are already in cache (to avoid redundant polling)
-            const staleIcao24s = staleAircraft
+            const staleIcao24s: string[] = staleAircraft
                 .map(a => a.icao24)
-                .filter(icao24 => !cache.get(icao24)); // Only fetch if not cached
+                .filter(icao24 => !cache.get(icao24));
     
             if (staleIcao24s.length > 0) {
                 console.log(`[OpenSkySyncService] Fetching updates for ${staleIcao24s.length} stale aircraft.`);
-                
-                // ✅ Step 3: Fetch fresh data from OpenSky
-                await manufacturerTracking.fetchLiveAircraft(staleIcao24s);
     
-                // ✅ Step 4: After fetching new data, update cache
-                staleIcao24s.forEach(icao24 => {
-                    const updatedAircraft = cache.get(icao24);
-                    if (updatedAircraft) {
-                        dbManager.upsertActiveAircraft(icao24, updatedAircraft);
+                await positionService.pollAircraftData(async (icao24s: string[]) => {
+                    // Fetch fresh data for the requested aircraft
+                    for (const icao24 of icao24s) {
+                        const position = positionService.getPosition(icao24);
+                        if (position) {
+                            const cachedData: CachedAircraftData = {
+                                icao24: position.icao24,
+                                latitude: position.latitude,
+                                longitude: position.longitude,
+                                altitude: position.altitude,
+                                velocity: position.velocity,
+                                heading: position.heading,
+                                on_ground: position.on_ground,
+                                lastUpdate: position.last_contact,
+                                last_contact: position.last_contact
+                            };
+                            cache.set(icao24, cachedData);
+                            dbManager.upsertActiveAircraft(icao24, cachedData);
+                        }
                     }
-                });
-    
-            } else {
-                console.log("[OpenSkySyncService] No stale aircraft need updates (cache hit).");
+                }, staleIcao24s);
             }
     
-            // ✅ Step 5: Clean up old records from the database
-            await this.cleanupOldRecords();
+            await this.removeStaleRecords();
     
         } catch (error) {
             console.error("[OpenSkySyncService] Failed to sync stale aircraft:", error);
         }
     }
+
     /**
-     * Removes stale records from the tracking database.
+     * Removes stale records from the database
      */
-    private async cleanupOldRecords(): Promise<void> {
+    private async removeStaleRecords(): Promise<void> {
         const dbManager = await TrackingDatabaseManager.getInstance();
-        const deletionThreshold = Date.now() - (24 * 60 * 60 * 1000); // Remove data older than 24 hours
-    
+        const deletionThreshold = Date.now() - (24 * 60 * 60 * 1000); // 24 hours
+
         try {
-            await dbManager.getDb().run(  // Fix: Use getDb() before calling run()
+            await dbManager.getDb().run(
                 "DELETE FROM aircraft WHERE last_contact < ?",
                 [deletionThreshold]
             );
@@ -97,5 +85,17 @@ export class OpenSkySyncService {
             console.error("[OpenSkySyncService] Error cleaning up old records:", error);
         }
     }
-    
+
+    public startSyncing(): void {
+        if (!this.syncInterval) {
+            this.syncInterval = setInterval(() => this.syncStaleAircraft(), this.syncIntervalTime);
+        }
+    }
+
+    public stopSyncing(): void {
+        if (this.syncInterval) {
+            clearInterval(this.syncInterval);
+            this.syncInterval = null;
+        }
+    }
 }

@@ -36,12 +36,13 @@ type OpenSkyState = [
 ];
 
 class ManufacturerTrackingService {
+    private static instance: ManufacturerTrackingService;
     private state: TrackingState;
     private rateLimiter: PollingRateLimiter;
     private subscribers = new Set<(data: TrackingData) => void>();
     private readonly TIMEOUT = 10000;
 
-    constructor() {
+    private constructor() {
         this.state = {
             icao24List: [],
             isPolling: false,
@@ -61,6 +62,13 @@ class ManufacturerTrackingService {
             requestsPerMinute: 6000,    // 600 requests per rolling window of 10 minutes
             requestsPerDay: 4000        // Per user basis
         });
+    }
+
+    public static getInstance(): ManufacturerTrackingService {
+        if (!ManufacturerTrackingService.instance) {
+            ManufacturerTrackingService.instance = new ManufacturerTrackingService();
+        }
+        return ManufacturerTrackingService.instance;
     }
 
     private notifySubscribers(data: TrackingData): void {
@@ -228,3 +236,5 @@ class ManufacturerTrackingService {
         this.rateLimiter.resetPollingInterval();
     }
 }
+
+export const manufacturerTracking = ManufacturerTrackingService.getInstance();

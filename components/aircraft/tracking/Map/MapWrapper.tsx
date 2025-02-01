@@ -2,30 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import MapComponent from '../Map/MapComponent';
 import UnifiedSelector from '../../selector/UnifiedSelector';
 import { manufacturerTracking } from '@/lib/services/manufacturer-tracking-service';
-import { toast } from 'react-toastify'; // Add toast notification library
 import type { Aircraft } from '@/types/base';
-
-interface TrackingData {
-  aircraft: Array<{
-    icao24: string;
-    callsign?: string;
-    origin_country?: string;
-    time_position?: number;
-    last_contact?: number;
-    longitude?: number;
-    latitude?: number;
-    baro_altitude?: number;
-    on_ground?: boolean;
-    velocity?: number;
-    true_track?: number;
-    vertical_rate?: number;
-    sensors?: number[];
-    geo_altitude?: number;
-    squawk?: string;
-    spi?: boolean;
-    position_source?: number;
-  }>;
-}
 
 interface State {
   aircraft: Aircraft[];
@@ -33,12 +10,6 @@ interface State {
   error: string | null;
   selectedManufacturer: string;
 }
-
-const userFriendlyErrors: Record<string, string> = {
-  NETWORK: 'Network error: Please check your connection.',
-  DATA: 'Error fetching aircraft data. Please try again.',
-  DEFAULT: 'An unexpected error occurred. Please try again later.',
-};
 
 const MapWrapper: React.FC = () => {
   const [state, setState] = useState<State>({
@@ -49,6 +20,15 @@ const MapWrapper: React.FC = () => {
   });
 
   const [selectedModel, setSelectedModel] = useState<string>('');
+  const [mapKey, setMapKey] = useState(0); // Add key for forcing map re-render
+
+  // Debug logging for aircraft state changes
+  useEffect(() => {
+    console.log('Aircraft state updated:', {
+      count: state.aircraft.length,
+      sample: state.aircraft.slice(0, 2)
+    });
+  }, [state.aircraft]);
 
   const modelCounts = useMemo(() => {
     const counts = new Map<string, number>();
@@ -60,55 +40,7 @@ const MapWrapper: React.FC = () => {
     return counts;
   }, [state.aircraft]);
 
-  useEffect(() => {
-    const subscription = manufacturerTracking.subscribe((data: TrackingData) => {
-      handleAircraftUpdate(data);
-    });
-
-    return () => {
-      subscription.unsubscribe();
-      manufacturerTracking.stopPolling();
-    };
-  }, []);
-
-  const handleAircraftUpdate = (data: TrackingData) => {
-    if (!data.aircraft) {
-      console.error('Invalid aircraft data received');
-      toast.error(userFriendlyErrors.DATA);
-      return;
-    }
-
-    setState((prev) => ({
-      ...prev,
-      aircraft: data.aircraft.map((aircraftData) => ({
-        ...aircraftData,
-        model: '',
-        "N-NUMBER": '',
-        manufacturer: state.selectedManufacturer,
-        NAME: '',
-        CITY: '',
-        STATE: '',
-        OWNER_TYPE: '',
-        TYPE_AIRCRAFT: '',
-        isTracked: true,
-        heading: aircraftData.true_track || 0,
-        latitude: aircraftData.latitude || 0,
-        longitude: aircraftData.longitude || 0,
-        altitude: aircraftData.baro_altitude || 0,
-        velocity: aircraftData.velocity || 0,
-        on_ground: aircraftData.on_ground || false,
-        last_contact: aircraftData.last_contact || 0,
-        icao24: aircraftData.icao24,
-      })),
-    }));
-  };
-
   const handleManufacturerSelect = async (manufacturer: string) => {
-    if (!manufacturer) {
-      toast.error('No manufacturer selected.');
-      return;
-    }
-
     setState((prev) => ({ ...prev, isLoading: true, error: null }));
 
     try {
@@ -118,21 +50,15 @@ const MapWrapper: React.FC = () => {
         body: JSON.stringify({ manufacturer }),
       });
 
-      const responseData = await response.json();
-
       if (!response.ok) {
-        throw new Error(responseData.error || userFriendlyErrors.NETWORK);
+        throw new Error('Failed to fetch aircraft data.');
       }
 
-      if (!responseData.icao24List) {
-        throw new Error(userFriendlyErrors.DATA);
+      const data = await response.json();
+      
+      if (!data.icao24List) {
+        throw new Error('Invalid data format received from server.');
       }
-
-      const formattedIcao24s = responseData.icao24List.map((icao24: string) => ({
-        icao24: icao24.toLowerCase(),
-      }));
-
-      await manufacturerTracking.startPolling(formattedIcao24s);
 
       setState((prev) => ({
         ...prev,
@@ -140,20 +66,69 @@ const MapWrapper: React.FC = () => {
         isLoading: false,
       }));
 
-      toast.success('Manufacturer aircraft data loaded successfully.');
+      // Start tracking the aircraft
+      manufacturerTracking.startPolling(data.icao24List.map((icao24: string) => ({ icao24 })));
     } catch (error) {
-      console.error('Error in handleManufacturerSelect:', error);
-      manufacturerTracking.stopPolling();
+      console.error('Error:', error);
       setState((prev) => ({
         ...prev,
-        error: error instanceof Error ? error.message : userFriendlyErrors.DEFAULT,
+        error: 'Failed to load aircraft data.',
         isLoading: false,
       }));
-      toast.error(
-        error instanceof Error ? error.message : userFriendlyErrors.DEFAULT
-      );
     }
   };
+
+  const handleAircraftUpdate = (data: Aircraft[] | { aircraft: Aircraft[] }) => {
+    console.log('Received aircraft update:', data);
+    
+    let aircraftData: Aircraft[] = Array.isArray(data) ? data : data.aircraft;
+    
+    if (!aircraftData || !Array.isArray(aircraftData)) {
+      console.error('Invalid aircraft data received');
+      return;
+    }
+
+    // Filter out aircraft without valid coordinates
+    aircraftData = aircraftData.filter(aircraft => 
+      typeof aircraft.latitude === 'number' && 
+      typeof aircraft.longitude === 'number' &&
+      aircraft.latitude !== 0 &&
+      aircraft.longitude !== 0
+    );
+
+    setState(prev => ({
+      ...prev,
+      aircraft: aircraftData.map(aircraft => ({
+        ...aircraft,
+        manufacturer: state.selectedManufacturer,
+        isTracked: true,
+        // Ensure required fields have default values
+        model: aircraft.model || '',
+        "N-NUMBER": aircraft["N-NUMBER"] || '',
+        NAME: aircraft.NAME || '',
+        CITY: aircraft.CITY || '',
+        STATE: aircraft.STATE || '',
+        OWNER_TYPE: aircraft.OWNER_TYPE || '',
+        TYPE_AIRCRAFT: aircraft.TYPE_AIRCRAFT || '',
+        heading: aircraft.heading || aircraft.heading || 0,
+        altitude: aircraft.altitude || aircraft.altitude || 0,
+        velocity: aircraft.velocity || 0,
+        on_ground: aircraft.on_ground || false,
+        last_contact: aircraft.last_contact || 0,
+        icao24: aircraft.icao24
+      }))
+    }));
+
+    // Force map to re-render with new data
+    setMapKey(prev => prev + 1);
+  };
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      manufacturerTracking.stopPolling();
+    };
+  }, []);
 
   return (
     <div className="relative w-full h-screen">
@@ -171,8 +146,17 @@ const MapWrapper: React.FC = () => {
       </div>
 
       <div className="absolute inset-0 z-0">
-        {!state.isLoading && <MapComponent aircraft={state.aircraft} />}
+        <MapComponent 
+          key={mapKey}
+          aircraft={state.aircraft} 
+        />
       </div>
+
+      {state.error && (
+        <div className="absolute top-4 left-4 z-50 bg-red-100 border border-red-400 text-red-700 px-4 py-2 rounded">
+          {state.error}
+        </div>
+      )}
 
       {state.isLoading && (
         <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center z-40">

@@ -1,70 +1,86 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
-import type { Aircraft } from '@/types/base';  // Ensure this path is correct
-import { createAircraftIcon } from './components/AircraftIcon/AircraftIcon';
+import type { Aircraft } from '@/types/base';
 
-// ✅ Define or import MapComponentProps if missing
+// Define MapComponentProps
 export interface MapComponentProps {
   aircraft: Aircraft[];
 }
 
-const MapComponent: React.FC<MapComponentProps> = ({ aircraft }) => {
-  const usCenter: [number, number] = [39.8283, -98.5795];
+// Dynamically import the map to avoid SSR issues
+const MapWithNoSSR = dynamic(() =>
+  Promise.all([
+    import('react-leaflet'),
+    import('leaflet'),
+  ]).then(([{ MapContainer, TileLayer, Marker, Popup }]) => {
+    return function Map({ aircraft }: MapComponentProps) {
+      const [mounted, setMounted] = useState(false);
+      const usCenter: [number, number] = [39.8283, -98.5795]; // Centered on the US
 
-  // ✅ Filter out aircraft with missing coordinates
-  console.log("[Map Debug] Aircraft Data Before Rendering:", aircraft);
+      // Debugging aircraft data when received
+      useEffect(() => {
+        console.log("[Map Debug] Aircraft Data Received:", {
+          total: aircraft.length,
+          sample: aircraft.slice(0, 5),
+        });
+      }, [aircraft]);
 
- 
+      useEffect(() => {
+        setMounted(true);
+        return () => setMounted(false);
+      }, []);
 
-  const validAircraft = aircraft.filter(
-    (plane) => plane.latitude != null && plane.longitude != null
-  );
+      // ✅ Filter only valid aircraft (ensure lat/long exist)
+      const validAircraft = aircraft.filter(ac => ac.latitude !== undefined && ac.longitude !== undefined);
 
-  console.log("[Map Debug] Valid Aircraft:", validAircraft);
-  
-  console.log("[Map Debug] Valid Aircraft for Leaflet:", validAircraft);
-  
-  if (validAircraft.length === 0) {
-    console.error("[Map Debug] No valid aircraft to display.");
-    return <div>No active aircraft found.</div>;
-  }
-  
-  return (
-    <MapContainer 
-      center={usCenter}
-      zoom={4} 
-      style={{ height: '100%', width: '100%' }}
-      minZoom={3}
-      maxBounds={[
-        [24.396308, -125.000000], // Southwest
-        [49.384358, -66.934570]   // Northeast
-      ]}
-    >
-      <TileLayer
-        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-      />
-      
-      {validAircraft.map((plane: Aircraft) => (
-        <Marker
-          key={plane.icao24}
-          position={[plane.latitude, plane.longitude]}
-          icon={createAircraftIcon(plane)}
+      if (!mounted) return null;
+
+      return (
+        <MapContainer
+          center={usCenter}
+          zoom={4}
+          style={{ height: '100%', width: '100%' }}
+          minZoom={3}
+          maxBounds={[
+            [24.396308, -125.000000], // Southwest coordinates
+            [49.384358, -66.934570],  // Northeast coordinates
+          ]}
         >
-          <Popup>
-            <div className="p-2">
-              <h3 className="font-bold">{plane.registration || plane.icao24}</h3>
-              <p>Altitude: {plane.altitude ? Math.round(plane.altitude * 3.28084) + " ft" : "N/A"}</p>
-              <p>Speed: {plane.velocity ? Math.round(plane.velocity * 1.944) + " knots" : "N/A"}</p>
-              <p>Heading: {plane.heading ? Math.round(plane.heading) + "°" : "N/A"}</p>
-              {plane.on_ground && <p className="text-yellow-600">On Ground</p>}
-            </div>
-          </Popup>
-        </Marker>
-      ))}
-    </MapContainer>
-  );
+          <TileLayer
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+          />
+
+          {/* ✅ Ensure aircraft markers are added dynamically */}
+          {validAircraft.map((ac) => (
+            <Marker key={ac.icao24} position={[ac.latitude, ac.longitude]}>
+              <Popup>
+                <strong>ICAO24:</strong> {ac.icao24} <br />
+                <strong>Altitude:</strong> {ac.altitude ? `${ac.altitude} ft` : "Unknown"} <br />
+                <strong>Velocity:</strong> {ac.velocity ? `${ac.velocity} kt` : "Unknown"} <br />
+                <strong>Heading:</strong> {ac.heading ? `${ac.heading}°` : "Unknown"} <br />
+              </Popup>
+            </Marker>
+          ))}
+        </MapContainer>
+      );
+    };
+  }),
+  {
+    ssr: false, // Disable server-side rendering for the map
+    loading: () => (
+      <div className="h-full w-full flex items-center justify-center bg-gray-100">
+        <p className="text-gray-600">Loading map...</p>
+      </div>
+    ),
+  }
+);
+
+// ✅ Main MapComponent wrapper
+const MapComponent: React.FC<MapComponentProps> = ({ aircraft }) => {
+  return <MapWithNoSSR aircraft={aircraft} />;
 };
 
 export default MapComponent;

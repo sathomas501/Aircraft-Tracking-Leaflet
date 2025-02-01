@@ -1,8 +1,9 @@
-/* === Base Layer === */
+/* === Tailwind Base === */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* === Base Layer === */
 @layer base {
   html, body {
     @apply antialiased bg-gray-50 text-gray-900;
@@ -13,9 +14,9 @@
   }
 }
 
-/* === Component Styles === */
+/* === Component Layer === */
 @layer components {
-  /* === Layout & Containers === */
+  /* Layout & Containers */
   .app-container {
     @apply opacity-0 transition-opacity duration-200 min-h-screen;
     &.styles-loaded { @apply opacity-100; }
@@ -26,62 +27,98 @@
     &.aircraft-grid { @apply grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4; }
   }
 
-  /* === Cards & Displays === */
+  /* Cards & Displays */
   .card {
     @apply bg-white rounded-lg shadow transition-shadow duration-200 hover:shadow-md;
     &.aircraft-card { @apply p-4 min-w-[200px] space-y-2; }
   }
 
-  /* === Status Indicators === */
+  /* Status Indicators */
   .status-badge {
     @apply px-2 py-1 rounded-full text-xs font-medium inline-flex items-center gap-1;
     &.active { @apply bg-green-100 text-green-800; }
+    &.grounded { @apply bg-yellow-100 text-yellow-800; }
+    &.tracking { @apply bg-blue-100 text-blue-800; }
   }
 
-  /* === Map Components === */
+  /* Map Components */
   .map-container {
     @apply relative w-full h-[calc(100vh-4rem)] rounded-lg overflow-hidden shadow-md;
   }
 
+  /* Aircraft Markers */
   .aircraft-marker {
     @apply transform-gpu transition-all duration-200;
+    
     &.selected {
       @apply z-10 scale-110 drop-shadow-lg;
       filter: brightness(1.2);
     }
-  }
 
-  /* === Selector Components === */
-  .unified-selector {
-    @apply relative z-[1000];
-    .selector-input {
-      @apply w-full px-4 py-2 border rounded-lg transition-colors duration-200;
+    &.grounded {
+      @apply opacity-75;
+    }
+
+    .aircraft-icon {
+      @apply transition-transform duration-300 ease-in-out;
+      
+      img {
+        @apply w-full h-full transition-all duration-300;
+        transform-origin: center;
+      }
+    }
+
+    &.helicopter .aircraft-icon img {
+      animation: rotate 2s linear infinite;
     }
   }
 
-  /* === Loading States === */
+  /* Selector Components */
+  .unified-selector {
+    @apply relative z-[1000];
+    
+    .selector-input {
+      @apply w-full px-4 py-2 border rounded-lg transition-colors duration-200;
+      @apply focus:border-blue-500 focus:ring-2 focus:ring-blue-200;
+    }
+
+    .selector-dropdown {
+      @apply absolute w-full mt-1 bg-white border rounded-lg shadow-lg;
+      @apply max-h-60 overflow-y-auto z-50;
+    }
+  }
+
+  /* Loading States */
   .loading-spinner {
     @apply animate-spin rounded-full border-4 border-gray-300;
     border-top-color: theme('colors.blue.500');
   }
+
+  .loading-overlay {
+    @apply absolute inset-0 bg-black bg-opacity-50;
+    @apply flex items-center justify-center z-40;
+  }
 }
 
-/* === Utility Patterns === */
+/* === Utility Layer === */
 @layer utilities {
-  .text-shadow-sm { text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1); }
-  .backdrop-blur-md { backdrop-filter: blur(8px); }
+  .text-shadow-sm { 
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1); 
+  }
+  
+  .backdrop-blur-md { 
+    backdrop-filter: blur(8px); 
+  }
 }
 
-/* === Framework Overrides === */
-.leaflet-container {
-  @apply w-full h-full z-10;
-}
 
-.leaflet-control-zoom {
-  @apply border-0 shadow-lg;
-}
-
-.aircraft-marker .aircraft-icon img {
-  @apply transition-all duration-300;
+/* === Animations === */
+@keyframes rotate {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 

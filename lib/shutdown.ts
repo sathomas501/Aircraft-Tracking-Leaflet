@@ -1,6 +1,6 @@
 // lib/shutdown.ts
-import { CleanupService } from './services/CleanupService';  // Fixed casing
-import { getDatabase } from './db/databaseManager';
+import { CleanupService } from './services/CleanupService';
+import { DatabaseManager } from './db/databaseManager';
 
 let isShuttingDown = false;
 
@@ -29,8 +29,7 @@ async function shutdownHandler(signal: string) {
 
         // 3. Close database connections
         console.log('Closing database connections...');
-        const activeDb = await getDatabase();
-        await activeDb.close();
+        await DatabaseManager.getInstance().close();
         console.log('Active database connection closed');
 
         console.log('Shutdown complete');

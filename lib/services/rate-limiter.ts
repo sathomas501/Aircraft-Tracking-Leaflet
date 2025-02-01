@@ -29,14 +29,20 @@ export class PollingRateLimiter {
     constructor(options: RateLimiterOptions) {
         this.requireAuthentication = options.requireAuthentication ?? true;
         
+        // Get the appropriate limits based on authentication status
         const limits = this.requireAuthentication 
             ? OPENSKY_CONSTANTS.AUTHENTICATED 
             : OPENSKY_CONSTANTS.UNAUTHENTICATED;
 
+        // Set rate limits based on authentication status
         this.requestsPer10Min = limits.REQUESTS_PER_10_MIN;
         this.requestsPerDay = limits.REQUESTS_PER_DAY;
-        this.maxBatchSize = options.maxBatchSize || limits.MAX_BATCH_SIZE;
+        this.maxBatchSize = Math.min(
+            options.maxBatchSize || limits.MAX_BATCH_SIZE,
+            limits.MAX_BATCH_SIZE
+        );
         
+        // API-wide settings remain the same regardless of authentication
         this.maxWaitTime = options.maxWaitTime || OPENSKY_CONSTANTS.API.TIMEOUT_MS;
         this.minPollingInterval = options.minPollingInterval || OPENSKY_CONSTANTS.API.MIN_POLLING_INTERVAL;
         this.maxPollingInterval = options.maxPollingInterval || OPENSKY_CONSTANTS.API.MAX_POLLING_INTERVAL;
@@ -52,9 +58,42 @@ export class PollingRateLimiter {
             : OPENSKY_CONSTANTS.UNAUTHENTICATED;
 
         if (this.maxBatchSize > limits.MAX_BATCH_SIZE) {
-            throw new Error(`Batch size (${this.maxBatchSize}) exceeds maximum allowed (${limits.MAX_BATCH_SIZE})`);
+            throw new Error(
+                `Batch size (${this.maxBatchSize}) exceeds ${
+                    this.requireAuthentication ? 'authenticated' : 'unauthenticated'
+                } limit (${limits.MAX_BATCH_SIZE})`
+            );
+        }
+
+        // Additional validation for API's global ICAO query limit
+        if (this.maxBatchSize > OPENSKY_CONSTANTS.AUTHENTICATED.MAX_ICAO_QUERY) {
+            throw new Error(
+                `Batch size (${this.maxBatchSize}) exceeds API's global ICAO query limit (${
+                    OPENSKY_CONSTANTS.AUTHENTICATED.MAX_ICAO_QUERY
+                })`
+            );
         }
     }
+    
+
+/**
+     * Attempts to acquire a rate limit slot
+     * Returns true if successful, false if rate limited
+     */
+public async tryAcquire(): Promise<boolean> {
+    return this.checkRateLimits();
+}
+
+/**
+ * Resets the rate limiter state
+ */
+public reset(): void {
+    this.tenMinuteRequests = [];
+    this.dailyRequests = [];
+    this.lastRequestTime = 0;
+    this.resetPollingInterval();
+    console.log('[RateLimiter] Reset complete');
+}
 
     public async schedule(task: () => Promise<void>): Promise<void> {
         if (!await this.checkRateLimits()) {
@@ -177,4 +216,15 @@ export class PollingRateLimiter {
             );
         }
     }
+}
+
+export interface RateLimiterOptions {
+    requestsPerMinute: number;      // Requests per minute (derived from 10-minute limit)
+    requestsPerDay: number;         // Daily request limit
+    maxWaitTime?: number;          // Maximum time to wait for a rate limit slot
+    minPollingInterval?: number;    // Minimum time between requests
+    maxPollingInterval?: number;    // Maximum time between requests
+    maxBatchSize?: number;         // Maximum ICAOs per request (limited by API.MAX_ICAO_QUERY)
+    retryLimit?: number;           // Number of retry attempts
+    requireAuthentication?: boolean; // Whether to use authenticated limits
 }

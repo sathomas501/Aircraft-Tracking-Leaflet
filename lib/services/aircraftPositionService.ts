@@ -1,7 +1,7 @@
-import { handleError, ErrorType } from "./error-handler";
+import { errorHandler, ErrorType } from "./error-handler";
 import { PollingRateLimiter } from './rate-limiter';
 
-interface Position {
+export interface Position {
     icao24: string;
     latitude: number;
     longitude: number;
@@ -10,7 +10,8 @@ interface Position {
     heading: number;
     on_ground: boolean;
     last_contact: number;  // Timestamp of last update
-}
+    }
+
 
 export class AircraftPositionService {
     private static instance: AircraftPositionService;
@@ -26,9 +27,9 @@ export class AircraftPositionService {
             minPollingInterval: 5000,  // Minimum time between polls (5s)
             maxPollingInterval: 30000  // Maximum polling interval (30s)
         });
-
         this.startCleanupRoutine();
     }
+
 
     public static getInstance(): AircraftPositionService {
         if (!AircraftPositionService.instance) {
@@ -82,10 +83,12 @@ export class AircraftPositionService {
                 await fetchLiveData(missingIcao24s);
             });
         } catch (error) {
-            handleError(error, ErrorType.POLLING);  // ✅ Now this is callable!
+            errorHandler.handleError(ErrorType.POLLING, 'Failed to poll aircraft data', {
+                icao24List: missingIcao24s,
+                error
+            });
         }
     }
-
     /**
      * Removes stale positions from the cache to free memory.
      */
