@@ -14,6 +14,7 @@ interface TrackingState {
         remainingDaily: number;
     };
     aircraftData: Aircraft[];
+    staticData: Map<string, Partial<Aircraft>>; // Add static data cache
 }
 
 // Define type for OpenSky state array
@@ -50,7 +51,8 @@ class ManufacturerTrackingService {
                 remainingRequests: 0,
                 remainingDaily: 0,
             },
-            aircraftData: []
+            aircraftData: [],
+            staticData: new Map() // Initialize static data cache
         };
 
         this.rateLimiter = new PollingRateLimiter({
@@ -75,6 +77,41 @@ class ManufacturerTrackingService {
         this.subscribers.forEach(callback => callback(data));
     }
 
+    private async fetchStaticData(icao24List: { icao24: string }[]): Promise<void> {
+        try {
+            const response = await fetch('/api/aircraft/static-data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    icao24s: icao24List.map(item => item.icao24) 
+                })
+            });
+    
+            if (!response.ok) throw new Error('Failed to fetch static data');
+            
+            const staticData = await response.json();
+            
+            // Store in state
+            this.state.staticData = new Map(
+                staticData.map((aircraft: Aircraft) => [
+                    aircraft.icao24,
+                    {
+                        "N-NUMBER": aircraft["N-NUMBER"],
+                        manufacturer: aircraft.manufacturer,
+                        model: aircraft.model,
+                        NAME: aircraft.NAME,
+                        CITY: aircraft.CITY,
+                        STATE: aircraft.STATE,
+                        TYPE_AIRCRAFT: aircraft.TYPE_AIRCRAFT,
+                        OWNER_TYPE: aircraft.OWNER_TYPE
+                    }
+                ])
+            );
+        } catch (error) {
+            console.error('[ManufacturerTracking] Error fetching static data:', error);
+        }
+    }    
+    
     private async pollData(): Promise<void> {
         if (this.rateLimiter.isRateLimited()) {
             errorHandler.handleError(
@@ -142,9 +179,23 @@ class ManufacturerTrackingService {
             }
 
             const aircraft = data.states
-                .filter((state: OpenSkyState) => state && Array.isArray(state) && state.length >= 12)
-                .map((state: OpenSkyState) => ({
-                    icao24: state[0],
+            .filter((state: OpenSkyState) => state && Array.isArray(state) && state.length >= 12)
+            .map((state: OpenSkyState) => {
+                const icao24 = state[0];
+                const staticInfo = this.state.staticData.get(icao24) || {
+                    TYPE_AIRCRAFT: '3', // Default to jet for Learjet
+                    OWNER_TYPE: '2',    // Default to corporate
+                    manufacturer: 'LEARJET INC',
+                    model: 'Unknown',
+                    "N-NUMBER": "",
+                    NAME: "",
+                    CITY: "",
+                    STATE: ""
+                };
+
+                return {
+                    ...staticInfo,
+                    icao24,
                     callsign: state[1],
                     originCountry: state[2],
                     longitude: state[5],
@@ -154,7 +205,8 @@ class ManufacturerTrackingService {
                     heading: state[10],
                     verticalRate: state[11],
                     timestamp: state[3]
-                }));
+                };
+            });
 
             this.notifySubscribers({ aircraft });
             this.rateLimiter.decreasePollingInterval();
@@ -164,6 +216,9 @@ class ManufacturerTrackingService {
         }
     }
 
+
+
+    
     private handlePollingError(error: unknown): void {
         console.error('[ManufacturerTracking] Polling error:', error);
         this.rateLimiter.increasePollingInterval();
@@ -208,15 +263,18 @@ class ManufacturerTrackingService {
             );
             throw new Error('Invalid ICAO24 list');
         }
-
+    
         console.log('[ManufacturerTracking] Starting polling with:', {
             icao24Count: icao24List.length,
             sample: icao24List.slice(0, 5)
         });
-
+    
         this.state.icao24List = icao24List;
+        
+        // Fetch static data before starting polling
+        await this.fetchStaticData(icao24List);
+        
         this.state.isPolling = true;
-
         await this.pollData();
         this.schedulePoll();
     }

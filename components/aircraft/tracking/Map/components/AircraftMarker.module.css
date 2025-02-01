@@ -1,0 +1,43 @@
+.custom-aircraft-marker {
+  background: none !important;
+  border: none;
+}
+
+.custom-aircraft-marker div {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.custom-aircraft-marker img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  transform-origin: center;
+  filter: drop-shadow(0 0 1px rgba(0,0,0,0.5));
+}
+
+/* Make tooltips more readable */
+:global(.aircraft-tooltip) {
+  background: rgba(255, 255, 255, 0.95) !important;
+  border: 1px solid rgba(0,0,0,0.1) !important;
+  border-radius: 4px !important;
+  padding: 8px !important;
+  font-size: 12px !important;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;
+}
+
+/* Remove default marker shadows */
+:global(.leaflet-marker-shadow) {
+  display: none;
+}
+
+/* Style popup content */
+:global(.leaflet-popup-content) {
+  margin: 13px 19px;
+  line-height: 1.4;
+}
+
+:global(.leaflet-popup-content p) {
+  margin: 4px 0;
+}
