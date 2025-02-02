@@ -56,3 +56,8 @@ const nextConfig = {
   });
   
   module.exports = withBundleAnalyzer(nextConfig);
+
+  module.exports = {
+    productionBrowserSourceMaps: false, // Disable source maps in production
+  };
+  

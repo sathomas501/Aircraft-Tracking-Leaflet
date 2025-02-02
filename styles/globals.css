@@ -46,31 +46,63 @@
     @apply relative w-full h-[calc(100vh-4rem)] rounded-lg overflow-hidden shadow-md;
   }
 
-  /* Aircraft Markers */
+  /* Leaflet Aircraft Markers */
+  .custom-aircraft-marker {
+    background: none;
+    border: none;
+  }
+
   .aircraft-marker {
     @apply transform-gpu transition-all duration-200;
     
     &.selected {
-      @apply z-10 scale-110 drop-shadow-lg;
+      @apply z-10 scale-110;
       filter: brightness(1.2);
     }
 
     &.grounded {
       @apply opacity-75;
     }
+  }
 
-    .aircraft-icon {
-      @apply transition-transform duration-300 ease-in-out;
-      
-      img {
-        @apply w-full h-full transition-all duration-300;
-        transform-origin: center;
-      }
-    }
+  /* Leaflet Tooltips */
+  .leaflet-tooltip {
+    background-color: white !important;
+    border: 1px solid rgba(0, 0, 0, 0.2) !important;
+    border-radius: 4px !important;
+    padding: 8px !important;
+    font-size: 12px !important;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
+    white-space: nowrap !important;
+    z-index: 1000 !important;
+  }
+  
+  .leaflet-tooltip-top:before {
+    border-top-color: white !important;
+  }
+  
+  /* Popup styles */
+  .leaflet-popup-content-wrapper {
+    border-radius: 8px;
+    padding: 12px;
+  }
+  
+  .leaflet-popup-content {
+    margin: 0;
+    min-width: 200px;
+  }
 
-    &.helicopter .aircraft-icon img {
-      animation: rotate 2s linear infinite;
-    }
+  .leaflet-popup-close-button {
+    padding: 4px !important;
+  }
+
+  /* Aircraft Type-Specific Styles */
+  .aircraft-marker[data-owner="5"] {
+    filter: drop-shadow(0 0 4px rgba(255, 0, 0, 0.5));
+  }
+
+  .aircraft-marker[data-type="6"] {
+    animation: rotate 2s linear infinite;
   }
 
   /* Selector Components */
@@ -111,14 +143,29 @@
   }
 }
 
-
 /* === Animations === */
 @keyframes rotate {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
+@keyframes pulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+  100% { transform: scale(1); }
+}
+
+/* Trail styles */
+.aircraft-trail {
+  stroke-dasharray: 5, 5;
+  animation: dashdraw 0.5s linear infinite;
+}
+
+@keyframes dashdraw {
+  0% {
+    stroke-dashoffset: 10;
+  }
+  100% {
+    stroke-dashoffset: 0;
+  }
+}
