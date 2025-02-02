@@ -36,21 +36,25 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
         await dbManager.initializeDatabase();
 
         // Get ICAO24s from static database
-        const queryResult: IcaoQueryResult[] = await dbManager.executeQuery<IcaoQueryResult>(
-            `SELECT DISTINCT icao24 
-            FROM aircraft
-            WHERE manufacturer = ?
-              ${model ? "AND model = ?" : ""}
-              AND icao24 IS NOT NULL
-              AND icao24 != ''
-            LIMIT 2000;`,
-            model ? [manufacturer, model] : [manufacturer]
-        );
+        const queryParams = model ? [manufacturer, model] : [manufacturer];
+
+const queryResult: IcaoQueryResult[] = await dbManager.executeQuery<IcaoQueryResult>(
+    `SELECT DISTINCT icao24 
+     FROM aircraft
+     WHERE manufacturer = ?
+       ${model ? "AND model = ?" : ""}
+       AND icao24 IS NOT NULL
+       AND icao24 != ''
+     LIMIT 2000;`,
+    queryParams
+);
 
         if (!queryResult || queryResult.length === 0) {
-            return res.status(404).json({ error: "No ICAO24s found for this manufacturer" });
+            return res.status(404).json({
+                error: `No ICAO24s found for ${manufacturer}${model ? ` and model ${model}` : ""}`
+            });
         }
-
+        
         const icao24s = queryResult.map(r => r.icao24);
         console.log(`[API] Retrieved ${icao24s.length} ICAO24s for ${manufacturer}`);
 

@@ -1,5 +1,6 @@
 import { errorHandler, ErrorType } from "./error-handler";
 import { PollingRateLimiter } from './rate-limiter';
+import { extrapolatePosition } from './extrapolation';
 
 export interface Position {
     icao24: string;
@@ -9,14 +10,15 @@ export interface Position {
     velocity: number;
     heading: number;
     on_ground: boolean;
-    last_contact: number;  // Timestamp of last update
-    }
-
+    last_contact: number;
+}
 
 export class AircraftPositionService {
     private static instance: AircraftPositionService;
     private positions: Map<string, Position> = new Map();
-    private positionExpiryTime = 5 * 60 * 1000; // 5 minutes before data is considered stale
+    private positionHistory: Map<string, Position[]> = new Map();
+    private positionExpiryTime = 5 * 60 * 1000; // 5 minutes
+    private maxHistoryLength = 10; // Keep last 10 positions for trails
     private cleanupInterval: NodeJS.Timeout | null = null;
     private rateLimiter: PollingRateLimiter;
 
@@ -24,12 +26,11 @@ export class AircraftPositionService {
         this.rateLimiter = new PollingRateLimiter({
             requestsPerMinute: 60,
             requestsPerDay: 1000,
-            minPollingInterval: 5000,  // Minimum time between polls (5s)
-            maxPollingInterval: 30000  // Maximum polling interval (30s)
+            minPollingInterval: 5000,
+            maxPollingInterval: 30000
         });
         this.startCleanupRoutine();
     }
-
 
     public static getInstance(): AircraftPositionService {
         if (!AircraftPositionService.instance) {
@@ -38,9 +39,31 @@ export class AircraftPositionService {
         return AircraftPositionService.instance;
     }
 
-    /**
-     * Checks if a position exists in the cache and is still fresh.
-     */
+    private shouldUpdatePosition(currentPos: Position, newPos: Position): boolean {
+        const minUpdateDistance = 10; // meters
+        const minUpdateTime = 1000; // milliseconds
+
+        // Time-based update
+        if (newPos.last_contact - currentPos.last_contact > minUpdateTime) {
+            return true;
+        }
+
+        // Distance-based update
+        const R = 6371e3; // Earth's radius in meters
+        const φ1 = currentPos.latitude * Math.PI/180;
+        const φ2 = newPos.latitude * Math.PI/180;
+        const Δφ = (newPos.latitude - currentPos.latitude) * Math.PI/180;
+        const Δλ = (newPos.longitude - currentPos.longitude) * Math.PI/180;
+
+        const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+                Math.cos(φ1) * Math.cos(φ2) *
+                Math.sin(Δλ/2) * Math.sin(Δλ/2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        const distance = R * c;
+
+        return distance > minUpdateDistance;
+    }
+
     public hasPosition(icao24: string): boolean {
         const position = this.positions.get(icao24);
         if (!position) return false;
@@ -49,28 +72,45 @@ export class AircraftPositionService {
         return now - position.last_contact < this.positionExpiryTime;
     }
 
-    /**
-     * Retrieves a cached position if available.
-     */
     public getPosition(icao24: string): Position | null {
         return this.hasPosition(icao24) ? this.positions.get(icao24) || null : null;
     }
 
-    /**
-     * Updates or adds a position in the cache.
-     */
+    public getPositionHistory(icao24: string): Position[] {
+        return this.positionHistory.get(icao24) || [];
+    }
+
     public updatePosition(position: Position): void {
-        this.positions.set(position.icao24, position);
+        const currentPos = this.positions.get(position.icao24);
+        const now = Date.now();
+
+        if (currentPos) {
+            // If we have a current position, check if we should update
+            if (this.shouldUpdatePosition(currentPos, position)) {
+                this.positions.set(position.icao24, position);
+
+                // Update history
+                const history = this.positionHistory.get(position.icao24) || [];
+                this.positionHistory.set(position.icao24, [...history, position].slice(-this.maxHistoryLength));
+            } else {
+                // Use extrapolation
+                const extrapolated = extrapolatePosition(currentPos, now);
+                if (extrapolated) {
+                    this.positions.set(position.icao24, extrapolated);
+                }
+            }
+        } else {
+            // First position update for this aircraft
+            this.positions.set(position.icao24, position);
+            this.positionHistory.set(position.icao24, [position]);
+        }
+
         console.log(`[AircraftPositionService] Updated position for ${position.icao24}`);
     }
 
-    /**
-     * Handles polling for live aircraft data while respecting rate limits.
-     */
     public async pollAircraftData(fetchLiveData: (icao24s: string[]) => Promise<void>, icao24List: string[]): Promise<void> {
         if (!icao24List.length) return;
 
-        // Filter out aircraft that already have a fresh position
         const missingIcao24s = icao24List.filter(icao24 => !this.hasPosition(icao24));
         if (!missingIcao24s.length) {
             console.log('[AircraftPositionService] All requested aircraft positions are fresh.');
@@ -89,9 +129,7 @@ export class AircraftPositionService {
             });
         }
     }
-    /**
-     * Removes stale positions from the cache to free memory.
-     */
+
     private cleanupPositions(): void {
         const now = Date.now();
         this.positions.forEach((position, icao24) => {
@@ -102,9 +140,6 @@ export class AircraftPositionService {
         });
     }
 
-    /**
-     * Starts a cleanup routine to remove stale positions periodically.
-     */
     private startCleanupRoutine(): void {
         if (!this.cleanupInterval) {
             this.cleanupInterval = setInterval(() => {
@@ -113,9 +148,6 @@ export class AircraftPositionService {
         }
     }
 
-    /**
-     * Stops the cleanup routine when the service is no longer needed.
-     */
     public stopCleanupRoutine(): void {
         if (this.cleanupInterval) {
             clearInterval(this.cleanupInterval);
