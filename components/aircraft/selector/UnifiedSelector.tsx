@@ -1,12 +1,6 @@
-// components/aircraft/selector/UnifiedSelector.tsx
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { ChevronDown, X, Search, Plane } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Search, Plane, X } from 'lucide-react';
 import type { SelectOption } from '@/types/base';
-
-
-interface AircraftModel {
-  model: string;
-}
 
 interface UnifiedSelectorProps {
   selectedType: string;
@@ -14,15 +8,19 @@ interface UnifiedSelectorProps {
   selectedModel: string;
   setSelectedModel: (model: string) => void;
   modelCounts: Map<string, number>;
-  totalActive: number; // <-- Ensure this is passed in `MapWrapper.tsx`
+  totalActive: number;
   onManufacturerSelect: (manufacturer: string) => void;
   onModelSelect: (model: string) => void;
   onAircraftUpdate: (updateData: any) => void;
   onReset: () => void;
 }
 
+interface Model {
+  model: string;
+  count?: number;
+}
+
 const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
-  selectedType,
   selectedManufacturer,
   selectedModel,
   setSelectedModel,
@@ -33,332 +31,266 @@ const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
   onAircraftUpdate,
   onReset
 }) => {
-
-  const [manufacturers, setManufacturers] = useState<SelectOption[]>([]);
-  const [models, setModels] = useState<SelectOption[]>([]);
-  const [loading, setLoading] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null);
+  const [isVisible, setIsVisible] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [isManufacturerOpen, setIsManufacturerOpen] = useState(false);
-  const [searchMode, setSearchMode] = useState<'manufacturer' | 'nNumber'>('manufacturer');
   const [nNumber, setNNumber] = useState('');
-const [activeCount, setActiveCount] = useState<number>(0); // ✅ Add this line
+  const [loading, setLoading] = useState(false);
+  const [manufacturers, setManufacturers] = useState<SelectOption[]>([]);
+  const [models, setModels] = useState<Model[]>([]);
+  const [showDropdown, setShowDropdown] = useState(true);
+  const [activeCount, setActiveCount] = useState(totalActive);
 
 
-  const handleReset = () => {
-    setSearchTerm('');
-    setSelectedModel('');
-    setIsManufacturerOpen(false);
-    setError(null);
-    onReset();
-  };
-
-  const getDisplayText = () => {
-    if (!selectedManufacturer) {
-      return 'Search manufacturer...';
-    }
-    if (selectedModel) {
-      const modelCount = modelCounts.get(selectedModel) || 0;
-      return `${selectedManufacturer} - ${selectedModel} (${modelCount} active)`;
-    }
-    return `${selectedManufacturer} (${totalActive} active)`;
-  };
-  
   // Filter manufacturers
   const filteredManufacturers = useMemo(() => {
-    if (!Array.isArray(manufacturers)) return [];  // ✅ Prevents undefined errors
-    if (!searchTerm) {
-        return manufacturers
-            .filter(manufacturer => manufacturer?.label)  // ✅ Ensures all items have a label
-            .sort((a, b) => a.label.localeCompare(b.label));  // ✅ Prevents TypeError
-    }
-
-    const lowerSearch = searchTerm.toLowerCase();  // ✅ Avoid calling `.toLowerCase()` multiple times
-
-    return manufacturers
-        .filter(manufacturer => manufacturer?.label && manufacturer.label.toLowerCase().includes(lowerSearch))
-        .sort((a, b) => a.label.localeCompare(b.label));
-}, [manufacturers, searchTerm]);  // ✅ Ensures updates only when necessary
-
+    console.log("Filtering manufacturers:", manufacturers.length);
+    if (!searchTerm) return manufacturers;
+    const search = searchTerm.toLowerCase().trim();
+    return manufacturers.filter(m => m.label.toLowerCase().includes(search));
+  }, [manufacturers, searchTerm]);
 
   // Fetch manufacturers
-const fetchManufacturers = useCallback(async () => {
-  try {
-    setLoading(true);
-    setError(null);
-    
-    const response = await fetch('/api/manufacturers');
-    
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
+  useEffect(() => {
+    const fetchManufacturers = async () => {
+      try {
+        setLoading(true);
+        const response = await fetch('/api/manufacturers');
+        const data = await response.json();
+        if (data.manufacturers) {
+          setManufacturers(data.manufacturers);
+        }
+      } catch (err) {
+        console.error('Error fetching manufacturers:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
 
-    const data = await response.json();
-    
-    if (!data.manufacturers) {
-      throw new Error('No manufacturers data received');
-    }
-
-    setManufacturers(data.manufacturers);
-  } catch (err) {
-    console.error('Error fetching manufacturers:', err);
-    setError('Failed to load manufacturers. Please try again.');
-  } finally {
-    setLoading(false);
-  }
-}, []);
-
-useEffect(() => {
-  let isMounted = true;
-
-  fetchManufacturers().then(() => {
-      if (!isMounted) return; // ✅ Prevents state updates on unmounted components
-  });
-
-  return () => {
-      isMounted = false; // ✅ Cleanup function
-  };
-}, []);
-
+    fetchManufacturers();
+  }, []);
 
   // Fetch models when manufacturer changes
   useEffect(() => {
     const fetchModels = async () => {
-      if (!selectedManufacturer) {
-        setModels([]);
-        return;
-      }
-  
+      if (!selectedManufacturer) return;
+      
       try {
+        setLoading(true);
         const response = await fetch(`/api/aircraft/models?manufacturer=${encodeURIComponent(selectedManufacturer)}`);
-        
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-  
         const data = await response.json();
-        console.log('Model Data:', data.data); // ✅ Verify structure
-
-        const mappedModels = (data.data || []).map((item: AircraftModel) => ({
-          label: item.model, // ✅ Use `model` as the label
-          value: item.model  // ✅ Use `model` as the value
-        }));
-  
-        setModels(mappedModels);
+        
+        if (data.data) {
+          const mappedModels = data.data.map((item: any) => ({
+            model: item.model,
+            count: modelCounts.get(item.model) || 0
+          }));
+          setModels(mappedModels);
+        }
       } catch (err) {
         console.error('Error fetching models:', err);
-        setError('Failed to load models');
+      } finally {
+        setLoading(false);
       }
     };
-  
-    fetchModels();
-  }, [selectedManufacturer]);
 
-  const handleModelSelect = async (selectedModel: string) => {
+    fetchModels();
+  }, [selectedManufacturer, modelCounts]);
+
+  const handleClose = () => {
+    setIsVisible(false);
+  };
+
+  const handleManufacturerSelect = async (manufacturer: string) => {
     try {
-      setSelectedModel(selectedModel);
       setLoading(true);
-      setError(null);
-  
       const response = await fetch('/api/aircraft/track-manufacturer', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          manufacturer: selectedManufacturer,
-          model: selectedModel || null,
-        }),
+        body: JSON.stringify({ manufacturer }),
       });
-  
-      const data = await response.json();
-      const filteredAircraft = data.liveAircraft || data.aircraft || [];
-  
-      setActiveCount(filteredAircraft.length);  // ✅ Restore active count
-      onAircraftUpdate(filteredAircraft);      // ✅ Restore aircraft update
-  
-    } catch (err) {
-      console.error("Error filtering aircraft:", err);
-      setError('Failed to filter aircraft');
-    } finally {
-      setLoading(false);
-    }
-  };
-  
-  
-  // Handle N-Number search
-  const handleNNumberSearch = async () => {
-    if (!nNumber) return;
 
-    try {
-      setLoading(true);
-      setError(null);
+      const data = await response.json();
       
-      const response = await fetch(`/api/aircraft/n-number/${encodeURIComponent(nNumber)}`);
-      
-      if (!response.ok) {
-        throw new Error(`Aircraft not found`);
+      if (data.liveAircraft) {
+        const liveCount = data.liveAircraft.length;
+        setActiveCount(liveCount);
+        onAircraftUpdate(data.liveAircraft);
       }
 
-      const data = await response.json();
-      onAircraftUpdate([data]); // Update with the found aircraft
+      onManufacturerSelect(manufacturer);
+      setSearchTerm(manufacturer);
+      setShowDropdown(false);
+      
+      // Reset model selection
+      setSelectedModel('');
     } catch (err) {
-      console.error('Error searching N-Number:', err);
-      setError('Aircraft not found or invalid N-Number');
+      console.error('Error selecting manufacturer:', err);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleManufacturerSelect = async (selectedMfr: string) => {
+  const handleModelSelect = async (model: string) => {
     try {
-        setLoading(true);
-        setError(null);
-
-        await onManufacturerSelect(selectedMfr);
-        setSearchTerm(selectedMfr);
-        setIsManufacturerOpen(false);
-
-        console.log("[Frontend] Sending request to track manufacturer:", selectedMfr);
-
+      setLoading(true);
+      // If no model selected (All Models), fetch all manufacturer aircraft
+      if (!model) {
         const response = await fetch('/api/aircraft/track-manufacturer', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ manufacturer: selectedMfr, model: selectedModel || null }),
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            manufacturer: selectedManufacturer
+          }),
         });
-
-        console.log("[Frontend] API Response Status:", response.status);
-        const data = await response.json().catch(() => null);
-        console.log("[Frontend] API Response Data:", data);
-
-        if (!response.ok) {
-            setError(data?.message || "Failed to track manufacturer");
-            return;
+  
+        const data = await response.json();
+        if (data.liveAircraft) {
+          setActiveCount(data.liveAircraft.length);
+          onAircraftUpdate(data.liveAircraft);
         }
-
-        // ✅ Extract aircraft data correctly
-        const aircraftList = data.liveAircraft || data.aircraft || [];
-
-        if (!Array.isArray(aircraftList)) {
-            console.error("[Frontend] Invalid aircraft data format:", aircraftList);
-            setError("Invalid data received from API");
-            return;
+      } else {
+        // If model selected, filter for only that model's aircraft
+        const response = await fetch('/api/aircraft/track-manufacturer', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            manufacturer: selectedManufacturer,
+            model: model
+          }),
+        });
+  
+        const data = await response.json();
+        
+        if (data.liveAircraft) {
+          // Filter aircraft to only show selected model
+          const filteredAircraft = data.liveAircraft.filter(
+            (aircraft: any) => aircraft.model === model
+          );
+          setActiveCount(filteredAircraft.length);
+          onAircraftUpdate(filteredAircraft); // Send only filtered aircraft to MapWrapper
         }
-
-        console.log("[Frontend] Mapping aircraft positions:", aircraftList);
-        onAircraftUpdate(aircraftList); // ✅ Ensure data is passed correctly
-
-    } catch (error) {
-        console.error("[Frontend] Error tracking manufacturer:", error);
-        setError(error instanceof Error ? error.message : "An unknown error occurred");
+      }
+  
+      onModelSelect(model);
+      setSelectedModel(model);
+    } catch (err) {
+      console.error('Error selecting model:', err);
     } finally {
-        setLoading(false);
+      setLoading(false);
     }
-};
+  };
+
+  if (!isVisible) {
+    return (
+      <button 
+        onClick={() => setIsVisible(true)}
+        className="absolute top-4 left-4 z-[2000] bg-white rounded-lg shadow-lg px-4 py-2 text-gray-700"
+      >
+        Select Aircraft
+      </button>
+    );
+  }
 
   return (
-    <div className="bg-white rounded-lg shadow-lg p-3 max-w-md">
-      <div className="flex justify-between items-center mb-3">
-        <h2 className="text-base font-semibold text-white bg-blue-500 px-3 py-1 rounded-md">
-          {totalActive > 0 ? `Active Aircraft (${totalActive})` : 'Aircraft Selector'}
-        </h2>
-        <div className="flex space-x-2">
+    <div className="absolute top-4 left-4 z-[2000] bg-white rounded-lg shadow-lg w-[350px]">
+      <div className="p-4">
+        {/* Header */}
+        <div className="flex justify-between items-center mb-2">
+          <h2 className="text-gray-700 text-lg">Select Aircraft</h2>
           <button 
-            onClick={handleReset}
-            className="bg-blue-500 hover:bg-blue-600 text-white rounded-md px-3 py-1 text-sm"
+            onClick={handleClose}
+            className="text-gray-400 hover:text-gray-600 p-1"
           >
-            Reset
-          </button>
-          <button 
-            onClick={() => setIsManufacturerOpen(false)}
-            className="bg-blue-500 hover:bg-blue-600 text-white p-1 rounded-full"
-          >
-            <X size={16} />
+            <X size={20} />
           </button>
         </div>
-      </div>
-   
-      <div className="flex space-x-2 mb-3">
-        <div className="relative flex-1">
-          <input
-            type="text"
-            value={searchTerm}
-            onChange={(e) => {
-              setSearchTerm(e.target.value);
-              setIsManufacturerOpen(true);
-            }}
-            onFocus={() => setIsManufacturerOpen(true)}
-            placeholder="Search manufacturer..."
-            className="w-full py-1.5 px-7 text-white bg-blue-500 placeholder-blue-200 text-sm border border-blue-600 rounded-md"
-          />
-          <Search className="absolute left-2 top-2 text-blue-200" size={14} />
-        </div>
-        <div className="relative">
-          <input
-            type="text"
-            value={nNumber}
-            onChange={(e) => setNNumber(e.target.value.toUpperCase())}
-            placeholder="N-Number"
-            className="w-24 py-1.5 px-7 text-white bg-blue-500 placeholder-blue-200 text-sm border border-blue-600 rounded-md"
-            maxLength={6}
-          />
-          <Plane className="absolute left-2 top-2 text-blue-200" size={14} />
-        </div>
-      </div>
-   
-      {isManufacturerOpen && filteredManufacturers.length > 0 && (
-        <div className="absolute z-10 w-full mt-1 bg-white border rounded-md shadow-lg max-h-48 overflow-auto">
-          {filteredManufacturers.map((manufacturer) => (
-            <button
-              key={manufacturer.value}
-              onClick={() => handleManufacturerSelect(manufacturer.value)}
-              className="w-full px-3 py-1.5 text-left hover:bg-blue-50 text-sm"
-            >
-              <div className="flex justify-between items-center">
-                <span>{manufacturer.label}</span>
-                <span className="text-sm text-gray-500">
-                  {manufacturer.count?.toLocaleString()} total
-                </span>
-              </div>
-            </button>
-          ))}
-        </div>
-      )}
-   
-      {selectedManufacturer && !loading && (
-        <div className="space-y-2">
-          <div className="relative">
-          <select
-  value={selectedModel}
-  onChange={(e) => handleModelSelect(e.target.value)}  // ✅ Trigger the function on model selection
-  className="w-full py-1.5 px-2 text-white bg-blue-500 text-sm border border-blue-600 rounded-md appearance-none"
->
-  <option value="">All Models ({totalActive} live)</option>
-  {models.map((model, index) => (
-    <option key={model.value || index} value={model.value}>
-      {model.label} ({modelCounts.get(model.value) || 0} live)
-    </option>
-  ))}
-</select>
 
-            <ChevronDown className="absolute right-2 top-2 text-blue-200" size={14} />
+        {/* Active Aircraft Count */}
+        <div className="text-blue-600 mb-4">
+          Active Aircraft: {activeCount}
+        </div>
+
+        {/* Search */}
+        <div className="flex gap-2 mb-4">
+          <div className="relative flex-1">
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setShowDropdown(true);
+              }}
+              onClick={() => setShowDropdown(true)}
+              placeholder="Search manufacturer..."
+              className="w-full pl-8 pr-3 py-2 bg-gray-50 border border-gray-200 rounded-lg"
+            />
+            <Search className="absolute left-2 top-2.5 text-gray-400" size={16} />
           </div>
-   
-          <div className="text-sm bg-blue-500 text-white p-2 rounded-md">
-            <div>Selected: {selectedManufacturer}</div>
-            {selectedModel && <div>Model: {selectedModel}</div>}
-            <div>Live Aircraft: {totalActive}</div>
+          <div className="relative">
+            <input
+              type="text"
+              value={nNumber}
+              onChange={(e) => setNNumber(e.target.value.toUpperCase())}
+              placeholder="N#"
+              className="w-20 pl-8 pr-2 py-2 bg-gray-50 border border-gray-200 rounded-lg"
+            />
+            <Plane className="absolute left-2 top-2.5 text-gray-400" size={16} />
           </div>
         </div>
-      )}
-   
-      {loading && (
-        <div className="text-sm text-blue-500 py-2">Loading...</div>
-      )}
-      
-      {error && (
-        <div className="text-sm text-red-500 py-2 bg-red-50 px-3 rounded-md">
-          {error}
-        </div>
-      )}
+
+        {/* Selected Info with Model Selection */}
+        {selectedManufacturer && (
+          <div className="bg-blue-50 rounded-lg p-3">
+            <div className="text-blue-600 font-medium">
+              {selectedManufacturer}
+            </div>
+            <div className="text-blue-500 text-sm mb-2">
+              Active: {activeCount}
+            </div>
+            
+            <select
+              value={selectedModel}
+              onChange={(e) => handleModelSelect(e.target.value)}
+              className="w-full p-2 border border-blue-200 rounded bg-white"
+            >
+              <option value="">All Models ({activeCount})</option>
+              {models.map((model) => (
+                <option key={model.model} value={model.model}>
+                  {model.model} ({model.count})
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {/* Manufacturer Dropdown */}
+        {showDropdown && (
+          <div className="border border-gray-200 rounded-lg max-h-[200px] overflow-y-auto">
+            {loading ? (
+              <div className="p-2 text-center text-gray-500">Loading...</div>
+            ) : manufacturers.length > 0 ? (
+              manufacturers
+                .filter(m => !searchTerm || m.label.toLowerCase().includes(searchTerm.toLowerCase()))
+                .map((manufacturer) => (
+                  <button
+                    key={manufacturer.value}
+                    onClick={() => handleManufacturerSelect(manufacturer.value)}
+                    className="w-full px-4 py-2 text-left hover:bg-blue-50 flex justify-between items-center border-b border-gray-100 last:border-0"
+                  >
+                    <span>{manufacturer.label}</span>
+                    <span className="text-gray-500">
+                      {manufacturer.count?.toLocaleString()}
+                    </span>
+                  </button>
+                ))
+            ) : (
+              <div className="p-2 text-center text-gray-500">
+                No manufacturers found
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 };
