@@ -7,29 +7,35 @@ interface MapControlsProps {
   onFitBounds?: () => void;
   selectedAircraftPosition?: LatLngExpression;
   className?: string;
+  defaultCenter?: LatLngExpression;
+  defaultZoom?: number;
 }
 
 export const MapControls: React.FC<MapControlsProps> = ({ 
   onFitBounds, 
   selectedAircraftPosition,
-  className
+  className = "",
+  defaultCenter = [51.505, -0.09],  // ✅ Default center
+  defaultZoom = 1                  // ✅ Default zoom
 }) => {
   const map = useMap();
 
   const handleResetView = () => {
-    map.setView([51.505, -0.09], 13);
+    console.log('[MapControl] Reset View Triggered');
+    map.setView(defaultCenter, defaultZoom);
   };
-
+  
   const handleFocusSelected = () => {
+    console.log('[MapControl] Focus Selected Triggered');
     if (selectedAircraftPosition) {
-      map.setView(selectedAircraftPosition, 10);
+      map.flyTo(selectedAircraftPosition, 10, { animate: true });
     } else if (onFitBounds) {
       onFitBounds();
     }
-  };
+  };  
 
   return (
-    <div className="absolute top-4 left-4 z-[1000]">
+    <div className={`absolute top-4 left-4 z-[1000] ${className}`}>
       <div className="flex flex-col gap-2 bg-white rounded-lg shadow-lg p-2">
         <button
           onClick={handleResetView}

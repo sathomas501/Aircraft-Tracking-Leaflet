@@ -43,9 +43,20 @@
 
   /* Map Components */
   .map-container {
-    @apply relative w-full h-[calc(100vh-4rem)] rounded-lg overflow-hidden shadow-md;
+    @apply relative w-full h-[calc(100vh-4rem)] rounded-lg shadow-md;
   }
-
+  
+  .leaflet-container {
+    height: 100% !important;
+    width: 100% !important;
+    touch-action: auto !important;
+    cursor: grab;
+  }
+  
+  .leaflet-container:active {
+    cursor: grabbing;
+  }
+  
   /* Leaflet Aircraft Markers */
   .custom-aircraft-marker {
     background: none;

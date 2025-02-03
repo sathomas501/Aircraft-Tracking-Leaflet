@@ -12,41 +12,49 @@ const AircraftTrail: React.FC<AircraftTrailProps> = ({ icao24 }) => {
   const positionService = AircraftPositionService.getInstance();
 
   useEffect(() => {
-    const updateTrail = () => {
-      const currentPos = positionService.getPosition(icao24);
-      if (currentPos) {
-        const newPosition: LatLngTuple = [currentPos.latitude, currentPos.longitude];
-        setPositions(prev => {
-          const newTrail = [...prev, newPosition];
-          return newTrail.slice(-10) as LatLngTuple[]; // Keep last 10 positions
-        });
+    let isMounted = true;
+
+    const updateTrail = async () => {
+      try {
+        const currentPos = positionService.getPosition(icao24);
+        if (isMounted && currentPos) {
+          const newPosition: LatLngTuple = [currentPos.latitude, currentPos.longitude];
+
+          setPositions((prev) => {
+            if (
+              prev.length === 0 ||
+              prev[prev.length - 1][0] !== newPosition[0] ||
+              prev[prev.length - 1][1] !== newPosition[1]
+            ) {
+              return [...prev, newPosition].slice(-10); // Keep last 10 positions
+            }
+            return prev;
+          });
+        }
+      } catch (error) {
+        console.error('Error fetching aircraft position:', error);
       }
     };
 
-    // Update trail immediately
     updateTrail();
-
-    // Set up interval to update trail
     const intervalId = setInterval(updateTrail, 5000);
 
-    return () => clearInterval(intervalId);
+    return () => {
+      isMounted = false;
+      clearInterval(intervalId);
+    };
   }, [icao24]);
 
   if (positions.length < 2) return null;
 
   const pathOptions: PathOptions = {
     color: '#3b82f6',
-    weight: 2,
-    opacity: 0.6,
-    dashArray: '5,5'
+    weight: 3,
+    opacity: 0.7,
+    dashArray: '5,5',
   };
 
-  return (
-    <Polyline 
-      positions={positions}
-      pathOptions={pathOptions}
-    />
-  );
+  return <Polyline positions={positions} pathOptions={pathOptions} />;
 };
 
 export default AircraftTrail;

@@ -51,7 +51,7 @@ const getIcao24s = async (manufacturer: string, model?: string): Promise<IcaoQue
     return await dbManager.executeQuery<IcaoQueryResult>(query, params);
 };
 
-// ✅ Merge Static & Live Data
+
 // ✅ Merge Static & Live Data
 const mergeStaticAndLiveData = (liveData: Aircraft[], staticData: Aircraft[]): Aircraft[] => {
     const staticDataMap: Map<string, Aircraft> = new Map(

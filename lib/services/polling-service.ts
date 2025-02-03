@@ -32,6 +32,7 @@ export interface PollingConfig {
 export type PollingHandler = (data: any) => void;
 export type ErrorHandler = (error: Error) => void;
 
+
 export class PollingService {
     private readonly config: Required<PollingConfig>;
     private rateLimiter: PollingRateLimiter;
@@ -41,6 +42,7 @@ export class PollingService {
     private activeBatches: Set<string> = new Set();
     private pollingIntervalId: NodeJS.Timeout | null = null;
     private isPolling = false;
+    
 
     constructor(config: PollingConfig) {
         this.config = {
@@ -86,47 +88,36 @@ export class PollingService {
         if (!batch || batch.length === 0) {
             throw new Error('Batch cannot be empty');
         }
-
+    
         if (batch.length > OPENSKY_LIMITS.AUTHENTICATED.MAX_BATCH_SIZE) {
             throw new Error(`Batch size exceeds OpenSky limit of ${OPENSKY_LIMITS.AUTHENTICATED.MAX_BATCH_SIZE}`);
         }
-
+    
         try {
             if (this.rateLimiter.isRateLimited()) {
                 const nextSlot = await this.rateLimiter.getNextAvailableSlot();
                 throw new Error(`Rate limit reached. Next available slot: ${nextSlot}`);
             }
-
-            if (this.config.authRequired && !await openSkyAuth.ensureAuthenticated()) {
-                throw new Error('Authentication failed');
-            }
-
-            const headers = this.config.authRequired ? openSkyAuth.getAuthHeaders() : {};
-
+    
+            // Using the proxy endpoint instead of direct OpenSky access
             const response = await axios.get('/api/proxy/opensky', {
                 params: {
                     icao24: batch.join(',')
                 },
                 headers: {
-                    ...headers,
-                    'Accept': 'application/json',
+                    'Accept': 'application/json'
                 }
             });
-
+    
             if (!response.data || typeof response.data !== 'object') {
                 throw new Error('Invalid response data received');
             }
-
+    
             this.rateLimiter.recordRequest();
             return response.data;
-
+    
         } catch (error) {
             if (axios.isAxiosError(error)) {
-                if (error.response?.status === 401) {
-                    console.warn('[PollingService] Authentication expired. Resetting...');
-                    openSkyAuth.reset();
-                    await openSkyAuth.ensureAuthenticated();
-                }
                 if (error.response?.status === 429) {
                     const nextSlot = await this.rateLimiter.getNextAvailableSlot();
                     throw new Error(`Rate limit exceeded. Next available: ${nextSlot}`);
@@ -183,11 +174,12 @@ export class PollingService {
 }
 
 // Create singleton instance
+// Create singleton instance
 const defaultPollingService = new PollingService({
-    url: '/api/proxy/opensky',
+    url: '/api/proxy/opensky', // Updated to use proxy URL
     pollingInterval: OPENSKY_LIMITS.API.MIN_POLLING_INTERVAL,
     batchSize: OPENSKY_LIMITS.AUTHENTICATED.MAX_BATCH_SIZE,
-    authRequired: true,
+    authRequired: false, // Changed since auth is handled by proxy
 });
 
 // Event handlers

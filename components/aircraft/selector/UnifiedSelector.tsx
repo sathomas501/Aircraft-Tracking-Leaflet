@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Search, Plane, X } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { Search, Plane, X, Minus } from 'lucide-react';
 import { 
   Aircraft, 
   CachedAircraftData, 
@@ -7,8 +7,9 @@ import {
   transformToCachedData,
   transformToAircraft
 } from '@/types/base';
-import UnifiedCacheService from '@/lib/services/managers/unified-cache-system';
-import { manufacturerTracking } from '@/lib/services/manufacturer-tracking-service';
+import UnifiedCacheService, { UnsubscribeFunction } from '@/lib/services/managers/unified-cache-system';
+import { startPolling, stopPolling, subscribe } from '@/lib/services/polling-service';
+
 
 interface UnifiedSelectorProps {
   selectedType: string;
@@ -16,6 +17,7 @@ interface UnifiedSelectorProps {
   selectedModel: string;
   setSelectedModel: (model: string) => void;
   modelCounts: Map<string, number>;
+  updateModelCounts: (counts: Map<string, number>) => void;  // Add this
   totalActive: number;
   onManufacturerSelect: (manufacturer: string) => void;
   onModelSelect: (model: string) => void;
@@ -47,8 +49,14 @@ const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
   const [models, setModels] = useState<Model[]>([]);
   const [showDropdown, setShowDropdown] = useState(true);
   const [activeCount, setActiveCount] = useState(totalActive);
-
+  const [cacheSubscription, setCacheSubscription] = useState<UnsubscribeFunction | null>(null);
   const cacheService = UnifiedCacheService.getInstance();
+
+  console.log('[UnifiedSelector] Component rendered with model:', selectedModel);
+
+  useEffect(() => {
+    console.log('[UnifiedSelector] Selected model changed:', selectedModel);
+  }, [selectedModel]);
 
   // Filter manufacturers
   const filteredManufacturers = useMemo(() => {
@@ -76,6 +84,14 @@ const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
 
     fetchManufacturers();
   }, []);
+
+  useEffect(() => {
+    return () => {
+      if (cacheSubscription) {
+        cacheSubscription();
+      }
+    };
+  }, [cacheSubscription]);
 
   // Fetch models when manufacturer changes
   useEffect(() => {
@@ -109,51 +125,83 @@ const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
   };
 
   const handleManufacturerSelect = async (manufacturer: string) => {
-    const key = manufacturer.trim().toUpperCase(); // Normalize key
-    const cachedData = cacheService.getLiveData(key);
-  
-    // ✅ Serve cached data if available
-    if (cachedData && cachedData.length > 0) {
-      console.log(`[Cache] Serving cached data for ${manufacturer}`);
-      onAircraftUpdate(cachedData.map(transformToAircraft));
-      setActiveCount(cachedData.length);
-      return; // 🚫 Skip API call if cache exists
-    }
-  
     try {
       setLoading(true);
-      const response = await fetch('/api/aircraft/track-manufacturer', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ manufacturer }),
-      });
+      // Clear previous subscription and polling
+      if (cacheSubscription) {
+        cacheSubscription();
+        stopPolling();
+      }
   
-      const data = await response.json();
+      const key = manufacturer.trim().toUpperCase();
+      const cachedData = cacheService.getLiveData(key);
   
-      if (data.liveAircraft) {
-        const cachedData = data.liveAircraft.map(transformToCachedData);
-        cacheService.setLiveData(key, cachedData); // Use normalized key
+      if (cachedData && cachedData.length > 0) {
+        // Serve cached data
+        console.log(`[Cache] Serving cached data for ${manufacturer}`);
+        const transformedAircraft = cachedData.map(transformToAircraft);
+        onAircraftUpdate(transformedAircraft);
+        setActiveCount(transformedAircraft.length);
   
-        manufacturerTracking.subscribe((trackingData) => {
-          if (trackingData.aircraft) {
-            const updatedCachedData = trackingData.aircraft.map(transformToCachedData);
-            cacheService.setLiveData(key, updatedCachedData);
-            console.log(`[Cache Debug] Data set for ${manufacturer}`, updatedCachedData);
-  
-            const updatedAircraftData = updatedCachedData.map(transformToAircraft);
-            onAircraftUpdate(updatedAircraftData);
+        // Start polling with cached aircraft
+        const icao24List = transformedAircraft.map(ac => ac.icao24);
+        subscribe(
+          (data) => {
+            if (data && Array.isArray(data)) {
+              const updatedAircraft = data.map(transformToAircraft);
+              const newCachedData = data.map(transformToCachedData);
+              cacheService.setLiveData(key, newCachedData);
+              onAircraftUpdate(updatedAircraft);
+              setActiveCount(updatedAircraft.length);
+            }
+          },
+          (error) => {
+            console.error('Polling error:', error);
           }
+        );
+        startPolling(icao24List);
+      } else {
+        // Fetch fresh data
+        const response = await fetch('/api/aircraft/track-manufacturer', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ manufacturer }),
         });
   
-        setActiveCount(data.liveAircraft.length);
-        const updatedAircraftData = data.liveAircraft.map(transformToAircraft);
-        onAircraftUpdate(updatedAircraftData);
+        const data = await response.json();
+  
+        if (data.liveAircraft) {
+          const transformedAircraft = data.liveAircraft.map(transformToAircraft);
+          const newCachedData = data.liveAircraft.map(transformToCachedData);
+          cacheService.setLiveData(key, newCachedData);
+          onAircraftUpdate(transformedAircraft);
+          setActiveCount(transformedAircraft.length);
+  
+          // Start polling with new aircraft
+            const icao24List: string[] = transformedAircraft.map((ac: Aircraft) => ac.icao24);
+          subscribe(
+            (data) => {
+              if (data && Array.isArray(data)) {
+                const updatedAircraft = data.map(transformToAircraft);
+                const newCachedData = data.map(transformToCachedData);
+                cacheService.setLiveData(key, newCachedData);
+                onAircraftUpdate(updatedAircraft);
+                setActiveCount(updatedAircraft.length);
+              }
+            },
+            (error) => {
+              console.error('Polling error:', error);
+            }
+          );
+          startPolling(icao24List);
+        }
       }
   
       onManufacturerSelect(manufacturer);
       setSearchTerm(manufacturer);
       setShowDropdown(false);
       setSelectedModel('');
+  
     } catch (err) {
       console.error('Error selecting manufacturer:', err);
     } finally {
@@ -161,167 +209,287 @@ const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
     }
   };
 
-  let pollingInterval: NodeJS.Timeout | null = null;
 
-const startPolling = (manufacturer: string, model: string) => {
-  if (pollingInterval) clearInterval(pollingInterval); // Clear any previous polling
+  // Add this state to track model counts from cached data
+  const [localModelCounts, setLocalModelCounts] = useState<Map<string, number>>(new Map());
 
-  pollingInterval = setInterval(async () => {
-    try {
-      const response = await fetch(`/api/aircraft/track-manufacturer`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ manufacturer, model }),
-      });
-      const data = await response.json();
+// Add this function to update model counts from cache
+const updateModelCounts = useCallback(() => {
+  const key = selectedManufacturer.trim().toUpperCase();
+  const cachedData = cacheService.getLiveData(key);
+  
+  if (cachedData && cachedData.length > 0) {
+    const counts = new Map<string, number>();
+    const aircraft = cachedData.map(transformToAircraft);
+    
+    aircraft.forEach(ac => {
+      if (ac.model) {
+        counts.set(ac.model, (counts.get(ac.model) || 0) + 1);
+      }
+    });
+    
+    // Update the models array with new counts
+    setModels(prevModels => 
+      prevModels.map(model => ({
+        ...model,
+        count: counts.get(model.model) || 0
+      }))
+    );
+    
+    onAircraftUpdate(aircraft);
+    setActiveCount(aircraft.length);
+  }
+}, [selectedManufacturer]);
 
-      console.log(`[Polling] Data for ${manufacturer} - ${model}:`, data);
-
-      const transformedAircraft = data.map(transformToAircraft);
-      const filteredAircraft: Aircraft[] = transformedAircraft.filter((ac: Aircraft) => ac.model === model);
-
-      onAircraftUpdate(filteredAircraft); // Update with fresh polled data
-      setActiveCount(filteredAircraft.length); // Update active count
-    } catch (error) {
-      console.error('Polling error:', error);
+// Update useEffect for models to use the new counts
+useEffect(() => {
+  const updateModelCounts = () => {
+    if (!selectedManufacturer) return;
+    
+    const key = selectedManufacturer.trim().toUpperCase();
+    const cachedData = cacheService.getLiveData(key);
+    
+    if (cachedData && cachedData.length > 0) {
+      const transformedAircraft = cachedData.map(transformToAircraft);
+      setActiveCount(transformedAircraft.length);
+      
+      // Update models with counts from cache
+      setModels(prevModels => 
+        prevModels.map(model => ({
+          ...model,
+          count: transformedAircraft.filter(ac => ac.model === model.model).length
+        }))
+      );
     }
-  }, 5000); // Poll every 5 seconds
-};
+  };
 
-const stopPolling = () => {
-  if (pollingInterval) clearInterval(pollingInterval);
-};
+  updateModelCounts();
+}, [selectedManufacturer, cacheService]);
 
-const handleModelSelect = async (model: string) => {
+const handleModelSelect = async (newModel: string) => {
+  console.log('[ModelSelect] Starting model selection for:', newModel);
   try {
     setLoading(true);
-    stopPolling(); // Stop any previous polling when a new model is selected
+    // Clear existing polling first
+    stopPolling();
+    
+    const key = selectedManufacturer.trim().toUpperCase();
+    const cachedData = cacheService.getLiveData(key);
+    
+    if (cachedData && cachedData.length > 0) {
+      // First, clear existing aircraft
+      onAircraftUpdate([]);
+      console.log('[ModelSelect] Cleared existing aircraft');
+      
+      const allTransformedAircraft = cachedData.map(transformToAircraft);
+      console.log('[ModelSelect] All aircraft:', {
+        total: allTransformedAircraft.length,
+        sampleModels: allTransformedAircraft.slice(0, 3).map(ac => ac.model)
+      });
+      
+      const filteredAircraft = newModel 
+        ? allTransformedAircraft.filter(ac => ac.model === newModel)
+        : allTransformedAircraft;
+      
+      console.log('[ModelSelect] Filtered aircraft:', {
+        count: filteredAircraft.length,
+        sampleIcao: filteredAircraft.slice(0, 3).map(ac => ac.icao24)
+      });
 
-    const cacheService = UnifiedCacheService.getInstance();
-    const cachedAircraft = cacheService.getLiveData(selectedManufacturer.trim().toUpperCase());
+      // Update map with filtered aircraft BEFORE starting new polling
+      onAircraftUpdate(filteredAircraft);
+      console.log('[ModelSelect] Updated map with filtered aircraft');
+      
+      setActiveCount(filteredAircraft.length);
 
-    onAircraftUpdate([]); // ✅ Clear previous aircraft
-
-    if (cachedAircraft) {
-      const transformedAircraft = cachedAircraft.map(transformToAircraft);
-
-      if (model) {
-        const filteredAircraft = transformedAircraft.filter(ac => ac.model === model);
-        setActiveCount(filteredAircraft.length);
-        onAircraftUpdate(filteredAircraft);
-        startPolling(selectedManufacturer.trim().toUpperCase(), model); // ✅ Start polling
+      if (filteredAircraft.length > 0) {
+        const icao24List = filteredAircraft.map(ac => ac.icao24);
+        console.log('[ModelSelect] Starting polling with filtered ICAO list:', icao24List.length);
+        
+        subscribe(
+          (pollingData) => {
+            if (pollingData && Array.isArray(pollingData)) {
+              const updatedAircraft = pollingData
+                .map(transformToAircraft)
+                .filter(ac => !newModel || ac.model === newModel);
+              
+              console.log('[Polling] Update:', {
+                received: pollingData.length,
+                filtered: updatedAircraft.length,
+                model: newModel,
+                sampleIcao: updatedAircraft.slice(0, 3).map(ac => ac.icao24)
+              });
+              
+              // First update map
+              onAircraftUpdate(updatedAircraft);
+              setActiveCount(updatedAircraft.length);
+              
+              // Then update cache
+              const newCachedData = pollingData.map(transformToCachedData);
+              cacheService.setLiveData(key, newCachedData);
+            }
+          },
+          (error) => console.error('[Polling] Error:', error)
+        );
+        
+        startPolling(icao24List);
+      } else {
+        console.log('[ModelSelect] No matching aircraft, clearing map');
+        onAircraftUpdate([]);
+        setActiveCount(0);
       }
     } else {
-      console.warn('No cached data found. Fetching from tracking DB.');
+      console.log('[ModelSelect] No cached data found');
+      onAircraftUpdate([]);
+      setActiveCount(0);
     }
-
-    setSelectedModel(model);
-    onModelSelect(model);
-
-    if (model) {
-      startPolling(selectedManufacturer, model); // ✅ Start polling for the selected model
-    }
+    
+    setSelectedModel(newModel);
+    onModelSelect(newModel);
+    
   } catch (err) {
-    console.error('Error selecting model:', err);
+    console.error('[ModelSelect] Error:', err);
+    setActiveCount(0);
+    onAircraftUpdate([]);
   } finally {
     setLoading(false);
   }
-}; 
+};
+  
+const renderModelSelect = () => (
+  <select
+    value={selectedModel}
+    onChange={(e) => {
+      console.log('[UI] Model select changed to:', e.target.value);
+      handleModelSelect(e.target.value);
+    }}
+    className="w-full p-2 border border-blue-200 rounded bg-white"
+  >
+    <option value="">All Models ({activeCount})</option>
+    {models.map((model) => (
+      <option key={model.model} value={model.model}>
+        {model.model} ({model.count || 0})
+      </option>
+    ))}
+  </select>
+);
 
-  if (!isVisible) {
-    return (
-      <button 
-        onClick={() => setIsVisible(true)}
-        className="absolute top-4 left-4 z-[2000] bg-white rounded-lg shadow-lg px-4 py-2 text-gray-700"
-      >
-        Select Aircraft
-      </button>
-    );
-  }
+  const [isMinimized, setIsMinimized] = useState(false);
 
+// Add this function
+const toggleMinimize = () => {
+  setIsMinimized(!isMinimized);
+};
+
+// Update the return statement
+if (isMinimized) {
   return (
-    <div className="absolute top-4 left-4 z-[2000] bg-white rounded-lg shadow-lg w-[350px]">
-      <div className="p-4">
-        <div className="flex justify-between items-center mb-2">
-          <h2 className="text-gray-700 text-lg">Select Aircraft</h2>
-          <button onClick={handleClose} className="text-gray-400 hover:text-gray-600 p-1">
+    <button 
+      onClick={toggleMinimize}
+      className="absolute top-4 left-4 z-[2000] bg-white rounded-lg shadow-lg px-4 py-2 text-gray-700 hover:bg-gray-50"
+    >
+      <div className="flex items-center gap-2">
+        <Plane size={16} />
+        <span>Select Aircraft</span>
+      </div>
+    </button>
+  );
+}
+
+return (
+  <div className="absolute top-4 left-4 z-[2000] bg-white rounded-lg shadow-lg w-[350px]">
+    <div className="p-4">
+      <div className="flex justify-between items-center mb-2">
+        <h2 className="text-gray-700 text-lg">Select Aircraft</h2>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setIsMinimized(true)}
+            className="text-gray-400 hover:text-gray-600 p-1"
+          >
+            <Minus size={20} />
+          </button>
+          <button
+            onClick={() => setIsVisible(false)}
+            className="text-gray-400 hover:text-gray-600 p-1"
+          >
             <X size={20} />
           </button>
         </div>
-
-        <div className="text-blue-600 mb-4">Active Aircraft: {activeCount}</div>
-
-        <div className="flex gap-2 mb-4">
-          <div className="relative flex-1">
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(e) => {
-                setSearchTerm(e.target.value);
-                setShowDropdown(true);
-              }}
-              placeholder="Search manufacturer..."
-              className="w-full pl-8 pr-3 py-2 bg-gray-50 border border-gray-200 rounded-lg"
-            />
-            <Search className="absolute left-2 top-2.5 text-gray-400" size={16} />
-          </div>
-          <div className="relative">
-            <input
-              type="text"
-              value={nNumber}
-              onChange={(e) => setNNumber(e.target.value.toUpperCase())}
-              placeholder="N#"
-              className="w-20 pl-8 pr-2 py-2 bg-gray-50 border border-gray-200 rounded-lg"
-            />
-            <Plane className="absolute left-2 top-2.5 text-gray-400" size={16} />
-          </div>
-        </div>
-
-        {selectedManufacturer && (
-          <div className="bg-blue-50 rounded-lg p-3">
-            <div className="text-blue-600 font-medium">{selectedManufacturer}</div>
-            <div className="text-blue-500 text-sm mb-2">Active: {activeCount}</div>
-            
-            <select
-              value={selectedModel}
-              onChange={(e) => handleModelSelect(e.target.value)}
-              className="w-full p-2 border border-blue-200 rounded bg-white"
-            >
-              <option value="">All Models ({activeCount})</option>
-              {models.map((model) => (
-                <option key={model.model} value={model.model}>
-                  {model.model} ({model.count})
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
-
-        {showDropdown && (
-          <div className="border border-gray-200 rounded-lg max-h-[200px] overflow-y-auto">
-            {loading ? (
-              <div className="p-2 text-center text-gray-500">Loading...</div>
-            ) : (
-              manufacturers
-                .filter(m => !searchTerm || m.label.toLowerCase().includes(searchTerm.toLowerCase()))
-                .map((manufacturer) => (
-                  <button
-                    key={manufacturer.value}
-                    onClick={() => handleManufacturerSelect(manufacturer.value)}
-                    className="w-full px-4 py-2 text-left hover:bg-blue-50 flex justify-between items-center border-b border-gray-100 last:border-0"
-                  >
-                    <span>{manufacturer.label}</span>
-                    <span className="text-gray-500">
-                      {manufacturer.count?.toLocaleString()}
-                    </span>
-                  </button>
-                ))
-            )}
-          </div>
-        )}
       </div>
+
+      <div className="text-blue-600 mb-4">
+        Active Aircraft: {activeCount}
+      </div>
+
+      <div className="flex gap-2 mb-4">
+        <div className="relative flex-1">
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={(e) => {
+              setSearchTerm(e.target.value);
+              setShowDropdown(true);
+            }}
+            placeholder="Search manufacturer..."
+            className="w-full pl-8 pr-3 py-2 bg-gray-50 border border-gray-200 rounded-lg"
+          />
+          <Search className="absolute left-2 top-2.5 text-gray-400" size={16} />
+        </div>
+        <div className="relative">
+          <input
+            type="text"
+            value={nNumber}
+            onChange={(e) => setNNumber(e.target.value.toUpperCase())}
+            placeholder="N#"
+            className="w-20 pl-8 pr-2 py-2 bg-gray-50 border border-gray-200 rounded-lg"
+          />
+          <Plane className="absolute left-2 top-2.5 text-gray-400" size={16} />
+        </div>
+      </div>
+
+      {selectedManufacturer && (
+        <div className="bg-blue-50 rounded-lg p-3 mb-4">
+          <div className="text-blue-600 font-medium">{selectedManufacturer}</div>
+          <div className="text-blue-500 text-sm mb-2">Active: {activeCount}</div>
+          {renderModelSelect()}
+          
+          <select
+            value={selectedModel}
+            onChange={(e) => handleModelSelect(e.target.value)}
+            className="w-full p-2 border border-blue-200 rounded bg-white"
+          >
+            <option value="">All Models ({activeCount})</option>
+            {models.map((model) => (
+              <option key={model.model} value={model.model}>
+                {model.model} ({model.count || 0})
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {showDropdown && (
+        <div className="border border-gray-200 rounded-lg max-h-[200px] overflow-y-auto">
+          {loading ? (
+            <div className="p-2 text-center text-gray-500">Loading...</div>
+          ) : (
+            filteredManufacturers.map((manufacturer) => (
+              <button
+                key={manufacturer.value}
+                onClick={() => handleManufacturerSelect(manufacturer.value)}
+                className="w-full px-4 py-2 text-left hover:bg-blue-50 flex justify-between items-center border-b border-gray-100 last:border-0"
+              >
+                <span>{manufacturer.label}</span>
+                <span className="text-gray-500">
+                  {manufacturer.count?.toLocaleString()}
+                </span>
+              </button>
+            ))
+          )}
+        </div>
+      )}
     </div>
-  );
-};
+  </div>
+);}
 
 export default UnifiedSelector;
