@@ -1,17 +1,62 @@
-import { TrackingDatabaseManager } from '../db/trackingDatabaseManager';
-import { manufacturerTracking } from '../services/manufacturer-tracking-service';
-import UnifiedCacheService from '../services/managers/unified-cache-system';
-import { AircraftPositionService, Position } from './aircraftPositionService';
-import type { CachedAircraftData } from '../../types/base';
-// Remove the Cleanup import if it's not needed
+import { Aircraft, CachedAircraftData, TrackingData } from '@/types/base';
+import TrackingDatabaseManager from '@/lib/db/trackingDatabaseManager';
+import UnifiedCacheService from '@/lib/services/managers/unified-cache-system';
+import { PollingRateLimiter } from './rate-limiter';
+import { errorHandler, ErrorType } from './error-handler';
+import { fetchLiveData } from './fetch-Live-Data';
+ 
+interface ActiveAircraftData {
+    icao24: string;
+    latitude: number;
+    longitude: number;
+    altitude: number;
+    velocity: number;
+    heading: number;
+    on_ground: boolean;
+    last_contact: number;
+    updated_at: number;
+}
+
+const trackingDb = TrackingDatabaseManager.getInstance();
+
+// ✅ Fetch and Transform Data Function
+const fetchAndTransformData = async (aircraft: Aircraft[]): Promise<TrackingData[]> => {
+    const icao24s: string[] = aircraft.map((a: Aircraft): string => a.icao24);
+    const aircraftArray: Aircraft[] = await fetchLiveData(icao24s);
+
+    // ✅ Transform Aircraft[] to TrackingData[]
+    return aircraftArray.map((aircraft: Aircraft) => ({
+        icao24: aircraft.icao24,
+        latitude: aircraft.latitude,
+        longitude: aircraft.longitude,
+        altitude: aircraft.altitude,
+        velocity: aircraft.velocity,
+        heading: aircraft.heading,
+        on_ground: aircraft.on_ground,
+        last_contact: aircraft.last_contact,
+        updated_at: Date.now()
+    }));
+};
+
 
 export class OpenSkySyncService {
     private static instance: OpenSkySyncService;
-    private syncInterval: NodeJS.Timeout | null = null;
-    private syncIntervalTime = 5 * 60 * 1000; // 5 minutes
-    private dataExpiryTime = 15 * 60 * 1000; // 15 minutes
+    private cache: UnifiedCacheService;
+    private rateLimiter: PollingRateLimiter;
+    private isPolling: boolean = false;
+    private pollingInterval: NodeJS.Timeout | null = null;
+    private readonly POLLING_DELAY = 5000; // 5 seconds
+    private readonly MAX_BATCH_SIZE = 100;
 
-    private constructor() {}
+    private constructor() {
+        this.cache = UnifiedCacheService.getInstance();
+        this.rateLimiter = new PollingRateLimiter({
+            requestsPerMinute: 60,
+            requestsPerDay: 1000,
+            minPollingInterval: 5000,
+            maxPollingInterval: 30000
+        });
+    }
 
     public static getInstance(): OpenSkySyncService {
         if (!OpenSkySyncService.instance) {
@@ -20,82 +65,196 @@ export class OpenSkySyncService {
         return OpenSkySyncService.instance;
     }
 
-    private async syncStaleAircraft(): Promise<void> {
-        const dbManager = await TrackingDatabaseManager.getInstance();
-        const cache = UnifiedCacheService.getInstance();
-        const positionService = AircraftPositionService.getInstance();
+    private transformToActiveData(aircraft: Aircraft): Aircraft {
+        const now = Date.now();
+        return {
+            // Core identification
+            icao24: aircraft.icao24,
+            "N-NUMBER": aircraft["N-NUMBER"] || "",
+            manufacturer: aircraft.manufacturer || "",
+            model: aircraft.model || "",
+            
+            // Location and movement data
+            latitude: aircraft.latitude,
+            longitude: aircraft.longitude,
+            altitude: aircraft.altitude,
+            heading: aircraft.heading,
+            velocity: aircraft.velocity,
+            on_ground: aircraft.on_ground,
+            last_contact: aircraft.last_contact,
+            lastSeen: aircraft.lastSeen || now,
     
+            // Registration information
+            NAME: aircraft.NAME || "",
+            CITY: aircraft.CITY || "",
+            STATE: aircraft.STATE || "",
+            OWNER_TYPE: aircraft.OWNER_TYPE || "",
+            TYPE_AIRCRAFT: aircraft.TYPE_AIRCRAFT || "",
+    
+            // Tracking state
+            isTracked: true,
+            
+            // Optional fields with defaults
+            operator: aircraft.operator || "",
+            registration: aircraft.registration,
+            manufacturerName: aircraft.manufacturerName,
+            owner: aircraft.owner,
+            registered: aircraft.registered,
+            manufacturerIcao: aircraft.manufacturerIcao,
+            operatorIcao: aircraft.operatorIcao,
+            active: aircraft.active
+        };
+    }
+
+
+
+    private transformToCachedData(aircraft: Aircraft): CachedAircraftData {
+        const now = Date.now();
+        return {
+            icao24: aircraft.icao24,
+            latitude: aircraft.latitude,
+            longitude: aircraft.longitude,
+            altitude: aircraft.altitude,
+            velocity: aircraft.velocity,
+            heading: aircraft.heading,
+            on_ground: aircraft.on_ground,
+            last_contact: aircraft.last_contact,
+            lastSeen: now,
+            lastUpdate: now
+        };
+    }
+
+    private async processAircraftData(aircraft: Aircraft): Promise<void> {
         try {
-            const staleAircraft = await dbManager.getAll<{ icao24: string, last_contact: number }>(
-                "SELECT icao24, last_contact FROM aircraft WHERE last_contact < ?",
-                [Date.now() - this.dataExpiryTime]
-            );
+            // ✅ Transform and update cache
+            const cachedData = this.transformToCachedData(aircraft);
+            this.cache.setLiveData(aircraft.icao24, [cachedData]);
     
-            const staleIcao24s: string[] = staleAircraft
-                .map(a => a.icao24)
-                .filter(icao24 => !cache.get(icao24));
+            // ✅ Transform Aircraft to TrackingData
+            const trackingData: TrackingData = {
+                icao24: aircraft.icao24,
+                latitude: aircraft.latitude,
+                longitude: aircraft.longitude,
+                altitude: aircraft.altitude,
+                velocity: aircraft.velocity,
+                heading: aircraft.heading,
+                on_ground: aircraft.on_ground,
+                last_contact: aircraft.last_contact,
+                updated_at: Date.now()  // ✅ Ensure updated_at exists
+            };
     
-            if (staleIcao24s.length > 0) {
-                console.log(`[OpenSkySyncService] Fetching updates for ${staleIcao24s.length} stale aircraft.`);
+            // ✅ Update database with the transformed TrackingData
+            await trackingDb.upsertActiveAircraftBatch([trackingData]);  // ✅ Wrap in an array as it expects TrackingData[]
+        } catch (error) {
+            console.error('Error processing aircraft data:', error);
+            throw error;
+        }
+    }
     
-                await positionService.pollAircraftData(async (icao24s: string[]) => {
-                    // Fetch fresh data for the requested aircraft
-                    for (const icao24 of icao24s) {
-                        const position = positionService.getPosition(icao24);
-                        if (position) {
-                            const cachedData: CachedAircraftData = {
-                                icao24: position.icao24,
-                                latitude: position.latitude,
-                                longitude: position.longitude,
-                                altitude: position.altitude,
-                                velocity: position.velocity,
-                                heading: position.heading,
-                                on_ground: position.on_ground,
-                                lastUpdate: position.last_contact,
-                                last_contact: position.last_contact
-                            };
-                            cache.set(icao24, cachedData);
-                            dbManager.upsertActiveAircraft(icao24, cachedData);
-                        }
-                    }
-                }, staleIcao24s);
+
+    private async processBatch(aircraftBatch: Aircraft[]): Promise<void> {
+        try {
+            for (const aircraft of aircraftBatch) {
+                await this.processAircraftData(aircraft);
             }
-    
-            await this.removeStaleRecords();
-    
         } catch (error) {
-            console.error("[OpenSkySyncService] Failed to sync stale aircraft:", error);
+            console.error('Error processing aircraft batch:', error);
+            throw error;
         }
     }
 
-    /**
-     * Removes stale records from the database
-     */
-    private async removeStaleRecords(): Promise<void> {
-        const dbManager = await TrackingDatabaseManager.getInstance();
-        const deletionThreshold = Date.now() - (24 * 60 * 60 * 1000); // 24 hours
+    public async startSync(aircraft: Aircraft[]): Promise<void> {
+        if (this.isPolling) {
+            console.log('[OpenSkySync] Sync already in progress');
+            return;
+        }
+
+        this.isPolling = true;
+        console.log(`[OpenSkySync] Starting sync for ${aircraft.length} aircraft`);
 
         try {
-            await dbManager.getDb().run(
-                "DELETE FROM aircraft WHERE last_contact < ?",
-                [deletionThreshold]
-            );
-            console.log("[OpenSkySyncService] Removed expired tracking records from the database.");
+            // Process in batches to avoid overwhelming the system
+            for (let i = 0; i < aircraft.length; i += this.MAX_BATCH_SIZE) {
+                const batch = aircraft.slice(i, i + this.MAX_BATCH_SIZE);
+                await this.processBatch(batch);
+                
+                // Respect rate limits
+                if (i + this.MAX_BATCH_SIZE < aircraft.length) {
+                    await new Promise(resolve => setTimeout(resolve, this.POLLING_DELAY));
+                }
+            }
+            
+            // Start polling for updates
+            this.startPolling(aircraft);
         } catch (error) {
-            console.error("[OpenSkySyncService] Error cleaning up old records:", error);
+            errorHandler.handleError(
+                ErrorType.OPENSKY_SERVICE,
+                'Error starting sync',
+                { error }
+            );
         }
     }
 
-    public startSyncing(): void {
-        if (!this.syncInterval) {
-            this.syncInterval = setInterval(() => this.syncStaleAircraft(), this.syncIntervalTime);
+    private startPolling(aircraft: Aircraft[]): void {
+        if (this.pollingInterval) {
+            clearInterval(this.pollingInterval);
+        }
+
+        this.pollingInterval = setInterval(async () => {
+            if (this.rateLimiter.isRateLimited()) {
+                console.log('[OpenSkySync] Rate limited, skipping update');
+                return;
+            }
+
+            try {
+                await this.processBatch(aircraft);
+                this.rateLimiter.recordRequest();
+            } catch (error) {
+                errorHandler.handleError(
+                    ErrorType.OPENSKY_POLLING,
+                    'Error during polling',
+                    { error }
+                );
+            }
+        }, this.POLLING_DELAY);
+    }
+
+    public stopSync(): void {
+        console.log('[OpenSkySync] Stopping sync');
+        this.isPolling = false;
+        
+        if (this.pollingInterval) {
+            clearInterval(this.pollingInterval);
+            this.pollingInterval = null;
         }
     }
 
-    public stopSyncing(): void {
-        if (this.syncInterval) {
-            clearInterval(this.syncInterval);
-            this.syncInterval = null;
+    public isActive(): boolean {
+        return this.isPolling;
+    }
+
+    public getCache(): UnifiedCacheService {
+        return this.cache;
+    }
+
+
+    public async cleanup(): Promise<void> {
+        this.stopSync();
+        this.cache.clear();
+        
+        try {
+            // Clean up stale data from database
+            const staleThreshold = Date.now() - (15 * 60 * 1000); // 15 minutes
+            const result = await trackingDb.getQuery(
+                'DELETE FROM active_aircraft WHERE updated_at < ?',
+                [staleThreshold]
+            );
+        } catch (error) {
+            errorHandler.handleError(
+                ErrorType.OPENSKY_CLEANUP,
+                'Error during cleanup',
+                { error }
+            );
         }
     }
 }

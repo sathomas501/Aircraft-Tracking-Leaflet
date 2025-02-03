@@ -64,6 +64,7 @@ class EnhancedCache {
     }
 
     clear(): void {
+        console.log('[Cache] Clearing cache in EnhancedCache');
         this.cache.clear();
     }
 }

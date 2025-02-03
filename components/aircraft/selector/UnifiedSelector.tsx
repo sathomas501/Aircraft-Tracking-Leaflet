@@ -1,6 +1,14 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Search, Plane, X } from 'lucide-react';
-import type { SelectOption } from '@/types/base';
+import { 
+  Aircraft, 
+  CachedAircraftData, 
+  SelectOption,
+  transformToCachedData,
+  transformToAircraft
+} from '@/types/base';
+import UnifiedCacheService from '@/lib/services/managers/unified-cache-system';
+import { manufacturerTracking } from '@/lib/services/manufacturer-tracking-service';
 
 interface UnifiedSelectorProps {
   selectedType: string;
@@ -11,7 +19,7 @@ interface UnifiedSelectorProps {
   totalActive: number;
   onManufacturerSelect: (manufacturer: string) => void;
   onModelSelect: (model: string) => void;
-  onAircraftUpdate: (updateData: any) => void;
+  onAircraftUpdate: (updateData: Aircraft[]) => void;
   onReset: () => void;
 }
 
@@ -40,10 +48,10 @@ const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
   const [showDropdown, setShowDropdown] = useState(true);
   const [activeCount, setActiveCount] = useState(totalActive);
 
+  const cacheService = UnifiedCacheService.getInstance();
 
   // Filter manufacturers
   const filteredManufacturers = useMemo(() => {
-    console.log("Filtering manufacturers:", manufacturers.length);
     if (!searchTerm) return manufacturers;
     const search = searchTerm.toLowerCase().trim();
     return manufacturers.filter(m => m.label.toLowerCase().includes(search));
@@ -73,12 +81,12 @@ const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
   useEffect(() => {
     const fetchModels = async () => {
       if (!selectedManufacturer) return;
-      
+
       try {
         setLoading(true);
         const response = await fetch(`/api/aircraft/models?manufacturer=${encodeURIComponent(selectedManufacturer)}`);
         const data = await response.json();
-        
+
         if (data.data) {
           const mappedModels = data.data.map((item: any) => ({
             model: item.model,
@@ -101,6 +109,17 @@ const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
   };
 
   const handleManufacturerSelect = async (manufacturer: string) => {
+    const key = manufacturer.trim().toUpperCase(); // Normalize key
+    const cachedData = cacheService.getLiveData(key);
+  
+    // ✅ Serve cached data if available
+    if (cachedData && cachedData.length > 0) {
+      console.log(`[Cache] Serving cached data for ${manufacturer}`);
+      onAircraftUpdate(cachedData.map(transformToAircraft));
+      setActiveCount(cachedData.length);
+      return; // 🚫 Skip API call if cache exists
+    }
+  
     try {
       setLoading(true);
       const response = await fetch('/api/aircraft/track-manufacturer', {
@@ -108,20 +127,32 @@ const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ manufacturer }),
       });
-
+  
       const data = await response.json();
-      
+  
       if (data.liveAircraft) {
-        const liveCount = data.liveAircraft.length;
-        setActiveCount(liveCount);
-        onAircraftUpdate(data.liveAircraft);
+        const cachedData = data.liveAircraft.map(transformToCachedData);
+        cacheService.setLiveData(key, cachedData); // Use normalized key
+  
+        manufacturerTracking.subscribe((trackingData) => {
+          if (trackingData.aircraft) {
+            const updatedCachedData = trackingData.aircraft.map(transformToCachedData);
+            cacheService.setLiveData(key, updatedCachedData);
+            console.log(`[Cache Debug] Data set for ${manufacturer}`, updatedCachedData);
+  
+            const updatedAircraftData = updatedCachedData.map(transformToAircraft);
+            onAircraftUpdate(updatedAircraftData);
+          }
+        });
+  
+        setActiveCount(data.liveAircraft.length);
+        const updatedAircraftData = data.liveAircraft.map(transformToAircraft);
+        onAircraftUpdate(updatedAircraftData);
       }
-
+  
       onManufacturerSelect(manufacturer);
       setSearchTerm(manufacturer);
       setShowDropdown(false);
-      
-      // Reset model selection
       setSelectedModel('');
     } catch (err) {
       console.error('Error selecting manufacturer:', err);
@@ -130,55 +161,72 @@ const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
     }
   };
 
-  const handleModelSelect = async (model: string) => {
+  let pollingInterval: NodeJS.Timeout | null = null;
+
+const startPolling = (manufacturer: string, model: string) => {
+  if (pollingInterval) clearInterval(pollingInterval); // Clear any previous polling
+
+  pollingInterval = setInterval(async () => {
     try {
-      setLoading(true);
-      // If no model selected (All Models), fetch all manufacturer aircraft
-      if (!model) {
-        const response = await fetch('/api/aircraft/track-manufacturer', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            manufacturer: selectedManufacturer
-          }),
-        });
-  
-        const data = await response.json();
-        if (data.liveAircraft) {
-          setActiveCount(data.liveAircraft.length);
-          onAircraftUpdate(data.liveAircraft);
-        }
-      } else {
-        // If model selected, filter for only that model's aircraft
-        const response = await fetch('/api/aircraft/track-manufacturer', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            manufacturer: selectedManufacturer,
-            model: model
-          }),
-        });
-  
-        const data = await response.json();
-        
-        if (data.liveAircraft) {
-          // Filter aircraft to only show selected model
-          const filteredAircraft = data.liveAircraft.filter(
-            (aircraft: any) => aircraft.model === model
-          );
-          setActiveCount(filteredAircraft.length);
-          onAircraftUpdate(filteredAircraft); // Send only filtered aircraft to MapWrapper
-        }
-      }
-  
-      onModelSelect(model);
-      setSelectedModel(model);
-    } catch (err) {
-      console.error('Error selecting model:', err);
-    } finally {
-      setLoading(false);
+      const response = await fetch(`/api/aircraft/track-manufacturer`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ manufacturer, model }),
+      });
+      const data = await response.json();
+
+      console.log(`[Polling] Data for ${manufacturer} - ${model}:`, data);
+
+      const transformedAircraft = data.map(transformToAircraft);
+      const filteredAircraft: Aircraft[] = transformedAircraft.filter((ac: Aircraft) => ac.model === model);
+
+      onAircraftUpdate(filteredAircraft); // Update with fresh polled data
+      setActiveCount(filteredAircraft.length); // Update active count
+    } catch (error) {
+      console.error('Polling error:', error);
     }
-  };
+  }, 5000); // Poll every 5 seconds
+};
+
+const stopPolling = () => {
+  if (pollingInterval) clearInterval(pollingInterval);
+};
+
+const handleModelSelect = async (model: string) => {
+  try {
+    setLoading(true);
+    stopPolling(); // Stop any previous polling when a new model is selected
+
+    const cacheService = UnifiedCacheService.getInstance();
+    const cachedAircraft = cacheService.getLiveData(selectedManufacturer.trim().toUpperCase());
+
+    onAircraftUpdate([]); // ✅ Clear previous aircraft
+
+    if (cachedAircraft) {
+      const transformedAircraft = cachedAircraft.map(transformToAircraft);
+
+      if (model) {
+        const filteredAircraft = transformedAircraft.filter(ac => ac.model === model);
+        setActiveCount(filteredAircraft.length);
+        onAircraftUpdate(filteredAircraft);
+        startPolling(selectedManufacturer.trim().toUpperCase(), model); // ✅ Start polling
+      }
+    } else {
+      console.warn('No cached data found. Fetching from tracking DB.');
+    }
+
+    setSelectedModel(model);
+    onModelSelect(model);
+
+    if (model) {
+      startPolling(selectedManufacturer, model); // ✅ Start polling for the selected model
+    }
+  } catch (err) {
+    console.error('Error selecting model:', err);
+  } finally {
+    setLoading(false);
+  }
+}; 
 
   if (!isVisible) {
     return (
@@ -194,23 +242,15 @@ const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
   return (
     <div className="absolute top-4 left-4 z-[2000] bg-white rounded-lg shadow-lg w-[350px]">
       <div className="p-4">
-        {/* Header */}
         <div className="flex justify-between items-center mb-2">
           <h2 className="text-gray-700 text-lg">Select Aircraft</h2>
-          <button 
-            onClick={handleClose}
-            className="text-gray-400 hover:text-gray-600 p-1"
-          >
+          <button onClick={handleClose} className="text-gray-400 hover:text-gray-600 p-1">
             <X size={20} />
           </button>
         </div>
 
-        {/* Active Aircraft Count */}
-        <div className="text-blue-600 mb-4">
-          Active Aircraft: {activeCount}
-        </div>
+        <div className="text-blue-600 mb-4">Active Aircraft: {activeCount}</div>
 
-        {/* Search */}
         <div className="flex gap-2 mb-4">
           <div className="relative flex-1">
             <input
@@ -220,7 +260,6 @@ const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
                 setSearchTerm(e.target.value);
                 setShowDropdown(true);
               }}
-              onClick={() => setShowDropdown(true)}
               placeholder="Search manufacturer..."
               className="w-full pl-8 pr-3 py-2 bg-gray-50 border border-gray-200 rounded-lg"
             />
@@ -238,15 +277,10 @@ const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
           </div>
         </div>
 
-        {/* Selected Info with Model Selection */}
         {selectedManufacturer && (
           <div className="bg-blue-50 rounded-lg p-3">
-            <div className="text-blue-600 font-medium">
-              {selectedManufacturer}
-            </div>
-            <div className="text-blue-500 text-sm mb-2">
-              Active: {activeCount}
-            </div>
+            <div className="text-blue-600 font-medium">{selectedManufacturer}</div>
+            <div className="text-blue-500 text-sm mb-2">Active: {activeCount}</div>
             
             <select
               value={selectedModel}
@@ -263,12 +297,11 @@ const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
           </div>
         )}
 
-        {/* Manufacturer Dropdown */}
         {showDropdown && (
           <div className="border border-gray-200 rounded-lg max-h-[200px] overflow-y-auto">
             {loading ? (
               <div className="p-2 text-center text-gray-500">Loading...</div>
-            ) : manufacturers.length > 0 ? (
+            ) : (
               manufacturers
                 .filter(m => !searchTerm || m.label.toLowerCase().includes(searchTerm.toLowerCase()))
                 .map((manufacturer) => (
@@ -283,10 +316,6 @@ const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
                     </span>
                   </button>
                 ))
-            ) : (
-              <div className="p-2 text-center text-gray-500">
-                No manufacturers found
-              </div>
             )}
           </div>
         )}

@@ -31,6 +31,7 @@ class AircraftCache {
     }
 
     clearCache(): void {
+        console.log('[Cache] Clearing cache in AircraftCache');
         this.cache.clear();
         this.regionData.clear();
     }

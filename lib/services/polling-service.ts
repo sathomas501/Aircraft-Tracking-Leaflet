@@ -101,9 +101,15 @@ export class PollingService {
                 throw new Error('Authentication failed');
             }
 
+            const headers = this.config.authRequired ? openSkyAuth.getAuthHeaders() : {};
+
             const response = await axios.get('/api/proxy/opensky', {
                 params: {
                     icao24: batch.join(',')
+                },
+                headers: {
+                    ...headers,
+                    'Accept': 'application/json',
                 }
             });
 
@@ -116,6 +122,11 @@ export class PollingService {
 
         } catch (error) {
             if (axios.isAxiosError(error)) {
+                if (error.response?.status === 401) {
+                    console.warn('[PollingService] Authentication expired. Resetting...');
+                    openSkyAuth.reset();
+                    await openSkyAuth.ensureAuthenticated();
+                }
                 if (error.response?.status === 429) {
                     const nextSlot = await this.rateLimiter.getNextAvailableSlot();
                     throw new Error(`Rate limit exceeded. Next available: ${nextSlot}`);

@@ -291,6 +291,42 @@ export interface ManufacturerData {
  * Cached aircraft data format used in UnifiedCacheService
  */
 export interface CachedAircraftData {
+  // Core identification
+  icao24: string;
+
+  // Position and movement data
+  latitude: number;
+  longitude: number;
+  altitude: number;
+  velocity: number;
+  heading: number;
+  on_ground: boolean;
+
+  // Timestamps
+  last_contact: number;
+  lastSeen: number;
+  lastUpdate: number;
+
+  // Static data (optional to allow for partial caching)
+  "N-NUMBER"?: string;
+  manufacturer?: string;
+  model?: string;
+  NAME?: string;
+  CITY?: string;
+  STATE?: string;
+  TYPE_AIRCRAFT?: string;
+  OWNER_TYPE?: string;
+}
+/**
+ * Tracking data structure for aircraft updates
+ */
+// ✅ Renamed to AircraftTrackingBatch to represent a batch of aircraft data
+export interface AircraftTrackingBatch {
+  aircraft: CachedAircraftData[];
+}
+
+// ✅ Retain TrackingData for individual aircraft tracking data
+export interface TrackingData {
   icao24: string;
   latitude: number;
   longitude: number;
@@ -299,16 +335,51 @@ export interface CachedAircraftData {
   heading: number;
   on_ground: boolean;
   last_contact: number;
-  lastUpdate: number; // ✅ Ensure consistency across modules
+  updated_at: number;
 }
+
+
 /**
- * Tracking data structure for aircraft updates
+ * Helper function to transform Aircraft to CachedAircraftData
  */
-export interface TrackingData {
-  aircraft: CachedAircraftData[];
+export function transformToCachedData(aircraft: Aircraft): CachedAircraftData {
+  const now = Date.now();
+  return {
+    icao24: aircraft.icao24,
+    latitude: aircraft.latitude,
+    longitude: aircraft.longitude,
+    altitude: aircraft.altitude,
+    velocity: aircraft.velocity,
+    heading: aircraft.heading,
+    on_ground: aircraft.on_ground,
+    last_contact: aircraft.last_contact,
+    lastSeen: aircraft.lastSeen || now,
+    lastUpdate: now
+  };
 }
 
-
+export function transformToAircraft(cached: CachedAircraftData): Aircraft {
+  return {
+    icao24: cached.icao24,
+    "N-NUMBER": cached["N-NUMBER"] || "",
+    manufacturer: cached.manufacturer || "",
+    model: cached.model || "",
+    latitude: cached.latitude,
+    longitude: cached.longitude,
+    altitude: cached.altitude,
+    heading: cached.heading,
+    velocity: cached.velocity,
+    on_ground: cached.on_ground,
+    last_contact: cached.last_contact,
+    lastSeen: cached.lastSeen,
+    NAME: "",
+    CITY: "",
+    STATE: "",
+    TYPE_AIRCRAFT: "",
+    OWNER_TYPE: "",
+    isTracked: true
+  };
+}
 
 
 
