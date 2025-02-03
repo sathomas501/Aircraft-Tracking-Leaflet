@@ -31,8 +31,6 @@ const rateLimiter = new PollingRateLimiter({
 });
 
 // lib/services/fetch-Live-Data.ts
-// In fetch-Live-Data.ts
-// lib/services/fetch-Live-Data.ts
 export async function fetchLiveData(icao24s: string[]): Promise<Aircraft[]> {
     console.log(`[fetchLiveData] Starting fetch for ${icao24s.length} ICAO24s`);
     

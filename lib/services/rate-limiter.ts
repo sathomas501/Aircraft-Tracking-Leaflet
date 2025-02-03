@@ -26,6 +26,10 @@ export class PollingRateLimiter {
     private lastRequestTime: number = 0;
     private readonly requireAuthentication: boolean;
 
+    // ** Add these missing properties **
+    private consecutiveFailures: number = 0;
+    private backoffTime: number = 1000; // 1 second initial backoff
+
     constructor(options: RateLimiterOptions) {
         this.requireAuthentication = options.requireAuthentication ?? true;
         
@@ -34,22 +38,65 @@ export class PollingRateLimiter {
             ? OPENSKY_CONSTANTS.AUTHENTICATED 
             : OPENSKY_CONSTANTS.UNAUTHENTICATED;
 
-        // Set rate limits based on authentication status
-        this.requestsPer10Min = limits.REQUESTS_PER_10_MIN;
-        this.requestsPerDay = limits.REQUESTS_PER_DAY;
+        // Set higher limits to account for potential inconsistencies
+        this.requestsPer10Min = Math.floor(limits.REQUESTS_PER_10_MIN * 0.8); // Use 80% of limit
+        this.requestsPerDay = Math.floor(limits.REQUESTS_PER_DAY * 0.8); // Use 80% of limit
         this.maxBatchSize = Math.min(
             options.maxBatchSize || limits.MAX_BATCH_SIZE,
-            limits.MAX_BATCH_SIZE
+            Math.floor(limits.MAX_BATCH_SIZE * 0.8) // Use 80% of batch size limit
         );
         
         // API-wide settings remain the same regardless of authentication
-        this.maxWaitTime = options.maxWaitTime || OPENSKY_CONSTANTS.API.TIMEOUT_MS;
-        this.minPollingInterval = options.minPollingInterval || OPENSKY_CONSTANTS.API.MIN_POLLING_INTERVAL;
-        this.maxPollingInterval = options.maxPollingInterval || OPENSKY_CONSTANTS.API.MAX_POLLING_INTERVAL;
+        // Increase intervals for more conservative timing
+        this.maxWaitTime = options.maxWaitTime || OPENSKY_CONSTANTS.API.TIMEOUT_MS * 2;
+        this.minPollingInterval = options.minPollingInterval || OPENSKY_CONSTANTS.API.MIN_POLLING_INTERVAL * 1.5;
+        this.maxPollingInterval = options.maxPollingInterval || OPENSKY_CONSTANTS.API.MAX_POLLING_INTERVAL * 2;
         this.retryLimit = options.retryLimit || OPENSKY_CONSTANTS.API.DEFAULT_RETRY_LIMIT;
         this.currentPollingInterval = this.minPollingInterval;
 
         this.validateConfiguration();
+        
+        // Auto-cleanup old requests periodically
+        setInterval(() => this.cleanOldRequests(), 60000); // Clean every minute
+    }
+
+    public recordFailure(): void {
+        this.consecutiveFailures++;
+        this.backoffTime = Math.min(this.backoffTime * 2, 30000); // Max 30 second backoff
+        console.log(`[RateLimiter] Failure recorded. Backoff time: ${this.backoffTime}ms`);
+    }
+
+    public recordSuccess(): void {
+        this.consecutiveFailures = 0;
+        this.backoffTime = 1000; // Reset to 1 second
+        this.recordRequest();
+    }
+
+    public async waitForBackoff(): Promise<void> {
+        if (this.backoffTime > 1000) {
+            console.log(`[RateLimiter] Backing off for ${this.backoffTime}ms`);
+            await new Promise(resolve => setTimeout(resolve, this.backoffTime));
+        }
+    }
+
+    public getRequestCount(): number {
+        this.cleanOldRequests();
+        return this.tenMinuteRequests.length;
+    }
+
+    public getRequestsRemaining(): number {
+        this.cleanOldRequests();
+        return this.requestsPer10Min - this.tenMinuteRequests.length;
+    }
+
+    public shouldReset(): boolean {
+        return this.consecutiveFailures >= 3;
+    }
+
+    public async getTimeUntilReset(): Promise<number> {
+        if (this.tenMinuteRequests.length === 0) return 0;
+        const oldestRequest = Math.min(...this.tenMinuteRequests);
+        return Math.max(0, OPENSKY_CONSTANTS.TIME_WINDOWS.TEN_MINUTES_MS - (Date.now() - oldestRequest));
     }
 
     private validateConfiguration(): void {
@@ -75,6 +122,47 @@ export class PollingRateLimiter {
         }
     }
     
+    private async checkRateLimits(): Promise<boolean> {
+        this.cleanOldRequests();
+
+        if (this.consecutiveFailures > 0) {
+            await this.waitForBackoff();
+        }
+
+        if (this.dailyRequests.length >= this.requestsPerDay) {
+            console.log('[RateLimiter] Daily limit reached');
+            return false;
+        }
+
+        if (this.tenMinuteRequests.length >= this.requestsPer10Min) {
+            const waitTime = this.getTimeUntilNextSlot();
+            console.log(`[RateLimiter] Rate limit reached. Wait time: ${waitTime}ms`);
+            if (waitTime > this.maxWaitTime) {
+                return false;
+            }
+            await new Promise(resolve => setTimeout(resolve, waitTime));
+        }
+
+        const timeSinceLastRequest = Date.now() - this.lastRequestTime;
+        if (timeSinceLastRequest < this.currentPollingInterval) {
+            await new Promise(resolve => setTimeout(resolve, this.currentPollingInterval - timeSinceLastRequest));
+        }
+
+        return true;
+    }
+
+   // **
+ //* Resets the rate limiter state
+ //*/
+    public reset(): void {
+        this.tenMinuteRequests = [];
+        this.dailyRequests = [];
+        this.lastRequestTime = 0;
+        this.consecutiveFailures = 0;
+        this.backoffTime = 1000;
+        this.resetPollingInterval();
+        console.log('[RateLimiter] Rate limiter reset complete');
+    }
 
 /**
      * Attempts to acquire a rate limit slot
@@ -84,16 +172,6 @@ public async tryAcquire(): Promise<boolean> {
     return this.checkRateLimits();
 }
 
-/**
- * Resets the rate limiter state
- */
-public reset(): void {
-    this.tenMinuteRequests = [];
-    this.dailyRequests = [];
-    this.lastRequestTime = 0;
-    this.resetPollingInterval();
-    console.log('[RateLimiter] Reset complete');
-}
 
     public async schedule(task: () => Promise<void>): Promise<void> {
         if (!await this.checkRateLimits()) {
@@ -107,36 +185,6 @@ public reset(): void {
         } catch (error) {
             this.handleError(error);
         }
-    }
-
-    private async checkRateLimits(): Promise<boolean> {
-        this.cleanOldRequests();
-
-        // Check daily limit
-        if (this.dailyRequests.length >= this.requestsPerDay) {
-            errorHandler.handleError(
-                ErrorType.OPENSKY_RATE_LIMIT,
-                'Daily request limit reached',
-                { resetTime: this.getNextDayReset() }
-            );
-            return false;
-        }
-
-        // Check 10-minute limit
-        if (this.tenMinuteRequests.length >= this.requestsPer10Min) {
-            const waitTime = this.getTimeUntilNextSlot();
-            if (waitTime > this.maxWaitTime) {
-                errorHandler.handleError(
-                    ErrorType.OPENSKY_RATE_LIMIT,
-                    'Rate limit reached and wait time too long',
-                    { waitTime, maxWaitTime: this.maxWaitTime }
-                );
-                return false;
-            }
-            await new Promise(resolve => setTimeout(resolve, waitTime));
-        }
-
-        return true;
     }
 
     public recordRequest(): void {

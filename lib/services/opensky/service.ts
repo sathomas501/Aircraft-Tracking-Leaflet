@@ -157,7 +157,8 @@ export class OpenSkyManager implements IOpenSkyService {
         positions.forEach(position => {
             const aircraft = {
                 ...positionToAircraft(position),
-                lastUpdate: Date.now() // Add lastUpdate property
+                lastUpdate: Date.now(), // Add lastUpdate property
+                lastSeen: Date.now() // Ensure lastSeen is assigned a number
             };
             this.cacheService.setAircraft(this.key, [aircraft]); // ✅ Use 'this'
         });

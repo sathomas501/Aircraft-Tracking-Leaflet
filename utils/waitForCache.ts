@@ -5,7 +5,7 @@ const cacheService = unifiedCache.getInstance();
 
 export async function waitForCache(maxAttempts = 10, interval = 1000): Promise<void> {
     for (let i = 0; i < maxAttempts; i++) {
-        const data = await cacheService.getLatestData();
+        const data = await cacheService.getLiveData('defaultManufacturer');
         // Adjust based on the actual structure of data
         if (Array.isArray(data) && data.length) return;
 

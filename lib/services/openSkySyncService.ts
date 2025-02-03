@@ -240,7 +240,7 @@ export class OpenSkySyncService {
 
     public async cleanup(): Promise<void> {
         this.stopSync();
-        this.cache.clear();
+        this.cache.clearCache();
         
         try {
             // Clean up stale data from database

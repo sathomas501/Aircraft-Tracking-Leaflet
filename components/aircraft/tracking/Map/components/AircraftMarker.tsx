@@ -1,8 +1,9 @@
-import React from 'react';
-import { Marker, Popup, Tooltip } from 'react-leaflet';
+// AircraftMarker.tsx
+import React, { useEffect } from 'react';
+import { Marker, Popup, Tooltip, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import type { Aircraft } from '@/types/base';
-import  AircraftTrail  from '../components/AircraftIcon/AircraftTrail';
+import AircraftTrail from '../components/AircraftIcon/AircraftTrail';
 
 interface EnhancedAircraftMarkerProps {
   aircraft: Aircraft & {
@@ -12,6 +13,15 @@ interface EnhancedAircraftMarkerProps {
 }
 
 export const EnhancedAircraftMarker: React.FC<EnhancedAircraftMarkerProps> = ({ aircraft }) => {
+  const map = useMap();
+
+  useEffect(() => {
+    return () => {
+      // Cleanup when marker is removed
+      console.log('[Marker] Cleaning up marker for:', aircraft.icao24);
+    };
+  }, [aircraft.icao24]);
+
   if (!aircraft?.latitude || !aircraft?.longitude) return null;
 
   const rotationStyle = aircraft.type !== 'helicopter'
@@ -19,7 +29,7 @@ export const EnhancedAircraftMarker: React.FC<EnhancedAircraftMarkerProps> = ({ 
     : '';
 
   const icon = L.divIcon({
-    className: 'custom-aircraft-marker',
+    className: `custom-aircraft-marker-${aircraft.icao24}`,
     html: `
       <div style="width: 32px; height: 32px; ${rotationStyle}">
         <img 
@@ -43,15 +53,12 @@ export const EnhancedAircraftMarker: React.FC<EnhancedAircraftMarkerProps> = ({ 
 
   return (
     <>
-      {/* Trail */}
       <AircraftTrail icao24={aircraft.icao24} />
-
-      {/* Aircraft Marker */}
       <Marker
         position={[aircraft.latitude, aircraft.longitude]}
         icon={icon}
+        key={`${aircraft.icao24}-${aircraft.last_contact}`}
       >
-        {/* Hover Tooltip */}
         <Tooltip>
           <div className="min-w-[150px]">
             <div className="font-bold">{aircraft['N-NUMBER']}</div>
@@ -68,7 +75,6 @@ export const EnhancedAircraftMarker: React.FC<EnhancedAircraftMarkerProps> = ({ 
           </div>
         </Tooltip>
 
-        {/* Click Popup */}
         <Popup>
           <div className="min-w-[200px]">
             <h3 className="font-bold text-lg mb-2">{aircraft['N-NUMBER']}</h3>
@@ -98,3 +104,5 @@ export const EnhancedAircraftMarker: React.FC<EnhancedAircraftMarkerProps> = ({ 
     </>
   );
 };
+
+export default React.memo(EnhancedAircraftMarker);

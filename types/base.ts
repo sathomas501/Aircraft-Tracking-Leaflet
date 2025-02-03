@@ -345,25 +345,43 @@ export interface TrackingData {
 export function transformToCachedData(aircraft: Aircraft): CachedAircraftData {
   const now = Date.now();
   return {
+    // Core identification
     icao24: aircraft.icao24,
+    
+    // Position and movement data
     latitude: aircraft.latitude,
     longitude: aircraft.longitude,
     altitude: aircraft.altitude,
     velocity: aircraft.velocity,
     heading: aircraft.heading,
     on_ground: aircraft.on_ground,
+    
+    // Timestamps
     last_contact: aircraft.last_contact,
     lastSeen: aircraft.lastSeen || now,
-    lastUpdate: now
+    lastUpdate: now,
+    
+    // Preserve all static data
+    "N-NUMBER": aircraft["N-NUMBER"],
+    manufacturer: aircraft.manufacturer,
+    model: aircraft.model,
+    NAME: aircraft.NAME,
+    CITY: aircraft.CITY,
+    STATE: aircraft.STATE,
+    TYPE_AIRCRAFT: aircraft.TYPE_AIRCRAFT,
+    OWNER_TYPE: aircraft.OWNER_TYPE
   };
 }
 
 export function transformToAircraft(cached: CachedAircraftData): Aircraft {
   return {
+    // Core identification
     icao24: cached.icao24,
     "N-NUMBER": cached["N-NUMBER"] || "",
     manufacturer: cached.manufacturer || "",
     model: cached.model || "",
+    
+    // Position and movement data
     latitude: cached.latitude,
     longitude: cached.longitude,
     altitude: cached.altitude,
@@ -372,11 +390,15 @@ export function transformToAircraft(cached: CachedAircraftData): Aircraft {
     on_ground: cached.on_ground,
     last_contact: cached.last_contact,
     lastSeen: cached.lastSeen,
-    NAME: "",
-    CITY: "",
-    STATE: "",
-    TYPE_AIRCRAFT: "",
-    OWNER_TYPE: "",
+    
+    // Static data
+    NAME: cached.NAME || "",
+    CITY: cached.CITY || "",
+    STATE: cached.STATE || "",
+    TYPE_AIRCRAFT: cached.TYPE_AIRCRAFT || "",
+    OWNER_TYPE: cached.OWNER_TYPE || "",
+    
+    // Always set tracked to true for active aircraft
     isTracked: true
   };
 }
