@@ -1,8 +1,8 @@
 import { CacheManager } from '../services/managers/cache-manager'; // Ensure cache integration
 import { errorHandler, ErrorType } from './error-handler';
 import { OPENSKY_CONSTANTS } from '../../constants/opensky';
-import  dbManager from "../../lib/db/trackingDatabaseManager";
-import { Aircraft, mapPositionDataToAircraft, PositionData } from "@/types/base"; // Ensure correct types
+import TrackingDatabaseManager from '@/lib/db/trackingDatabaseManager';  // ✅ Import the database manager
+import { Aircraft, mapPositionDataToAircraft, PositionData, TrackingData } from "@/types/base"; // Ensure correct types
 import { PollingRateLimiter } from '@/lib/services/rate-limiter';
 
 interface AircraftData {
@@ -16,6 +16,8 @@ interface AircraftData {
     last_contact: number;
     manufacturer: string
 }
+
+const dbManager = TrackingDatabaseManager.getInstance();
 
 // Initialize rate limiter
 const rateLimiter = new PollingRateLimiter({
@@ -200,14 +202,27 @@ export async function fetchAircraftPositions(icao24s: string[]): Promise<Positio
 async function processAndStoreAircraftData(icao24s: string[]): Promise<void> {
     try {
         const liveAircraftList: PositionData[] = await fetchAircraftPositions(icao24s);
-
         console.log("[processAndStoreAircraftData] Processed aircraft data:", liveAircraftList);
 
         if (liveAircraftList.length > 0) {
             const mappedAircraftList: Aircraft[] = mapPositionDataToAircraft(liveAircraftList);
 
-            await dbManager.upsertActiveAircraftBatch(mappedAircraftList);
-            console.log(`[processAndStoreAircraftData] Successfully upserted ${mappedAircraftList.length} aircraft records.`);
+            // ✅ Transform Aircraft[] to TrackingData[]
+            const trackingData: TrackingData[] = mappedAircraftList.map((aircraft: Aircraft) => ({
+                icao24: aircraft.icao24,
+                latitude: aircraft.latitude,
+                longitude: aircraft.longitude,
+                altitude: aircraft.altitude,
+                velocity: aircraft.velocity,
+                heading: aircraft.heading,
+                on_ground: aircraft.on_ground,
+                last_contact: aircraft.last_contact,
+                updated_at: Date.now()  // ✅ Add updated_at timestamp
+            }));
+
+            // ✅ Upsert the transformed tracking data
+            await dbManager.upsertActiveAircraftBatch(trackingData);
+            console.log(`[processAndStoreAircraftData] Successfully upserted ${trackingData.length} aircraft records.`);
         } else {
             console.warn("[processAndStoreAircraftData] No valid aircraft data to insert.");
         }

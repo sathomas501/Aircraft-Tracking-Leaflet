@@ -1,7 +1,7 @@
 import { Database, open } from 'sqlite';
 import sqlite3 from 'sqlite3';
 import path from 'path';
-import { Aircraft } from '@/types/base';
+import { TrackingData } from '@/types/base'; 
 
 const TRACKING_DB_PATH = path.join(process.cwd(), 'lib', 'db', 'tracking.db');
 
@@ -84,25 +84,35 @@ export class TrackingDatabaseManager {
         return this.db;
     }
 
-    async upsertActiveAircraftBatch(aircraftList: Aircraft[]): Promise<void> {
+    async upsertActiveAircraftBatch(trackingDataList: TrackingData[]): Promise<void> {
         await this.initialize();
     
-        if (aircraftList.length === 0) {
-            console.warn("[TrackingDatabaseManager] No aircraft to upsert.");
+        if (trackingDataList.length === 0) {
+            console.warn("[TrackingDatabaseManager] No tracking data to upsert.");
             return;
         }
     
         try {
-            const placeholders = aircraftList.map(() => "(?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%s', 'now'))").join(", ");
-            const values = aircraftList.flatMap(a => [
-                a.icao24, a.latitude, a.longitude, a.altitude, a.velocity,
-                a.heading, a.on_ground, a.last_contact, a.manufacturer
+            const placeholders = trackingDataList.map(() =>
+                "(?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            ).join(", ");
+    
+            const values = trackingDataList.flatMap(data => [
+                data.icao24,
+                data.latitude,
+                data.longitude,
+                data.altitude,
+                data.velocity,
+                data.heading,
+                data.on_ground ? 1 : 0,  // SQLite expects 1/0 for boolean
+                data.last_contact,
+                data.updated_at
             ]);
     
             const sql = `
                 INSERT INTO aircraft (
-                    icao24, latitude, longitude, altitude, velocity, 
-                    heading, on_ground, last_contact, manufacturer, updated_at
+                    icao24, latitude, longitude, altitude, velocity,
+                    heading, on_ground, last_contact, updated_at
                 )
                 VALUES ${placeholders}
                 ON CONFLICT(icao24) DO UPDATE SET
@@ -113,15 +123,17 @@ export class TrackingDatabaseManager {
                     heading = excluded.heading,
                     on_ground = excluded.on_ground,
                     last_contact = excluded.last_contact,
-                    updated_at = strftime('%s', 'now')`;
+                    updated_at = excluded.updated_at;
+            `;
     
             await this.db!.run(sql, values);
-            console.log(`[TrackingDatabaseManager] Batch upsert successful: ${aircraftList.length} aircraft.`);
+            console.log(`[TrackingDatabaseManager] Batch upsert successful: ${trackingDataList.length} records.`);
         } catch (error) {
-            console.error("[TrackingDatabaseManager] Failed to batch upsert aircraft:", error);
+            console.error("[TrackingDatabaseManager] Failed to batch upsert tracking data:", error);
             throw error;
         }
     }
+    
     
     public async getAircraft(icao24: string): Promise<any | null> {
         await this.initialize();
@@ -168,4 +180,5 @@ export class TrackingDatabaseManager {
     }
 }
 
-export default TrackingDatabaseManager.getInstance();
+// This exports the class, allowing you to call getInstance()
+export default TrackingDatabaseManager;

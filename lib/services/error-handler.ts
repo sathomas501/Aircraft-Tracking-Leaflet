@@ -17,7 +17,9 @@ export enum ErrorType {
     OPENSKY_DATA = 'OPENSKY_DATA',
     OPENSKY_TIMEOUT = 'OPENSKY_TIMEOUT',
     OPENSKY_INVALID_ICAO = 'OPENSKY_INVALID_ICAO',
-    OPENSKY_SERVICE = 'OPENSKY_SERVICE'
+    OPENSKY_SERVICE = 'OPENSKY_SERVICE',
+    OPENSKY_POLLING = 'OPENSKY_POLLING',
+    OPENSKY_CLEANUP = 'OPENSKY_CLEANUP'
 }
 
 
@@ -68,7 +70,9 @@ export const userMessages: Record<ErrorType, string> = {
     [ErrorType.OPENSKY_DATA]: 'Unable to retrieve aircraft data from OpenSky.',
     [ErrorType.OPENSKY_TIMEOUT]: 'OpenSky request timed out. Please try again.',
     [ErrorType.OPENSKY_INVALID_ICAO]: 'Invalid ICAO24 code provided. Please check the aircraft identifier.',
-    [ErrorType.OPENSKY_SERVICE]: 'OpenSky service is currently unavailable. Please try again later.'
+    [ErrorType.OPENSKY_SERVICE]: 'OpenSky service is currently unavailable. Please try again later.',
+    [ErrorType.OPENSKY_POLLING]: 'An error occurred during polling. Please try again later.',
+    [ErrorType.OPENSKY_CLEANUP]: 'An error occurred during polling. Please try again later.'
 };
 
 export class ErrorHandler {

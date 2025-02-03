@@ -1,6 +1,7 @@
 import { PollingRateLimiter } from './rate-limiter';
 import { errorHandler, ErrorType } from './error-handler';
 import type { Aircraft } from '@/types/base';
+import  UnifiedCacheService  from './managers/unified-cache-system';
 
 interface TrackingData {
     aircraft: Aircraft[];
@@ -74,9 +75,10 @@ class ManufacturerTrackingService {
     }
 
     private notifySubscribers(data: TrackingData): void {
+        console.log('[Polling Update] Notifying subscribers with updated aircraft data:', data);
         this.subscribers.forEach(callback => callback(data));
     }
-
+    
     private async fetchStaticData(icao24List: { icao24: string }[]): Promise<void> {
         try {
             const response = await fetch('/api/aircraft/static-data', {
@@ -121,19 +123,17 @@ class ManufacturerTrackingService {
             );
             return;
         }
-
-        // After successful request:
-            this.rateLimiter.recordRequest();
-            
+    
+        this.rateLimiter.recordRequest();
+    
         try {
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), this.TIMEOUT);
-
-            // Get and validate ICAO24 codes
+    
             const icao24List = this.state.icao24List
                 .map(item => item.icao24.toLowerCase().trim())
                 .filter(icao => icao.length > 0);
-
+    
             if (icao24List.length === 0) {
                 errorHandler.handleError(
                     ErrorType.OPENSKY_INVALID_ICAO,
@@ -141,34 +141,26 @@ class ManufacturerTrackingService {
                 );
                 return;
             }
-
-            console.log('[ManufacturerTracking] Fetching states:', {
-                icao24Count: icao24List.length,
-                sampleIcao24s: icao24List.slice(0, 5)
-            });
-
-            // Query the proxy endpoint
+    
             const queryParams = new URLSearchParams({
                 icao24: icao24List.join(',')
             });
-
+    
             const response = await fetch(`/api/proxy/opensky?${queryParams}`, {
                 method: 'GET',
                 signal: controller.signal,
-                headers: {
-                    'Accept': 'application/json'
-                }
+                headers: { 'Accept': 'application/json' }
             });
-
+    
             clearTimeout(timeoutId);
-
+    
             if (!response.ok) {
                 const errorData = await response.json();
                 throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
             }
-
+    
             const data = await response.json();
-            
+    
             if (!data.states || !Array.isArray(data.states)) {
                 errorHandler.handleError(
                     ErrorType.OPENSKY_DATA,
@@ -177,48 +169,47 @@ class ManufacturerTrackingService {
                 this.notifySubscribers({ aircraft: [] });
                 return;
             }
-
+    
             const aircraft = data.states
-            .filter((state: OpenSkyState) => state && Array.isArray(state) && state.length >= 12)
-            .map((state: OpenSkyState) => {
-                const icao24 = state[0];
-                const staticInfo = this.state.staticData.get(icao24) || {
-                    TYPE_AIRCRAFT: '3', // Default to jet for Learjet
-                    OWNER_TYPE: '2',    // Default to corporate
-                    manufacturer: 'LEARJET INC',
-                    model: 'Unknown',
-                    "N-NUMBER": "",
-                    NAME: "",
-                    CITY: "",
-                    STATE: ""
-                };
-
-                return {
-                    ...staticInfo,
-                    icao24,
-                    callsign: state[1],
-                    originCountry: state[2],
-                    longitude: state[5],
-                    latitude: state[6],
-                    altitude: state[7],
-                    velocity: state[9],
-                    heading: state[10],
-                    verticalRate: state[11],
-                    timestamp: state[3]
-                };
-            });
-
+                .filter((state: OpenSkyState) => state && Array.isArray(state) && state.length >= 12)
+                .map((state: OpenSkyState) => {
+                    const icao24 = state[0];
+                    const staticInfo = this.state.staticData.get(icao24) || {};
+    
+                    return {
+                        ...staticInfo,
+                        icao24,
+                        callsign: state[1],
+                        originCountry: state[2],
+                        longitude: state[5],
+                        latitude: state[6],
+                        altitude: state[7],
+                        velocity: state[9],
+                        heading: state[10],
+                        verticalRate: state[11],
+                        timestamp: state[3],
+                        updated_at: Date.now()  // ✅ Ensure fresh timestamp for every poll
+                    };
+                });
+    
+            // ✅ Update internal state
+            this.state.aircraftData = aircraft;
+    
+            // ✅ Update Cache
+            const cacheService = UnifiedCacheService.getInstance();
+            cacheService.setLiveData('manufacturer', aircraft); // Replace 'manufacturer' as needed
+    
+            // ✅ Notify Subscribers
             this.notifySubscribers({ aircraft });
+    
             this.rateLimiter.decreasePollingInterval();
-
+    
         } catch (error) {
             this.handlePollingError(error);
         }
     }
-
-
-
     
+
     private handlePollingError(error: unknown): void {
         console.error('[ManufacturerTracking] Polling error:', error);
         this.rateLimiter.increasePollingInterval();
