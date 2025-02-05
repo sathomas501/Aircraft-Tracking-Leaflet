@@ -39,22 +39,46 @@ const getCachedData = (manufacturer: string) => {
 };
 
 // ✅ Fetch ICAO24s from Database
-const getIcao24s = async (manufacturer: string, model?: string): Promise<IcaoQueryResult[]> => {
-    const query = `
-        SELECT DISTINCT icao24
-        FROM aircraft
-        WHERE manufacturer = ?
-        ${model ? "AND model = ?" : ""}
-        AND icao24 IS NOT NULL AND icao24 != ''
-        LIMIT 2000;
+interface IcaoQueryResult {
+    icao24: string;
+  }
+  
+  const getIcao24s = async (manufacturer: string, model?: string): Promise<IcaoQueryResult[]> => {
+    const baseQuery = `
+      SELECT DISTINCT icao24
+      FROM aircraft
+      WHERE manufacturer = ?
+      AND icao24 IS NOT NULL AND icao24 != ''
+      ${model ? "AND model = ?" : ""}
+      LIMIT 2000;
     `;
+  
     const params = model ? [manufacturer, model] : [manufacturer];
-    console.log('[getIcao24s] Executing query:', { query, params });
-    const results = await dbManager.executeQuery<IcaoQueryResult>(query, params);
-    console.log('[getIcao24s] Results:', results?.length, 'Sample:', results?.slice(0, 3));
-    return results;
-};
+  
+    console.log('[getIcao24s] Executing query:', {
+      query: baseQuery.trim(), // ✅ Clean formatting for logs
+      params,
+    });
+  
+    try {
+      const results = await dbManager.executeQuery<IcaoQueryResult>(baseQuery, params);
+  
+      console.log('ICAO24 List:', results.map(item => item.icao24));  // ✅ Fixed
 
+
+      if (!results || results.length === 0) {
+        console.warn('[getIcao24s] No ICAO24 codes found for:', { manufacturer, model });
+        return [];
+      }
+  
+      console.log('[getIcao24s] Results:', results.length, 'Sample:', results.slice(0, 3));
+      return results;
+    } catch (error) {
+      console.error('[getIcao24s] Database query failed:', error);
+      throw new Error('Failed to fetch ICAO24 codes from the database.');
+    }
+  };
+  
 
 // ✅ Merge Static & Live Data
 const mergeStaticAndLiveData = (liveData: Aircraft[], staticData: Aircraft[]): Aircraft[] => {

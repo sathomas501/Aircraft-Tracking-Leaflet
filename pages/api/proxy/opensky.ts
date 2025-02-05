@@ -2,27 +2,24 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { PollingRateLimiter } from '@/lib/services/rate-limiter';
 import { openSkyAuth } from '@/lib/services/opensky-auth';
-import { ErrorType } from '@/lib/services/error-handler';
+import { errorHandler, ErrorType } from '@/lib/services/error-handler';
 import { OPENSKY_CONSTANTS } from '../../../constants/opensky';
 import { API_CONFIG } from '@/config/api';
 
-// Initialize rate limiter with OpenSky's authenticated limits
 const rateLimiter = new PollingRateLimiter({
-    requireAuthentication: true,
+    requestsPerMinute: OPENSKY_CONSTANTS.RATE_LIMITS.AUTHENTICATED.REQUESTS_PER_10_MIN / 10,
+    requestsPerDay: OPENSKY_CONSTANTS.RATE_LIMITS.AUTHENTICATED.REQUESTS_PER_DAY,
+    maxBatchSize: OPENSKY_CONSTANTS.RATE_LIMITS.AUTHENTICATED.MAX_BATCH_SIZE,
     minPollingInterval: API_CONFIG.API.MIN_POLLING_INTERVAL,
     maxPollingInterval: API_CONFIG.API.MAX_POLLING_INTERVAL,
     maxWaitTime: API_CONFIG.API.TIMEOUT_MS,
-    maxBatchSize: OPENSKY_CONSTANTS.RATE_LIMITS.AUTHENTICATED.MAX_BATCH_SIZE,
     retryLimit: API_CONFIG.API.DEFAULT_RETRY_LIMIT,
-    requestsPerMinute: OPENSKY_CONSTANTS.RATE_LIMITS.AUTHENTICATED.REQUESTS_PER_10_MIN,
-    requestsPerDay: OPENSKY_CONSTANTS.RATE_LIMITS.AUTHENTICATED.REQUESTS_PER_DAY
+    requireAuthentication: true
 });
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
     console.log("[OpenSky Proxy] Starting request handling");
 
-
-    // Basic request validation
     if (req.method !== 'GET') {
         return res.status(405).json({ 
             error: "Method Not Allowed. Use GET.",
@@ -30,97 +27,88 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         });
     }
 
-    // First, try to authenticate
+    const { icao24 } = req.query;
+    if (!icao24 || (typeof icao24 === 'string' && icao24.trim() === '')) {
+        return res.status(200).json({ 
+            time: Math.floor(Date.now() / 1000),
+            states: [] 
+        });
+    }
+
     try {
-        console.log("[OpenSky Proxy] Starting authentication...");
+        // Authentication check
         const authResult = await openSkyAuth.ensureAuthenticated();
-        
         if (!authResult) {
-            console.error("[OpenSky Proxy] Authentication failed");
             return res.status(401).json({
                 error: "Failed to authenticate with OpenSky",
                 errorType: ErrorType.OPENSKY_AUTH
             });
         }
-        
-        console.log("[OpenSky Proxy] Authentication successful");
 
-        
-        // Now handle the ICAO validation
-        const { icao24 } = req.query;
-        console.log('[OpenSky Proxy] ICAO24s:', { raw: icao24, type: typeof icao24 })
-        if (!icao24) {
-            return res.status(200).json({ states: [] });
-        }
-
-        const icao24List: string[] = Array.isArray(icao24) ? icao24 : [icao24];
-        if (icao24List.length > OPENSKY_CONSTANTS.RATE_LIMITS.AUTHENTICATED.MAX_BATCH_SIZE) {
-            return res.status(400).json({
-                error: `Maximum of ${OPENSKY_CONSTANTS.RATE_LIMITS.AUTHENTICATED.MAX_BATCH_SIZE} ICAO24 codes per request.`,
-                errorType: ErrorType.OPENSKY_INVALID_ICAO
-            });
-        }
-
-        const formattedIcaos = (Array.isArray(icao24) ? icao24 : [icao24])
-    .map(code => code.toLowerCase().trim())
-    .filter(code => /^[0-9a-f]{6}$/.test(code));
-
-console.log('[OpenSky Proxy] Formatted ICAOs:', formattedIcaos.length);
-
-        // Check rate limits
+        // Rate limit check
         if (rateLimiter.isRateLimited()) {
             const nextSlot = await rateLimiter.getNextAvailableSlot();
             return res.status(429).json({
                 error: "Rate limit reached",
                 errorType: ErrorType.OPENSKY_RATE_LIMIT,
-                nextAvailable: nextSlot
+                nextAvailable: nextSlot,
+                retryAfter: Math.ceil((nextSlot.getTime() - Date.now()) / 1000)
             });
         }
 
-        
+        // Handle consecutive failures
+        if (rateLimiter.shouldReset()) {
+            await rateLimiter.waitForBackoff();
+        }
 
-        // Make the authenticated request
         const timeParam = Math.floor(Date.now() / 1000);
-        const openSkyUrl = `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.ALL_STATES}?time=${timeParam}&icao24=${icao24List.join(",")}`;
-        
-        console.log("[OpenSky Proxy] Making request with auth headers");
-        const authHeaders = openSkyAuth.getAuthHeaders();
-        console.log("[OpenSky Proxy] Auth header present:", !!authHeaders.Authorization);
+        const formattedIcaos = (Array.isArray(icao24) ? icao24 : [icao24])
+            .map(code => code.toLowerCase().trim())
+            .filter(code => /^[0-9a-f]{6}$/.test(code));
 
-        const response = await fetch(openSkyUrl, {
-            headers: {
-                ...authHeaders,
-                'Accept': 'application/json'
+        if (formattedIcaos.length === 0) {
+            return res.status(200).json({ 
+                time: timeParam,
+                states: [] 
+            });
+        }
+
+        // Use rate limiter's schedule method for the actual API call
+        let responseData: any;
+        await rateLimiter.schedule(async () => {
+            const openSkyUrl = `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.ALL_STATES}?time=${timeParam}&icao24=${formattedIcaos.join(',')}`;
+            console.log('[OpenSky Proxy] Request URL:', openSkyUrl);
+
+            const response = await fetch(openSkyUrl, {
+                headers: {
+                    ...openSkyAuth.getAuthHeaders(),
+                    'Accept': 'application/json'
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error(`OpenSky API error: ${response.status}`);
             }
+
+            responseData = await response.json();
         });
-        
-        console.log("[OpenSky Proxy] OpenSky response status:", response.status);
-        
-        const data = await response.json();
-        console.log("[OpenSky Proxy] Response data:", data);
-        
+
+        rateLimiter.recordSuccess();
         return res.status(200).json({
-            states: data.states || [],
-            time: data.time || timeParam
+            states: responseData.states || [],
+            time: responseData.time || timeParam
         });
 
     } catch (error) {
+        rateLimiter.recordFailure();
         console.error("[OpenSky Proxy] Error:", error);
-        
-        if (error instanceof Error) {
-            if (error.message.includes('authentication')) {
-                return res.status(401).json({
-                    error: "OpenSky authentication failed",
-                    errorType: ErrorType.OPENSKY_AUTH
-                });
-            }
-        }
-        
-        return res.status(500).json({
-            error: "Failed to fetch data from OpenSky",
-            errorType: ErrorType.OPENSKY_SERVICE,
-            details: error instanceof Error ? error.message : String(error)
-        });
-    }
 
+        const errorResponse = {
+            error: error instanceof Error ? error.message : "Failed to fetch data from OpenSky",
+            errorType: ErrorType.OPENSKY_SERVICE,
+            retryAfter: Math.ceil(rateLimiter.getTimeUntilNextSlot() / 1000)
+        };
+
+        return res.status(503).json(errorResponse);
+    }
 }
