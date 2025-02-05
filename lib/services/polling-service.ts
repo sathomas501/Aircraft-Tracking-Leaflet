@@ -2,23 +2,8 @@
 import axios from 'axios';
 import { chunk } from 'lodash';
 import { PollingRateLimiter } from './rate-limiter';
-import { openSkyAuth } from './opensky-auth';
-import { ErrorType } from './error-handler';
-
-// Constants for OpenSky API limits
-const OPENSKY_LIMITS = {
-    AUTHENTICATED: {
-        REQUESTS_PER_10_MIN: 600,
-        REQUESTS_PER_DAY: 4000,
-        MAX_BATCH_SIZE: 100
-    },
-    API: {
-        MIN_POLLING_INTERVAL: 5000,
-        MAX_POLLING_INTERVAL: 30000,
-        TIMEOUT_MS: 15000,
-        DEFAULT_RETRY_LIMIT: 3
-    }
-} as const;
+import { API_CONFIG } from '@/config/api';
+import { OPENSKY_CONSTANTS } from '@/constants/opensky';
 
 export interface PollingConfig {
     url: string;
@@ -47,23 +32,23 @@ export class PollingService {
     constructor(config: PollingConfig) {
         this.config = {
             url: config.url,
-            pollingInterval: config.pollingInterval || OPENSKY_LIMITS.API.MIN_POLLING_INTERVAL,
+            pollingInterval: config.pollingInterval || API_CONFIG.API.MIN_POLLING_INTERVAL,
             batchSize: Math.min(
-                config.batchSize || OPENSKY_LIMITS.AUTHENTICATED.MAX_BATCH_SIZE,
-                OPENSKY_LIMITS.AUTHENTICATED.MAX_BATCH_SIZE
+                config.batchSize || OPENSKY_CONSTANTS.RATE_LIMITS.AUTHENTICATED.MAX_BATCH_SIZE,
+                OPENSKY_CONSTANTS.RATE_LIMITS.AUTHENTICATED.MAX_BATCH_SIZE
             ),
             authRequired: config.authRequired || true,
-            maxRetries: config.maxRetries || OPENSKY_LIMITS.API.DEFAULT_RETRY_LIMIT,
+            maxRetries: config.maxRetries || API_CONFIG.API.DEFAULT_RETRY_LIMIT,
             cacheEnabled: config.cacheEnabled ?? true,
         };
 
         this.rateLimiter = new PollingRateLimiter({
-            requestsPerMinute: OPENSKY_LIMITS.AUTHENTICATED.REQUESTS_PER_10_MIN / 10,
-            requestsPerDay: OPENSKY_LIMITS.AUTHENTICATED.REQUESTS_PER_DAY,
-            minPollingInterval: OPENSKY_LIMITS.API.MIN_POLLING_INTERVAL,
-            maxPollingInterval: OPENSKY_LIMITS.API.MAX_POLLING_INTERVAL,
-            maxWaitTime: OPENSKY_LIMITS.API.TIMEOUT_MS,
-            retryLimit: OPENSKY_LIMITS.API.DEFAULT_RETRY_LIMIT
+            requestsPerMinute: OPENSKY_CONSTANTS.RATE_LIMITS.AUTHENTICATED.REQUESTS_PER_10_MIN / 10,
+            requestsPerDay: OPENSKY_CONSTANTS.RATE_LIMITS.AUTHENTICATED.REQUESTS_PER_DAY,
+            minPollingInterval: API_CONFIG.API.MIN_POLLING_INTERVAL,
+            maxPollingInterval: API_CONFIG.API.MAX_POLLING_INTERVAL,
+            maxWaitTime: API_CONFIG.API.TIMEOUT_MS,
+            retryLimit: API_CONFIG.API.DEFAULT_RETRY_LIMIT
         });
     }
 
@@ -89,8 +74,8 @@ export class PollingService {
             throw new Error('Batch cannot be empty');
         }
     
-        if (batch.length > OPENSKY_LIMITS.AUTHENTICATED.MAX_BATCH_SIZE) {
-            throw new Error(`Batch size exceeds OpenSky limit of ${OPENSKY_LIMITS.AUTHENTICATED.MAX_BATCH_SIZE}`);
+        if (batch.length > OPENSKY_CONSTANTS.RATE_LIMITS.AUTHENTICATED.MAX_BATCH_SIZE) {
+            throw new Error(`Batch size exceeds OpenSky limit of ${OPENSKY_CONSTANTS.RATE_LIMITS.AUTHENTICATED.MAX_BATCH_SIZE}`);
         }
     
         try {
@@ -131,8 +116,8 @@ export class PollingService {
     public startPolling(icao24List: string[]): void {
         this.isPolling = true;
 
-        const batches = chunk(icao24List, OPENSKY_LIMITS.AUTHENTICATED.MAX_BATCH_SIZE);
-        console.log(`[PollingService] Starting polling with ${batches.length} batches of ${OPENSKY_LIMITS.AUTHENTICATED.MAX_BATCH_SIZE} aircraft each`);
+        const batches = chunk(icao24List, OPENSKY_CONSTANTS.RATE_LIMITS.AUTHENTICATED.MAX_BATCH_SIZE);
+        console.log(`[PollingService] Starting polling with ${batches.length} batches of ${OPENSKY_CONSTANTS.RATE_LIMITS.AUTHENTICATED.MAX_BATCH_SIZE} aircraft each`);
 
         this.pollingIntervalId = setInterval(async () => {
             if (!this.isPolling) return;
@@ -177,8 +162,8 @@ export class PollingService {
 // Create singleton instance
 const defaultPollingService = new PollingService({
     url: '/api/proxy/opensky', // Updated to use proxy URL
-    pollingInterval: OPENSKY_LIMITS.API.MIN_POLLING_INTERVAL,
-    batchSize: OPENSKY_LIMITS.AUTHENTICATED.MAX_BATCH_SIZE,
+    pollingInterval: API_CONFIG.API.MIN_POLLING_INTERVAL,
+    batchSize: OPENSKY_CONSTANTS.RATE_LIMITS.AUTHENTICATED.MAX_BATCH_SIZE,
     authRequired: false, // Changed since auth is handled by proxy
 });
 

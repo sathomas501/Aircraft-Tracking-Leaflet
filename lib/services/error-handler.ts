@@ -4,7 +4,6 @@ import { PollingRateLimiter } from './rate-limiter';
 
 export enum ErrorType {
     NETWORK = 'NETWORK',
-    API_ERROR = 'API_ERROR',
     AUTH = 'AUTH',
     AUTH_REQUIRED = 'AUTH_REQUIRED',
     DATA = 'DATA',
@@ -19,11 +18,10 @@ export enum ErrorType {
     OPENSKY_DATA = 'OPENSKY_DATA',
     OPENSKY_TIMEOUT = 'OPENSKY_TIMEOUT',
     OPENSKY_INVALID_ICAO = 'OPENSKY_INVALID_ICAO',
-    OPENSKY_SERVICE = 'OPENSKY_SERVICE',
-    OPENSKY_POLLING = 'OPENSKY_POLLING',
-    OPENSKY_CLEANUP = 'OPENSKY_CLEANUP',
-    GENERAL = 'GENERAL',
+    OPENSKY_SERVICE = 'OPENSKY_SERVICE'
 }
+
+
 
 export interface ErrorDetails {
     type: ErrorType;
@@ -53,10 +51,10 @@ export function handleApiError(res: NextApiResponse, error: unknown): void {
 }
 
 
+
 // User-friendly messages for errors
 export const userMessages: Record<ErrorType, string> = {
     [ErrorType.NETWORK]: 'A network issue occurred. Please check your connection.',
-    [ErrorType.API_ERROR]: 'An API error has occured.',
     [ErrorType.AUTH]: 'Authentication failed. Please log in again.',
     [ErrorType.AUTH_REQUIRED]: 'Authentication is required to proceed.',
     [ErrorType.DATA]: 'An issue occurred while processing data.',
@@ -71,87 +69,55 @@ export const userMessages: Record<ErrorType, string> = {
     [ErrorType.OPENSKY_DATA]: 'Unable to retrieve aircraft data from OpenSky.',
     [ErrorType.OPENSKY_TIMEOUT]: 'OpenSky request timed out. Please try again.',
     [ErrorType.OPENSKY_INVALID_ICAO]: 'Invalid ICAO24 code provided. Please check the aircraft identifier.',
-    [ErrorType.OPENSKY_SERVICE]: 'OpenSky service is currently unavailable. Please try again later.',
-    [ErrorType.OPENSKY_POLLING]: 'An error occurred during polling. Please try again later.',
-    [ErrorType.OPENSKY_CLEANUP]: 'An error occurred during polling. Please try again later.',
-    [ErrorType.GENERAL]: 'A general error has occured.'
+    [ErrorType.OPENSKY_SERVICE]: 'OpenSky service is currently unavailable. Please try again later.'
 };
-
-export function useErrorHandler(type: ErrorType) {
-    const [error, setError] = React.useState<ErrorDetails | null>(null);
-
-    React.useEffect(() => {
-        const handler = (errorDetails: ErrorDetails) => {
-            setError(errorDetails);
-        };
-
-        errorHandler.subscribeToError(type, handler);
-
-        return () => {
-            errorHandler.unsubscribeFromError(type, handler);
-        };
-    }, [type]);
-
-    return {
-        error,
-        clearError: () => {
-            setError(null);
-            errorHandler.clearError(type);
-        },
-    };
-}
 
 export class ErrorHandler {
     private static instance: ErrorHandler;
+    private rateLimiter?: PollingRateLimiter;
+    private readonly MAX_RETRY_COUNT = 5;
     private state: ErrorState = {
         errors: new Map(),
         handlers: new Map(),
-        retryTimeouts: new Map(),
+        retryTimeouts: new Map()
     };
-
-    private readonly MAX_RETRY_COUNT = 5;
     private readonly BASE_RETRY_DELAY = 2000;
     private readonly MAX_RETRY_DELAY = 32000;
 
-    // Updated retry configurations for OpenSky
-    private readonly retryConfig: Partial<Record<ErrorType, { maxRetries: number; baseDelay: number; shouldReset?: boolean }>> = {
-        [ErrorType.OPENSKY_AUTH]: { 
-            maxRetries: 3, 
-            baseDelay: 5000,
-            shouldReset: true  // Reset rate limiter on auth failures
-        },
-        [ErrorType.OPENSKY_RATE_LIMIT]: { 
-            maxRetries: 5, 
-            baseDelay: 10000,
-            shouldReset: true  // Reset rate limiter on rate limit errors
-        },
-        [ErrorType.OPENSKY_TIMEOUT]: { 
-            maxRetries: 3, 
-            baseDelay: 3000 
-        },
-        [ErrorType.OPENSKY_SERVICE]: { 
-            maxRetries: 4, 
-            baseDelay: 15000,
-            shouldReset: true  // Reset rate limiter on service errors
-        }
+    // Added retry configurations for specific error types
+    private readonly retryConfig: Partial<Record<ErrorType, { maxRetries: number; baseDelay: number }>> = {
+        [ErrorType.OPENSKY_AUTH]: { maxRetries: 3, baseDelay: 5000 },
+        [ErrorType.OPENSKY_RATE_LIMIT]: { maxRetries: 5, baseDelay: 10000 },
+        [ErrorType.OPENSKY_TIMEOUT]: { maxRetries: 3, baseDelay: 3000 },
+        [ErrorType.OPENSKY_SERVICE]: { maxRetries: 4, baseDelay: 15000 }
     };
-
-    // Add rate limiter reference
-    private rateLimiter?: PollingRateLimiter;
-
+  
     private constructor() {}
-
+  
     public static getInstance(): ErrorHandler {
-        if (!this.instance) {
-            this.instance = new ErrorHandler();
-        }
-        return this.instance;
+      if (!ErrorHandler.instance) {
+        ErrorHandler.instance = new ErrorHandler();
+      }
+      return ErrorHandler.instance;
     }
-
-    // Add method to set rate limiter
+  
     public setRateLimiter(limiter: PollingRateLimiter) {
-        this.rateLimiter = limiter;
+      this.rateLimiter = limiter;
     }
+        handleOpenSkyError(error: ErrorDetails | Error, rateLimiter?: PollingRateLimiter) {
+            const errorDetails: ErrorDetails = error instanceof Error 
+                ? { 
+                    type: ErrorType.OPENSKY_SERVICE,
+                    message: error.message,
+                    timestamp: Date.now(),
+                    retryCount: 0,
+                    resolved: false
+                  }
+                : error;
+    
+            this.handleError(errorDetails);
+        }
+
 
     public handleError(errorOrType: ErrorType | ErrorDetails, message?: string | Error, context?: any): void {
         let error: ErrorDetails;
@@ -171,41 +137,27 @@ export class ErrorHandler {
 
         console.error(`[ErrorHandler] ${error.type}:`, error.message, error.context);
 
-        // Handle OpenSky specific errors
-        if (error.type.startsWith('OPENSKY_') && this.rateLimiter) {
-            const config = this.retryConfig[error.type];
-            
-            // Record failure in rate limiter
-            this.rateLimiter.recordFailure();
-
-            // Reset rate limiter if needed
-            if (config?.shouldReset && this.rateLimiter.shouldReset()) {
-                console.log(`[ErrorHandler] Resetting rate limiter due to ${error.type}`);
-                this.rateLimiter.reset();
-            }
-        }
-
+        // Add the error to the state
         this.state.errors.set(error.type, error);
+
+        // Notify subscribed handlers
         this.notifyHandlers(error);
+
+        // Log the error
         this.logError(error);
 
+        // Get retry configuration for this error type
         const retryConfig = this.retryConfig[error.type];
         const maxRetries = retryConfig?.maxRetries ?? this.MAX_RETRY_COUNT;
 
+        // Handle retry logic if applicable
         if (error.retryCount < maxRetries && this.shouldRetry(error.type)) {
             this.scheduleRetry(error);
         }
     }
 
     private shouldRetry(errorType: ErrorType): boolean {
-        // Update retry logic for OpenSky errors
-        if (errorType.startsWith('OPENSKY_')) {
-            // Don't retry if we've reset the rate limiter
-            if (this.rateLimiter?.shouldReset()) {
-                return false;
-            }
-        }
-
+        // Define which error types should be retried
         const retryableErrors = new Set([
             ErrorType.NETWORK,
             ErrorType.OPENSKY_AUTH,
@@ -280,43 +232,32 @@ export class ErrorHandler {
     public getActiveErrors(): ErrorDetails[] {
         return Array.from(this.state.errors.values());
     }
-
-    public async handleOpenSkyError(error: Error | any, rateLimiter?: PollingRateLimiter): Promise<void> {
-        console.error('[ErrorHandler] OpenSky API Error:', error);
-
-        if (error.response?.status === 401) {
-            this.handleError(ErrorType.OPENSKY_AUTH, 'Authentication failed');
-            if (rateLimiter) {
-                rateLimiter.recordFailure();
-            }
-            return;
-        }
-    
-        if (error.response?.status === 429) {
-            this.handleError(ErrorType.OPENSKY_RATE_LIMIT, 'Rate limit exceeded');
-            if (rateLimiter) {
-                rateLimiter.recordFailure();
-                await rateLimiter.waitForBackoff();
-            }
-            return;
-        }
-    
-        if (this.rateLimiter) {
-            this.rateLimiter.recordFailure();
-            if (this.rateLimiter.shouldReset()) {
-                await this.rateLimiter.waitForBackoff();
-            }
-
-            if (error instanceof Error) {
-                this.handleError(ErrorType.OPENSKY_SERVICE, error.message);
-            }
-
-        this.handleError(ErrorType.OPENSKY_SERVICE, 'Service error occurred');
-        if (rateLimiter) {
-            rateLimiter.recordFailure();
-        }
-    }
-}
 }
 
+// React hook for using the error handler
+export function useErrorHandler(type: ErrorType) {
+    const [error, setError] = React.useState<ErrorDetails | null>(null);
+
+    React.useEffect(() => {
+        const handler = (errorDetails: ErrorDetails) => {
+            setError(errorDetails);
+        };
+
+        errorHandler.subscribeToError(type, handler);
+
+        return () => {
+            errorHandler.unsubscribeFromError(type, handler);
+        };
+    }, [type]);
+
+    return {
+        error,
+        clearError: () => {
+            setError(null);
+            errorHandler.clearError(type);
+        },
+    };
+}
+
+// Create and export singleton instance
 export const errorHandler = ErrorHandler.getInstance();

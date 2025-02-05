@@ -1,7 +1,7 @@
 // lib/services/opensky-validation.ts
 import type { OpenSkyState } from '@/types/api/opensky';
-import { OPENSKY_INDICES } from '@/lib/api/constants';
-import { OpenSkyError, OpenSkyErrorCode } from '@/lib/services/opensky-errors';
+import { PARSER_CONSTANTS } from '../../constants/parsers';
+import { OpenSkyError, OpenSkyErrorCode } from '@/lib/services/error-handler';
 import type {PositionData } from '@/types/base'
 
 /**
@@ -24,39 +24,37 @@ export function validateStateVector(state: any[]): OpenSkyState {
         );
     }
 
-    const parsedLastContact = Number(state[OPENSKY_INDICES.LAST_CONTACT]);
+    const parsedLastContact = Number(state[PARSER_CONSTANTS.INDICES.LAST_CONTACT]);
     if (isNaN(parsedLastContact)) {
         throw new OpenSkyError(
-            `Invalid last_contact value: ${state[OPENSKY_INDICES.LAST_CONTACT]}`,
+            `Invalid last_contact value: ${state[PARSER_CONSTANTS.INDICES.LAST_CONTACT]}`,
             OpenSkyErrorCode.INVALID_DATA
         );
     }
 
     return {
-        icao24: String(state[OPENSKY_INDICES.ICAO24]),
-        callsign: state[OPENSKY_INDICES.CALLSIGN] ? 
-            String(state[OPENSKY_INDICES.CALLSIGN]) : undefined,
-        origin_country: String(state[OPENSKY_INDICES.ORIGIN_COUNTRY]),
-        time_position: toNumberOrUndefined(state[OPENSKY_INDICES.TIME_POSITION]),
+        icao24: String(state[PARSER_CONSTANTS.INDICES.ICAO24]),
+        callsign: state[PARSER_CONSTANTS.INDICES.CALLSIGN] ? 
+            String(state[PARSER_CONSTANTS.INDICES.CALLSIGN]) : undefined,
+        origin_country: String(state[PARSER_CONSTANTS.INDICES.ORIGIN_COUNTRY]),
+        time_position: toNumberOrUndefined(state[PARSER_CONSTANTS.INDICES.TIME_POSITION]),
         last_contact: parsedLastContact,
-        longitude: toNumberOrUndefined(state[OPENSKY_INDICES.LONGITUDE]),
-        latitude: toNumberOrUndefined(state[OPENSKY_INDICES.LATITUDE]),
-        baro_altitude: toNumberOrUndefined(state[OPENSKY_INDICES.BARO_ALTITUDE]),
-        on_ground: Boolean(state[OPENSKY_INDICES.ON_GROUND]),
-        velocity: toNumberOrUndefined(state[OPENSKY_INDICES.VELOCITY]),
-        true_track: toNumberOrUndefined(state[OPENSKY_INDICES.TRUE_TRACK]),
-        vertical_rate: toNumberOrUndefined(state[OPENSKY_INDICES.VERTICAL_RATE]),
-        sensors: Array.isArray(state[OPENSKY_INDICES.SENSORS]) ? 
-            state[OPENSKY_INDICES.SENSORS].map(Number) : undefined,
-        geo_altitude: toNumberOrUndefined(state[OPENSKY_INDICES.GEO_ALTITUDE]),
-        squawk: state[OPENSKY_INDICES.SQUAWK] ? 
-            String(state[OPENSKY_INDICES.SQUAWK]) : undefined,
-        spi: Boolean(state[OPENSKY_INDICES.SPI]),
-        position_source: Number(state[OPENSKY_INDICES.POSITION_SOURCE] || 0)
+        longitude: toNumberOrUndefined(state[PARSER_CONSTANTS.INDICES.LONGITUDE]),
+        latitude: toNumberOrUndefined(state[PARSER_CONSTANTS.INDICES.LATITUDE]),
+        baro_altitude: toNumberOrUndefined(state[PARSER_CONSTANTS.INDICES.BARO_ALTITUDE]),
+        on_ground: Boolean(state[PARSER_CONSTANTS.INDICES.ON_GROUND]),
+        velocity: toNumberOrUndefined(state[PARSER_CONSTANTS.INDICES.VELOCITY]),
+        true_track: toNumberOrUndefined(state[PARSER_CONSTANTS.INDICES.TRUE_TRACK]),
+        vertical_rate: toNumberOrUndefined(state[PARSER_CONSTANTS.INDICES.VERTICAL_RATE]),
+        sensors: Array.isArray(state[PARSER_CONSTANTS.INDICES.SENSORS]) ? 
+            state[PARSER_CONSTANTS.INDICES.SENSORS].map(Number) : undefined,
+        geo_altitude: toNumberOrUndefined(state[PARSER_CONSTANTS.INDICES.GEO_ALTITUDE]),
+        squawk: state[PARSER_CONSTANTS.INDICES.SQUAWK] ? 
+            String(state[PARSER_CONSTANTS.INDICES.SQUAWK]) : undefined,
+        spi: Boolean(state[PARSER_CONSTANTS.INDICES.SPI]),
+        position_source: Number(state[PARSER_CONSTANTS.INDICES.POSITION_SOURCE] || 0)
     };
 }
-
-
 
 /**
  * Validates that a partial PositionData object contains all required fields

@@ -3,12 +3,11 @@ import { Search, Plane, X, Minus } from 'lucide-react';
 import { 
   Aircraft, 
   CachedAircraftData, 
-  SelectOption,
-  transformToCachedData,
-  transformToAircraft
+  SelectOption
 } from '@/types/base';
 import UnifiedCacheService, { UnsubscribeFunction } from '@/lib/services/managers/unified-cache-system';
 import { startPolling, stopPolling, subscribe } from '@/lib/services/polling-service';
+import { transformToAircraft, transformToCachedData } from '../../../utils/aircraft-helpers';
 
 
 interface UnifiedSelectorProps {
@@ -125,89 +124,34 @@ const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
   };
 
   const handleManufacturerSelect = async (manufacturer: string) => {
+    console.log('[Select] Manufacturer:', manufacturer);
     try {
-      setLoading(true);
-      // Clear previous subscription and polling
-      if (cacheSubscription) {
-        cacheSubscription();
-        stopPolling();
-      }
-  
-      const key = manufacturer.trim().toUpperCase();
-      const cachedData = cacheService.getLiveData(key);
-  
-      if (cachedData && cachedData.length > 0) {
-        // Serve cached data
-        console.log(`[Cache] Serving cached data for ${manufacturer}`);
-        const transformedAircraft = cachedData.map(transformToAircraft);
-        onAircraftUpdate(transformedAircraft);
-        setActiveCount(transformedAircraft.length);
-  
-        // Start polling with cached aircraft
-        const icao24List = transformedAircraft.map(ac => ac.icao24);
-        subscribe(
-          (data) => {
-            if (data && Array.isArray(data)) {
-              const updatedAircraft = data.map(transformToAircraft);
-              const newCachedData = data.map(transformToCachedData);
-              cacheService.setLiveData(key, newCachedData);
-              onAircraftUpdate(updatedAircraft);
-              setActiveCount(updatedAircraft.length);
-            }
-          },
-          (error) => {
-            console.error('Polling error:', error);
-          }
-        );
-        startPolling(icao24List);
-      } else {
-        // Fetch fresh data
+        setLoading(true);
+        
+        const requestBody = { manufacturer };
+        console.log('[Select] Request body:', requestBody);
+        
         const response = await fetch('/api/aircraft/track-manufacturer', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ manufacturer }),
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(requestBody),
         });
-  
+        
         const data = await response.json();
-  
+        console.log('[Select] Response:', data);
+
         if (data.liveAircraft) {
-          const transformedAircraft = data.liveAircraft.map(transformToAircraft);
-          const newCachedData = data.liveAircraft.map(transformToCachedData);
-          cacheService.setLiveData(key, newCachedData);
-          onAircraftUpdate(transformedAircraft);
-          setActiveCount(transformedAircraft.length);
-  
-          // Start polling with new aircraft
-            const icao24List: string[] = transformedAircraft.map((ac: Aircraft) => ac.icao24);
-          subscribe(
-            (data) => {
-              if (data && Array.isArray(data)) {
-                const updatedAircraft = data.map(transformToAircraft);
-                const newCachedData = data.map(transformToCachedData);
-                cacheService.setLiveData(key, newCachedData);
-                onAircraftUpdate(updatedAircraft);
-                setActiveCount(updatedAircraft.length);
-              }
-            },
-            (error) => {
-              console.error('Polling error:', error);
-            }
-          );
-          startPolling(icao24List);
+            onManufacturerSelect(manufacturer);
+            setSearchTerm(manufacturer);
+            setShowDropdown(false);
+            setSelectedModel('');
         }
-      }
-  
-      onManufacturerSelect(manufacturer);
-      setSearchTerm(manufacturer);
-      setShowDropdown(false);
-      setSelectedModel('');
-  
     } catch (err) {
-      console.error('Error selecting manufacturer:', err);
+        console.error('[Select] Error:', err);
     } finally {
-      setLoading(false);
+        setLoading(false);
     }
-  };
+};
 
 
   // Add this state to track model counts from cached data

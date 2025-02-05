@@ -1,5 +1,9 @@
 // lib/config/features.ts
-import { OPENSKY_CONFIG } from './opensky';
+import { WEBSOCKET_CONFIG } from '@/config/websocket';
+import {AIRCRAFT_CONSTANTS} from '.././../constants/aircraft'
+import { MONITORING_CONSTANTS } from '@/constants/monitoring';
+import { RETRY_CONFIG } from '@/config/retry';
+
 
 export interface FeatureFlag {
   name: string;
@@ -20,9 +24,9 @@ export const FEATURES: Record<string, FeatureFlag> = {
     enabled: true,
     dependencies: [],
     config: {
-      maxRetries: OPENSKY_CONFIG.WEBSOCKET.RECONNECT.MAX_ATTEMPTS,
-      reconnectDelay: OPENSKY_CONFIG.WEBSOCKET.RECONNECT.BASE_DELAY,
-      pingInterval: OPENSKY_CONFIG.WEBSOCKET.PING_INTERVAL
+      maxRetries: WEBSOCKET_CONFIG.RECONNECT.MAX_ATTEMPTS,
+      reconnectDelay: RETRY_CONFIG.INITIAL_DELAY,
+      pingInterval: WEBSOCKET_CONFIG.TIMEOUTS.PING_INTERVAL
     }
   },
 
@@ -32,8 +36,8 @@ export const FEATURES: Record<string, FeatureFlag> = {
     enabled: true,
     dependencies: ['websocket'],
     config: {
-      maxAttempts: OPENSKY_CONFIG.RETRY.MAX_ATTEMPTS,
-      backoffFactor: OPENSKY_CONFIG.RETRY.BACKOFF_FACTOR
+      maxAttempts: RETRY_CONFIG.MAX_ATTEMPTS,
+      backoffFactor: RETRY_CONFIG.BACKOFF_FACTOR
     }
   },
 
@@ -42,7 +46,7 @@ export const FEATURES: Record<string, FeatureFlag> = {
     description: 'Enable checking for stale aircraft data',
     enabled: true,
     config: {
-      threshold: OPENSKY_CONFIG.AIRCRAFT.STALE_THRESHOLD
+      threshold: AIRCRAFT_CONSTANTS.LIMITS.STALE_THRESHOLD
     }
   },
 
@@ -52,8 +56,8 @@ export const FEATURES: Record<string, FeatureFlag> = {
     enabled: true,
     dependencies: ['advancedMetrics'],
     config: {
-      warningThreshold: OPENSKY_CONFIG.MONITORING.THRESHOLDS.QUEUE_WARNING,
-      criticalThreshold: OPENSKY_CONFIG.MONITORING.THRESHOLDS.QUEUE_CRITICAL
+      warningThreshold: MONITORING_CONSTANTS.THRESHOLDS.QUEUE_WARNING,
+      criticalThreshold: MONITORING_CONSTANTS.THRESHOLDS.QUEUE_CRITICAL
     }
   }
 } as const;

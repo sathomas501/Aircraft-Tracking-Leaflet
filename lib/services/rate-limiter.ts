@@ -1,5 +1,8 @@
 import { errorHandler, ErrorType } from './error-handler';
 import { OPENSKY_CONSTANTS } from '../../constants/opensky';
+import { RATE_LIMITS } from '@/config/rate-limits';
+import { API_CONFIG } from '@/config/api';
+
 
 export interface RateLimiterOptions {
     requestsPerMinute: number;
@@ -35,23 +38,23 @@ export class PollingRateLimiter {
         
         // Get the appropriate limits based on authentication status
         const limits = this.requireAuthentication 
-            ? OPENSKY_CONSTANTS.AUTHENTICATED 
-            : OPENSKY_CONSTANTS.UNAUTHENTICATED;
+            ? RATE_LIMITS.AUTHENTICATED 
+            : RATE_LIMITS.ANONYMOUS;
 
         // Set higher limits to account for potential inconsistencies
         this.requestsPer10Min = Math.floor(limits.REQUESTS_PER_10_MIN * 0.8); // Use 80% of limit
         this.requestsPerDay = Math.floor(limits.REQUESTS_PER_DAY * 0.8); // Use 80% of limit
         this.maxBatchSize = Math.min(
-            options.maxBatchSize || limits.MAX_BATCH_SIZE,
-            Math.floor(limits.MAX_BATCH_SIZE * 0.8) // Use 80% of batch size limit
+            options.maxBatchSize || OPENSKY_CONSTANTS.RATE_LIMITS.AUTHENTICATED.MAX_BATCH_SIZE,
+            Math.floor(limits.BATCH_SIZE * 0.8) // Use 80% of batch size limit
         );
         
         // API-wide settings remain the same regardless of authentication
         // Increase intervals for more conservative timing
-        this.maxWaitTime = options.maxWaitTime || OPENSKY_CONSTANTS.API.TIMEOUT_MS * 2;
-        this.minPollingInterval = options.minPollingInterval || OPENSKY_CONSTANTS.API.MIN_POLLING_INTERVAL * 1.5;
-        this.maxPollingInterval = options.maxPollingInterval || OPENSKY_CONSTANTS.API.MAX_POLLING_INTERVAL * 2;
-        this.retryLimit = options.retryLimit || OPENSKY_CONSTANTS.API.DEFAULT_RETRY_LIMIT;
+        this.maxWaitTime = options.maxWaitTime || RATE_LIMITS.AUTHENTICATED.MAX_WAIT_TIME * 2;
+        this.minPollingInterval = options.minPollingInterval || OPENSKY_CONSTANTS.RATE_LIMITS.AUTHENTICATED.MIN_INTERVAL * 1.5;
+        this.maxPollingInterval = options.maxPollingInterval || OPENSKY_CONSTANTS.RATE_LIMITS.AUTHENTICATED.MAX_CONCURRENT * 2;
+        this.retryLimit = options.retryLimit || API_CONFIG.API.MAX_RETRY_LIMIT;
         this.currentPollingInterval = this.minPollingInterval;
 
         this.validateConfiguration();
@@ -101,22 +104,22 @@ export class PollingRateLimiter {
 
     private validateConfiguration(): void {
         const limits = this.requireAuthentication 
-            ? OPENSKY_CONSTANTS.AUTHENTICATED 
-            : OPENSKY_CONSTANTS.UNAUTHENTICATED;
+            ? RATE_LIMITS.AUTHENTICATED 
+            : RATE_LIMITS.ANONYMOUS;
 
-        if (this.maxBatchSize > limits.MAX_BATCH_SIZE) {
+        if (this.maxBatchSize > limits.BATCH_SIZE) {
             throw new Error(
                 `Batch size (${this.maxBatchSize}) exceeds ${
                     this.requireAuthentication ? 'authenticated' : 'unauthenticated'
-                } limit (${limits.MAX_BATCH_SIZE})`
+                } limit (${limits.BATCH_SIZE})`
             );
         }
 
         // Additional validation for API's global ICAO query limit
-        if (this.maxBatchSize > OPENSKY_CONSTANTS.AUTHENTICATED.MAX_ICAO_QUERY) {
+        if (this.maxBatchSize > OPENSKY_CONSTANTS.RATE_LIMITS.AUTHENTICATED.MAX_ICAO_QUERY) {
             throw new Error(
                 `Batch size (${this.maxBatchSize}) exceeds API's global ICAO query limit (${
-                    OPENSKY_CONSTANTS.AUTHENTICATED.MAX_ICAO_QUERY
+                    OPENSKY_CONSTANTS.RATE_LIMITS.AUTHENTICATED.MAX_ICAO_QUERY
                 })`
             );
         }

@@ -1,5 +1,15 @@
 // lib/config/utils.ts
-import { OPENSKY_CONFIG } from './opensky';
+import { RETRY_CONFIG } from '../../config/retry';
+import { PARSER_CONSTANTS } from '@/constants/parsers';
+import { CACHE_CONFIG } from '../../config/cache';
+import { MONITORING_CONSTANTS } from '@/constants/monitoring';
+import { WEBSOCKET_CONFIG } from '@/config/websocket';
+import { AIRCRAFT_CONSTANTS } from '@/constants/aircraft';
+import { RATE_LIMITS } from '@/config/rate-limits';
+
+
+
+
 
 export interface RetryOptions {
   maxAttempts?: number;
@@ -15,10 +25,10 @@ export class ConfigUtils {
    */
   static getRetryDelay(attempt: number, options: RetryOptions = {}): number {
     const {
-      baseDelay = OPENSKY_CONFIG.RETRY.BASE_DELAY,
-      maxDelay = OPENSKY_CONFIG.RETRY.MAX_DELAY,
-      backoffFactor = OPENSKY_CONFIG.RETRY.BACKOFF_FACTOR,
-      jitter = OPENSKY_CONFIG.RETRY.JITTER
+      baseDelay = RETRY_CONFIG.INITIAL_DELAY,
+      maxDelay = RETRY_CONFIG.MAX_DELAY,
+      backoffFactor = RETRY_CONFIG.BACKOFF_FACTOR,
+      jitter = RETRY_CONFIG.JITTER
     } = options;
 
     // Calculate base exponential delay
@@ -37,8 +47,8 @@ export class ConfigUtils {
    */
   static getRateLimitConfig(isAuthenticated: boolean) {
     return isAuthenticated 
-      ? OPENSKY_CONFIG.RATE_LIMITS.AUTHENTICATED 
-      : OPENSKY_CONFIG.RATE_LIMITS.ANONYMOUS;
+      ? RATE_LIMITS.AUTHENTICATED 
+      : RATE_LIMITS.ANONYMOUS;
   }
 
   /**
@@ -70,8 +80,8 @@ export class ConfigUtils {
     }
 
     return [
-      Number(latitude.toFixed(OPENSKY_CONFIG.AIRCRAFT.COORDINATE_PRECISION)),
-      Number(longitude.toFixed(OPENSKY_CONFIG.AIRCRAFT.COORDINATE_PRECISION))
+      Number(latitude.toFixed(AIRCRAFT_CONSTANTS.LIMITS.COORDINATE_PRECISION)),
+      Number(longitude.toFixed(AIRCRAFT_CONSTANTS.LIMITS.COORDINATE_PRECISION))
     ];
   }
 
@@ -81,10 +91,10 @@ export class ConfigUtils {
   static validateAltitude(altitude: number): number {
     if (
       isNaN(altitude) || 
-      altitude < OPENSKY_CONFIG.AIRCRAFT.MIN_ALTITUDE || 
-      altitude > OPENSKY_CONFIG.AIRCRAFT.MAX_ALTITUDE
+      altitude < AIRCRAFT_CONSTANTS.LIMITS.MIN_ALTITUDE || 
+      altitude > AIRCRAFT_CONSTANTS.LIMITS.MAX_ALTITUDE
     ) {
-      return OPENSKY_CONFIG.AIRCRAFT.DEFAULT_ALTITUDE;
+      return AIRCRAFT_CONSTANTS.LIMITS.DEFAULT_ALTITUDE;
     }
     return altitude;
   }
@@ -93,23 +103,22 @@ export class ConfigUtils {
    * Check if data is stale based on last contact time
    */
   static isStaleData(lastContact: number): boolean {
-    return Date.now() - lastContact > OPENSKY_CONFIG.AIRCRAFT.STALE_THRESHOLD;
+    return Date.now() - lastContact > AIRCRAFT_CONSTANTS.LIMITS.STALE_THRESHOLD;
   }
 
   /**
    * Get appropriate chunk size based on data size
    */
   static getChunkSize(dataSize: number): number {
-    if (dataSize <= 100) return OPENSKY_CONFIG.BATCH.CHUNK_SIZE.SMALL;
-    if (dataSize <= 500) return OPENSKY_CONFIG.BATCH.CHUNK_SIZE.MEDIUM;
-    return OPENSKY_CONFIG.BATCH.CHUNK_SIZE.LARGE;
+    if (dataSize <= 100) return CACHE_CONFIG.CHUNK_SIZE.SMALL;
+    if (dataSize <= 500) return CACHE_CONFIG.CHUNK_SIZE.MEDIUM;
+    return CACHE_CONFIG.CHUNK_SIZE.LARGE;
   }
-
   /**
    * Generate WebSocket close code description
    */
   static getWebSocketCloseReason(code: number): string {
-    const codes = OPENSKY_CONFIG.WEBSOCKET.CLOSE_CODES;
+    const codes = WEBSOCKET_CONFIG.CLOSE_CODES;
     switch (code) {
       case codes.NORMAL: return 'Normal closure';
       case codes.GOING_AWAY: return 'Client going away';
@@ -126,21 +135,21 @@ export class ConfigUtils {
    * Check if queue size is at warning level
    */
   static isQueueWarning(queueSize: number): boolean {
-    return queueSize >= OPENSKY_CONFIG.MONITORING.THRESHOLDS.QUEUE_WARNING;
+    return queueSize >= MONITORING_CONSTANTS.THRESHOLDS.QUEUE_WARNING;
   }
 
   /**
    * Check if queue size is at critical level
    */
   static isQueueCritical(queueSize: number): boolean {
-    return queueSize >= OPENSKY_CONFIG.MONITORING.THRESHOLDS.QUEUE_CRITICAL;
+    return queueSize >= MONITORING_CONSTANTS.THRESHOLDS.QUEUE_CRITICAL;
   }
 
   /**
    * Get cache TTL for specific data type
    */
-  static getCacheTTL(type: keyof typeof OPENSKY_CONFIG.CACHE.TTL): number {
-    return OPENSKY_CONFIG.CACHE.TTL[type];
+  static getCacheTTL(type: 'DEFAULT' | 'POSITION' | 'METADATA' | 'ERROR'): number {
+    return CACHE_CONFIG.TTL[type];
   }
 
   /**
@@ -149,7 +158,7 @@ export class ConfigUtils {
   static parseStateArray(state: any[]): Record<string, any> | null {
     if (!Array.isArray(state) || state.length < 17) return null;
 
-    const indices = OPENSKY_CONFIG.PARSER.INDICES;
+    const indices = PARSER_CONSTANTS.INDICES;
     return {
       icao24: state[indices.ICAO24],
       callsign: state[indices.CALLSIGN],
