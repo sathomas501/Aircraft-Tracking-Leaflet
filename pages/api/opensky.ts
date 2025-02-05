@@ -1,17 +1,19 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { PollingService } from '@/lib/services/polling-service';
 import { subscribe, startPolling } from '@/lib/services/polling-service';   
-import { OPENSKY_API_CONFIG } from '@/lib/config/opensky';
+import { OPENSKY_CONSTANTS } from '../../constants/opensky';
 import type { PositionData } from '@/types/base';
+import { RATE_LIMITS } from '@/config/rate-limits';
+import { API_CONFIG } from '@/config/api';
 
 let pollingService: PollingService | null = null;
 
 function getPollingService(): PollingService {
     if (!pollingService) {
         pollingService = new PollingService({
-            url: OPENSKY_API_CONFIG.BASE_URL,
-            pollingInterval: OPENSKY_API_CONFIG.RATE_LIMITS.REQUESTS_PER_MINUTE * 1000,
-            batchSize: OPENSKY_API_CONFIG.RATE_LIMITS.BATCH_SIZE,
+            url: API_CONFIG.BASE_URL,
+            pollingInterval: RATE_LIMITS.AUTHENTICATED.REQUESTS_PER_MINUTE * 1000,
+            batchSize: RATE_LIMITS.AUTHENTICATED.BATCH_SIZE,
             authRequired: true
         });
     }

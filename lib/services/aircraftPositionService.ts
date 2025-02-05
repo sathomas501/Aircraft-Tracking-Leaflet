@@ -109,13 +109,19 @@ export class AircraftPositionService {
   public async batchUpdate(icao24List: string[]): Promise<void> {
     try {
       const response = await fetch(
-        `/api/proxy/opensky?icao24=${icao24List.join(',')}` // ✅ Proxy endpoint
+        `/api/proxy/opensky?icao24=${icao24List.join(',')}`
       );
-
-      if (!response.ok) throw new Error('Failed to fetch batch data');
-
+  
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+  
       const data = await response.json();
-
+      
+      if (!data.states) {
+        throw new Error('Invalid response format: missing states array');
+      }
+  
       data.states.forEach((state: any) => {
         const position: Position = {
           icao24: state[0],
@@ -131,10 +137,9 @@ export class AircraftPositionService {
       });
     } catch (error) {
       if (error instanceof Error) {
-        errorHandler.handleError(ErrorType.API_ERROR, error);
+        errorHandler.handleError(ErrorType.OPENSKY_SERVICE, error);
       } else {
-        errorHandler.handleError(ErrorType.API_ERROR, String(error));
+        errorHandler.handleError(ErrorType.OPENSKY_SERVICE, new Error(String(error)));
       }
     }
-  }
-}
+  }}

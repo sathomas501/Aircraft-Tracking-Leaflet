@@ -5,7 +5,8 @@ import { TrackingDatabaseManager } from '@/lib/db/trackingDatabaseManager';
 import { handleApiError } from "@/lib/services/error-handler";
 import { fetchLiveData } from '@/lib/services/fetch-Live-Data';
 import UnifiedCacheService from '@/lib/services/managers/unified-cache-system';
-import { Aircraft, transformToAircraft, transformToCachedData } from "@/types/base";
+import { Aircraft} from "@/types/base";
+import { transformToAircraft, transformToCachedData } from '@/utils/aircraft-helpers';
 
 interface LiveDataResponse {
     icao24s: string[];
@@ -48,7 +49,10 @@ const getIcao24s = async (manufacturer: string, model?: string): Promise<IcaoQue
         LIMIT 2000;
     `;
     const params = model ? [manufacturer, model] : [manufacturer];
-    return await dbManager.executeQuery<IcaoQueryResult>(query, params);
+    console.log('[getIcao24s] Executing query:', { query, params });
+    const results = await dbManager.executeQuery<IcaoQueryResult>(query, params);
+    console.log('[getIcao24s] Results:', results?.length, 'Sample:', results?.slice(0, 3));
+    return results;
 };
 
 

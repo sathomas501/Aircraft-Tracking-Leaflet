@@ -1,7 +1,7 @@
 // components/aircraft/tracking/Map/LeafletMap/components/FitToBounds.tsx
 import React, { useEffect } from 'react';
 import { useMap } from 'react-leaflet';
-import { CONTINENTAL_US_BOUNDS } from '@/constants/map';
+import { CONTINENTAL_US_BOUNDS } from '../../../../../config/map';
 
 interface FitToBoundsProps {
   trigger?: boolean; // ✅ Optional trigger to control behavior

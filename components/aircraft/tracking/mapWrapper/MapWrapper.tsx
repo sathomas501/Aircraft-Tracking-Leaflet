@@ -1,9 +1,9 @@
 import React, { useState, useMemo } from 'react';
 import UnifiedSelector from '../../selector/UnifiedSelector';
 import 'leaflet/dist/leaflet.css';
-import MapComponent from '../Map/MapComponent';
+import DynamicMap from '../Map/DynamicMap';
 import type { Aircraft } from '@/types/base';  // Import the shared Aircraft type
-
+import type {mapStateToAircraft} from '@/utils/aircraft-helpers'
 const MapWrapper: React.FC = () => {
   const [state, setState] = useState({
     aircraft: [] as Aircraft[],  // Use the imported Aircraft type
@@ -12,6 +12,7 @@ const MapWrapper: React.FC = () => {
     selectedManufacturer: '',
     activeIcao24s: new Set<string>(),
   });
+  
 
   const [selectedModel, setSelectedModel] = useState<string>('');
   const [activeCount, setActiveCount] = useState(0);
@@ -29,39 +30,38 @@ const MapWrapper: React.FC = () => {
 
   const handleManufacturerSelect = async (manufacturer: string) => {
     try {
-      setState(prev => ({ ...prev, isLoading: true })); // Add loading state
-  
-      const response = await fetch('/api/aircraft/track-manufacturer', {
+      const response = await fetch('/api/aircraft/icao24s', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ manufacturer }),
       });
   
       if (!response.ok) {
-        throw new Error(`API error: ${response.status}`);
+        throw new Error(`Failed to fetch aircraft data: ${response.statusText}`);
       }
   
       const data = await response.json();
-  
-      if (!data.liveAircraft || !Array.isArray(data.liveAircraft)) {
-        throw new Error('Invalid API response format');
+      if (!data.icao24List) {
+        throw new Error('Invalid data format received from server.');
       }
   
-      const newAircraft = data.liveAircraft as Aircraft[];
+      // Ensure data.icao24List is an array
+      if (!Array.isArray(data.icao24List)) {
+        throw new Error('Expected icao24List to be an array.');
+      }
   
-      setState(prev => ({
+      // Example of handling the data
+      setState((prev) => ({
         ...prev,
         selectedManufacturer: manufacturer,
-        aircraft: newAircraft,
-        activeIcao24s: new Set(newAircraft.map(a => a.icao24)),
-        isLoading: false,
+        aircraft: data.icao24List,
       }));
-  
-      setDisplayedAircraft(newAircraft);
-      setActiveCount(newAircraft.length);
     } catch (error) {
-      console.error('Error:', error);
-      setState(prev => ({ ...prev, isLoading: false, error: error as unknown }));
+      console.error('Error in handleManufacturerSelect:', error);
+      setState((prev) => ({
+        ...prev,
+        error: (error as Error).message,
+      }));
     }
   };
   
@@ -109,7 +109,8 @@ const MapWrapper: React.FC = () => {
 />
       </div>
 
-      <MapComponent aircraft={displayedAircraft} />
+      <DynamicMap aircraft={displayedAircraft} />
+
     </div>
   );
 };

@@ -1,9 +1,10 @@
 import { CacheManager } from '../services/managers/cache-manager'; // Ensure cache integration
-import { errorHandler, ErrorType } from './error-handler';
-import { OPENSKY_CONSTANTS } from '../../constants/opensky';
 import TrackingDatabaseManager from '@/lib/db/trackingDatabaseManager';  // ✅ Import the database manager
-import { Aircraft, mapPositionDataToAircraft, PositionData, TrackingData } from "@/types/base"; // Ensure correct types
+import { Aircraft, PositionData, TrackingData } from "@/types/base"; // Ensure correct types
 import { PollingRateLimiter } from '@/lib/services/rate-limiter';
+import { RATE_LIMITS } from '../../config/rate-limits';
+import { API_CONFIG } from '@/config/api';
+import { mapPositionDataToAircraft } from '@/utils/aircraft-helpers';
 
 interface AircraftData {
     icao24: string;
@@ -21,93 +22,96 @@ const dbManager = TrackingDatabaseManager.getInstance();
 
 // Initialize rate limiter
 const rateLimiter = new PollingRateLimiter({
-    requestsPerMinute: OPENSKY_CONSTANTS.AUTHENTICATED.REQUESTS_PER_10_MIN / 10, // 60 requests per minute
-    requestsPerDay: OPENSKY_CONSTANTS.AUTHENTICATED.REQUESTS_PER_DAY, // 4000
-    maxBatchSize: OPENSKY_CONSTANTS.AUTHENTICATED.MAX_BATCH_SIZE, // 100
-    minPollingInterval: OPENSKY_CONSTANTS.API.MIN_POLLING_INTERVAL,
-    maxPollingInterval: OPENSKY_CONSTANTS.API.MAX_POLLING_INTERVAL,
-    retryLimit: OPENSKY_CONSTANTS.API.DEFAULT_RETRY_LIMIT,
+    requestsPerMinute: RATE_LIMITS.AUTHENTICATED.REQUESTS_PER_10_MIN / 10, // 60 requests per minute
+    requestsPerDay: RATE_LIMITS.AUTHENTICATED.REQUESTS_PER_DAY, // 4000
+    maxBatchSize: RATE_LIMITS.AUTHENTICATED.BATCH_SIZE, // 100
+    minPollingInterval: RATE_LIMITS.AUTHENTICATED.MIN_INTERVAL,
+    maxPollingInterval: RATE_LIMITS.AUTHENTICATED.MAX_CONCURRENT,
+    retryLimit: RATE_LIMITS.AUTHENTICATED.MAX_RETRY_LIMIT,
     requireAuthentication: true // Set to true for authenticated limits
 });
 
 // lib/services/fetch-Live-Data.ts
 export async function fetchLiveData(icao24s: string[]): Promise<Aircraft[]> {
-    console.log(`[fetchLiveData] Starting fetch for ${icao24s.length} ICAO24s`);
-    
+    if (!icao24s?.length) return [];
+
+    const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+    const subBatchSize = RATE_LIMITS.AUTHENTICATED.BATCH_SIZE;
     const allAircraft: Aircraft[] = [];
     
-    try {
-        if (!icao24s || icao24s.length === 0) {
-            console.warn("[fetchLiveData] No ICAO24s provided.");
-            return [];
-        }
+    for (let i = 0; i < icao24s.length; i += subBatchSize) {
+        const batch = icao24s.slice(i, i + subBatchSize).map(id => id.toLowerCase());
+        
+        const queryParams = new URLSearchParams();
+        queryParams.set('time', Math.floor(Date.now() / 1000).toString());
+        queryParams.set('icao24', batch.join(','));
+        
+        const url = `${baseUrl}/api/proxy/opensky?${queryParams.toString()}`;
+        console.log('[fetchLiveData] Request:', { url, batchSize: batch.length });
+        
+        try {
+            const response = await fetch(url);
+            console.log('[fetchLiveData] Response:', response.status);
+            
+            if (!response.ok) continue;
 
-        const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-        const subBatchSize = OPENSKY_CONSTANTS.AUTHENTICATED.MAX_ICAO_QUERY;
-
-        for (let i = 0; i < icao24s.length; i += subBatchSize) {
-            const batch = icao24s.slice(i, i + subBatchSize);
-            console.log(`[fetchLiveData] Processing batch ${Math.floor(i/subBatchSize) + 1}/${Math.ceil(icao24s.length/subBatchSize)}`);
-
-            const queryParams = new URLSearchParams({
-                time: Math.floor(Date.now() / 1000).toString(),
-                icao24: batch.join(","),
-            });
-
-            const proxyUrl = `${baseUrl}/api/proxy/opensky?${queryParams}`;
-
-            try {
-                const response = await fetch(proxyUrl);
-                console.log(`[fetchLiveData] Proxy response status:`, response.status);
-
-                if (!response.ok) {
-                    console.error(`[fetchLiveData] Proxy error: ${response.status}`);
-                    continue;
+            const data = await response.json();
+            if (data?.states?.length) {
+                interface StateData {
+                    icao24: string;
+                    latitude: number | null;
+                    longitude: number | null;
+                    altitude: number | null;
+                    heading: number | null;
+                    velocity: number | null;
+                    on_ground: boolean | null;
+                    last_contact: number | null;
                 }
 
-                const data = await response.json();
-                if (data && data.states && Array.isArray(data.states)) {
-                    const mappedAircraft = data.states.map((state: any[]): Aircraft => ({
-                        icao24: state[0] || '',
-                        "N-NUMBER": '',  // Required field
-                        manufacturer: "Unknown",
-                        model: "Unknown",
-                        operator: "Unknown",
-                        latitude: state[6] || 0,
-                        longitude: state[5] || 0,
-                        altitude: state[7] || 0,
-                        heading: state[10] || 0,
-                        velocity: state[9] || 0,
-                        on_ground: state[8] || false,
-                        last_contact: state[4] || Math.floor(Date.now() / 1000),
-                        lastSeen: Math.floor(Date.now() / 1000),
-                        NAME: '',
-                        CITY: '',
-                        STATE: '',
-                        OWNER_TYPE: 'Unknown',
-                        TYPE_AIRCRAFT: 'Unknown',
-                        isTracked: true
-                    }));
-
-                    console.log(`[fetchLiveData] Mapped ${mappedAircraft.length} aircraft from batch`);
-                    allAircraft.push(...mappedAircraft);
+                interface MappedAircraft extends Aircraft {
+                    "N-NUMBER": string;
+                    manufacturer: string;
+                    model: string;
+                    operator: string;
+                    lastSeen: number;
+                    NAME: string;
+                    CITY: string;
+                    STATE: string;
+                    OWNER_TYPE: string;
+                    TYPE_AIRCRAFT: string;
+                    isTracked: boolean;
                 }
 
-                await new Promise(resolve => setTimeout(resolve, 1000));
-
-            } catch (error) {
-                console.error("[fetchLiveData] Request error:", error);
-                await new Promise(resolve => setTimeout(resolve, 2000));
+                allAircraft.push(...data.states.map((state: StateData) => ({
+                    icao24: state.icao24,
+                    "N-NUMBER": '',
+                    manufacturer: "Unknown",
+                    model: "Unknown",
+                    operator: "Unknown",
+                    latitude: state.latitude || 0,
+                    longitude: state.longitude || 0,
+                    altitude: state.altitude || 0,
+                    heading: state.heading || 0,
+                    velocity: state.velocity || 0,
+                    on_ground: state.on_ground || false,
+                    last_contact: state.last_contact || Math.floor(Date.now() / 1000),
+                    lastSeen: Math.floor(Date.now() / 1000),
+                    NAME: '',
+                    CITY: '',
+                    STATE: '',
+                    OWNER_TYPE: 'Unknown',
+                    TYPE_AIRCRAFT: 'Unknown',
+                    isTracked: true
+                } as MappedAircraft)));
             }
+        } catch (error) {
+            console.error('[fetchLiveData] Error:', error);
         }
-
-        console.log(`[fetchLiveData] Total aircraft mapped: ${allAircraft.length}`);
-        return allAircraft;
-
-    } catch (error) {
-        console.error("[fetchLiveData] General error:", error);
-        return [];
+        
+        await new Promise(resolve => setTimeout(resolve, 1000));
     }
+    
+    return allAircraft;
 }
 
 const cacheManager = new CacheManager<AircraftData>(60); // Set cache TTL to 60 seconds
@@ -119,8 +123,8 @@ export async function fetchAircraftPositions(icao24s: string[]): Promise<Positio
         return [];
     }
     const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-    const subBatchSize = OPENSKY_CONSTANTS.AUTHENTICATED.MAX_ICAO_QUERY; // 50 ICAOs per request
-    const superBatchSize = OPENSKY_CONSTANTS.AUTHENTICATED.MAX_TOTAL_ICAO_QUERY; // 1000 ICAOs per full request
+    const subBatchSize = API_CONFIG.PARAMS.MAX_ICAO_QUERY; // 50 ICAOs per request
+    const superBatchSize = API_CONFIG.PARAMS.MAX_TOTAL_ICAO_QUERY; // 1000 ICAOs per full request
     const timeParam = Math.floor(Date.now() / 1000);
     
     let allAircraftData: PositionData[] = [];

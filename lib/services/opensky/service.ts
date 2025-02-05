@@ -1,10 +1,9 @@
 // lib/services/opensky/service.ts
 import type {PositionData } from '@/types/base';
-import { positionToAircraft } from './utils';
+import { positionToAircraft } from '../../../utils/aircraft-helpers';
 import WebSocket from 'ws';
 import { errorHandler, ErrorType } from '../error-handler';
 import  UnifiedCacheService  from '../managers/unified-cache-system';
-import { positionInterpolator } from '@/utils/position-interpolation';
 import type {
     IOpenSkyService,
     OpenSkyState,

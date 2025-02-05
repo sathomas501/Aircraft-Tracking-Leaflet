@@ -1,0 +1,22 @@
+// src/config/cache.ts
+export const CACHE_CONFIG = {
+  TTL: {
+    DEFAULT: 15,
+    POSITION: 15,
+    METADATA: 3600,
+    ERROR: 300,
+  },
+  MAX_SIZE: 1000,
+  CHECK_PERIOD: 60,
+  MAX_KEYS: 10000,
+  CLEANUP_INTERVAL: 60000,
+  POSITION_MAX_AGE: 60000,
+
+  QUEUE_TIMEOUT: 100,
+  MAX_QUEUE_SIZE: 1000,
+  CHUNK_SIZE: {
+    SMALL: 25,
+    MEDIUM: 50,
+    LARGE: 100
+  }
+} as const;
