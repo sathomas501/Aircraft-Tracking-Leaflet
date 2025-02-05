@@ -12,15 +12,15 @@ export enum ErrorType {
     CRITICAL = 'CRITICAL',
     WEBSOCKET = 'WEBSOCKET',
     RATE_LIMIT = 'RATE_LIMIT',
-    // Added OpenSky specific error types
     OPENSKY_AUTH = 'OPENSKY_AUTH',
     OPENSKY_RATE_LIMIT = 'OPENSKY_RATE_LIMIT',
     OPENSKY_DATA = 'OPENSKY_DATA',
     OPENSKY_TIMEOUT = 'OPENSKY_TIMEOUT',
     OPENSKY_INVALID_ICAO = 'OPENSKY_INVALID_ICAO',
-    OPENSKY_SERVICE = 'OPENSKY_SERVICE'
+    OPENSKY_SERVICE = 'OPENSKY_SERVICE',
+    OPENSKY_POLLING = 'OPENSKY_POLLING',
+    OPENSKY_CLEANUP = 'OPENSKY_CLEANUP'
 }
-
 
 
 export interface ErrorDetails {
@@ -69,8 +69,35 @@ export const userMessages: Record<ErrorType, string> = {
     [ErrorType.OPENSKY_DATA]: 'Unable to retrieve aircraft data from OpenSky.',
     [ErrorType.OPENSKY_TIMEOUT]: 'OpenSky request timed out. Please try again.',
     [ErrorType.OPENSKY_INVALID_ICAO]: 'Invalid ICAO24 code provided. Please check the aircraft identifier.',
-    [ErrorType.OPENSKY_SERVICE]: 'OpenSky service is currently unavailable. Please try again later.'
+    [ErrorType.OPENSKY_SERVICE]: 'OpenSky service is currently unavailable. Please try again later.',
+    [ErrorType.OPENSKY_POLLING]:'Opensky polling error',
+    [ErrorType.OPENSKY_CLEANUP]: 'Opensky cleanup on aisle 01100101 error'
 };
+
+
+export enum OpenSkyErrorCode {
+    INVALID_DATA = 'INVALID_DATA',
+    AUTHENTICATION_FAILED = 'AUTHENTICATION_FAILED',
+    RATE_LIMIT_EXCEEDED = 'RATE_LIMIT_EXCEEDED',
+    TIMEOUT = 'TIMEOUT',
+    INVALID_REQUEST = 'INVALID_REQUEST',
+    UNKNOWN_ERROR = 'UNKNOWN_ERROR',
+    POLLING_ERROR = 'POLLING_ERROR',
+    CLEANUP_ERROR = 'CLEANUP_ERROR'
+}
+
+export class OpenSkyError extends Error {
+    code: OpenSkyErrorCode;
+    context?: any;
+
+    constructor(message: string, code: OpenSkyErrorCode, context?: any) {
+        super(message);
+        this.name = 'OpenSkyError';
+        this.code = code;
+        this.context = context;
+        Error.captureStackTrace?.(this, OpenSkyError);
+    }
+}
 
 export class ErrorHandler {
     private static instance: ErrorHandler;
@@ -261,3 +288,5 @@ export function useErrorHandler(type: ErrorType) {
 
 // Create and export singleton instance
 export const errorHandler = ErrorHandler.getInstance();
+
+
