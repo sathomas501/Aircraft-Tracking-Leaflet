@@ -2,7 +2,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { PollingRateLimiter } from '@/lib/services/rate-limiter';
 import { openSkyAuth } from '@/lib/services/opensky-auth';
-import { errorHandler, ErrorType } from '@/lib/services/error-handler';
+import { ErrorType } from '@/lib/services/error-handler';
 import { OPENSKY_CONSTANTS } from '../../../constants/opensky';
 import { API_CONFIG } from '@/config/api';
 
@@ -20,6 +20,7 @@ const rateLimiter = new PollingRateLimiter({
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
     console.log("[OpenSky Proxy] Starting request handling");
+
 
     // Basic request validation
     if (req.method !== 'GET') {
@@ -44,13 +45,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         
         console.log("[OpenSky Proxy] Authentication successful");
 
+        
         // Now handle the ICAO validation
         const { icao24 } = req.query;
+        console.log('[OpenSky Proxy] ICAO24s:', { raw: icao24, type: typeof icao24 })
         if (!icao24) {
-            return res.status(400).json({ 
-                error: "icao24 parameter is required.",
-                errorType: ErrorType.OPENSKY_INVALID_ICAO
-            });
+            return res.status(200).json({ states: [] });
         }
 
         const icao24List: string[] = Array.isArray(icao24) ? icao24 : [icao24];
@@ -61,6 +61,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             });
         }
 
+        const formattedIcaos = (Array.isArray(icao24) ? icao24 : [icao24])
+    .map(code => code.toLowerCase().trim())
+    .filter(code => /^[0-9a-f]{6}$/.test(code));
+
+console.log('[OpenSky Proxy] Formatted ICAOs:', formattedIcaos.length);
+
         // Check rate limits
         if (rateLimiter.isRateLimited()) {
             const nextSlot = await rateLimiter.getNextAvailableSlot();
@@ -70,6 +76,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                 nextAvailable: nextSlot
             });
         }
+
+        
 
         // Make the authenticated request
         const timeParam = Math.floor(Date.now() / 1000);
@@ -85,16 +93,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                 'Accept': 'application/json'
             }
         });
-
+        
         console.log("[OpenSky Proxy] OpenSky response status:", response.status);
-
-        if (!response.ok) {
-            throw new Error(`OpenSky API error: ${response.status}`);
-        }
-
+        
         const data = await response.json();
-        rateLimiter.recordRequest();
-        return res.status(200).json(data);
+        console.log("[OpenSky Proxy] Response data:", data);
+        
+        return res.status(200).json({
+            states: data.states || [],
+            time: data.time || timeParam
+        });
 
     } catch (error) {
         console.error("[OpenSky Proxy] Error:", error);
@@ -114,4 +122,5 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             details: error instanceof Error ? error.message : String(error)
         });
     }
+
 }

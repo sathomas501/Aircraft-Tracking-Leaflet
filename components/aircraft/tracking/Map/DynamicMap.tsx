@@ -28,9 +28,6 @@ interface AircraftIconProps {
   ownerType: string;
 }
 
-
-
-
 const governmentRotorIcon = L.icon({
   iconUrl: governmentRotorIconImg.src,
   iconSize: [32, 32],
@@ -62,12 +59,8 @@ const defaultIcon = L.icon({
 });
 
 
-
-
 const getMarkerIcon = (aircraft: { aircraftType: string; ownerType: string }): L.Icon => {
   const { aircraftType, ownerType } = aircraft;
-
-  const map = useMap(); // ✅ Access the current map instance
 
   if (ownerType === 'government') {
     if (aircraftType === 'rotor') return governmentRotorIcon;
@@ -78,32 +71,39 @@ const getMarkerIcon = (aircraft: { aircraftType: string; ownerType: string }): L
     if (aircraftType === 'jet') return jetIcon;
   }
 
-  return defaultIcon; // Fallback for undefined combinations
+  return defaultIcon;
 };
 
 const AircraftMarkers: React.FC<{ aircraft: Aircraft[] }> = ({ aircraft }) => {
-  const map = useMap(); // ✅ Access the current map instance
+  const map = useMap();
 
   useEffect(() => {
+    const markers: L.Marker[] = [];
+
     Array.isArray(aircraft) && aircraft.forEach((plane) => {
       const icon = getMarkerIcon({
         aircraftType: plane.TYPE_AIRCRAFT,
         ownerType: plane.OWNER_TYPE,
       });
 
-      L.marker([plane.latitude, plane.longitude], { icon })
-        .addTo(map) // ✅ Add marker to the map instance
+      const marker = L.marker([plane.latitude, plane.longitude], { icon })
+        .addTo(map)
         .bindPopup(`
           <strong>${plane['N-NUMBER'] || 'Unknown Aircraft'}</strong><br/>
           Type: ${plane.TYPE_AIRCRAFT || 'N/A'}<br/>
           Owner: ${plane.OWNER_TYPE || 'N/A'}
         `);
+      
+      markers.push(marker);
     });
+
+    return () => {
+      markers.forEach(marker => marker.remove());
+    };
   }, [aircraft, map]);
 
   return null;
 };
-
 
   // ✅ Dynamic Updates (Batch Fetch Positions)
   useEffect(() => {
@@ -120,60 +120,30 @@ const AircraftMarkers: React.FC<{ aircraft: Aircraft[] }> = ({ aircraft }) => {
   }, [isLive, aircraft]);
 
   return (
-    <div style={{ height: '100vh', width: '100%' }}>
-      {/* ✅ Control Panel */}
-      <div style={{ position: 'absolute', zIndex: 1000, top: 10, right: 10 }}>
-        <button
-          style={{
-            padding: '8px 12px',
-            margin: '5px',
-            backgroundColor: showTrails ? '#3b82f6' : '#6b7280',
-            color: 'white',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: 'pointer',
-          }}
-          onClick={() => setShowTrails((prev) => !prev)}
-        >
-          {showTrails ? 'Hide Trails' : 'Show Trails'}
-        </button>
-
-        <button
-          style={{
-            padding: '8px 12px',
-            margin: '5px',
-            backgroundColor: isLive ? '#10b981' : '#ef4444',
-            color: 'white',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: 'pointer',
-          }}
-          onClick={() => setIsLive((prev) => !prev)}
-        >
-          {isLive ? 'Pause Live Updates' : 'Resume Live Updates'}
-        </button>
-      </div>
-
+    <div className="h-screen w-full relative">
       <MapContainer
         center={MAP_CONFIG.CENTER}
         zoom={MAP_CONFIG.DEFAULT_ZOOM}
-        style={{ height: '100%', width: '100%' }}
+        className="h-full w-full"
         minZoom={MAP_CONFIG.OPTIONS.minZoom}
         scrollWheelZoom={true}
-        maxBoundsViscosity={0}
-        worldCopyJump={false}
-        dragging={true}
-        inertia={true}
-        inertiaDeceleration={1000}
-        inertiaMaxSpeed={1000}
-        zoomControl={true}
       >
+        <TileLayer
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        />
         <AircraftMarkers aircraft={aircraft} />
-
-        {aircraft.map((ac) => (
-          <React.Fragment key={ac.icao24}>
-            {showTrails && <AircraftTrail icao24={ac.icao24} />} {/* ✅ Conditional Trail Rendering */}
-            <EnhancedAircraftMarker aircraft={{ ...ac, type: ac.TYPE_AIRCRAFT, isGovernment: ac.OWNER_TYPE === 'government' }} />
+        {aircraft?.map((ac, index) => (
+          <React.Fragment key={`aircraft-${ac.icao24}-${index}`}>
+            {showTrails && <AircraftTrail key={`trail-${ac.icao24}`} icao24={ac.icao24} />}
+            <EnhancedAircraftMarker
+              key={`marker-${ac.icao24}`}
+              aircraft={{
+                ...ac,
+                type: ac.TYPE_AIRCRAFT,
+                isGovernment: ac.OWNER_TYPE === 'government'
+              }}
+            />
           </React.Fragment>
         ))}
       </MapContainer>

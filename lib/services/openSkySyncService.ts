@@ -38,7 +38,6 @@ const fetchAndTransformData = async (aircraft: Aircraft[]): Promise<TrackingData
     }));
 };
 
-
 export class OpenSkySyncService {
     private static instance: OpenSkySyncService;
     private cache: UnifiedCacheService;

@@ -3,7 +3,6 @@ import UnifiedSelector from '../../selector/UnifiedSelector';
 import 'leaflet/dist/leaflet.css';
 import DynamicMap from '../Map/DynamicMap';
 import type { Aircraft } from '@/types/base';  // Import the shared Aircraft type
-import type {mapStateToAircraft} from '@/utils/aircraft-helpers'
 const MapWrapper: React.FC = () => {
   const [state, setState] = useState({
     aircraft: [] as Aircraft[],  // Use the imported Aircraft type
@@ -13,7 +12,6 @@ const MapWrapper: React.FC = () => {
     activeIcao24s: new Set<string>(),
   });
   
-
   const [selectedModel, setSelectedModel] = useState<string>('');
   const [activeCount, setActiveCount] = useState(0);
   const [displayedAircraft, setDisplayedAircraft] = useState<Aircraft[]>([]); // Use the imported Aircraft type
