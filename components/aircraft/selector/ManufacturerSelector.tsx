@@ -1,32 +1,62 @@
 import React, { useState, useEffect } from 'react';
-
-interface SelectOption {
-  value: string;
-  label: string;
-}
+import { SelectOption } from '@/types/base';
 
 interface ManufacturerSelectorProps {
-  manufacturers: SelectOption[];
   onSelect: (manufacturer: string) => void;
   selectedManufacturer: string;
+  manufacturers: SelectOption[];
 }
 
 const ManufacturerSelector: React.FC<ManufacturerSelectorProps> = ({
-  manufacturers,
   onSelect,
-  selectedManufacturer
+  selectedManufacturer,
 }) => {
-  const [icao24s, getIcao24s] = useState<string[]>([]);
+  const [manufacturers, setManufacturers] = useState<SelectOption[]>([]);
+  const [icao24s, setIcao24s] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  // Fetch manufacturers on mount
+  useEffect(() => {
+    const fetchManufacturers = async () => {
+      try {
+        const response = await fetch('/api/manufacturers');
+        if (!response.ok)
+          throw new Error(`Failed to fetch manufacturers: ${response.status}`);
+
+        const data = await response.json();
+        console.log('Fetched Manufacturers (Raw):', data); // ✅ Check raw API response
+
+        // ✅ Access the manufacturers array inside the object
+        const formattedData = (data.manufacturers || []).map((item: any) => ({
+          value: item.value,
+          label: item.label,
+        }));
+
+        console.log('Formatted Manufacturers:', formattedData); // ✅ Check formatted data
+
+        setManufacturers(formattedData); // ✅ Update state
+      } catch (err) {
+        console.error('Error fetching manufacturers:', err);
+        setManufacturers([]);
+      }
+    };
+
+    fetchManufacturers();
+  }, []);
 
   const fetchIcao24s = async (manufacturer: string) => {
     setLoading(true);
     try {
-      const response = await fetch(`/api/track-manufacturer?manufacturer=${manufacturer}`);
+      const response = await fetch(`/api/aircraft/tracking`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ manufacturer }),
+      });
       const data = await response.json();
 
       if (data.icao24s) {
-        getIcao24s(data.icao24s);
+        setIcao24s(data.icao24s);
       } else {
         console.warn('No ICAO24s found.');
       }
@@ -39,20 +69,33 @@ const ManufacturerSelector: React.FC<ManufacturerSelectorProps> = ({
 
   const handleSelect = (manufacturer: string) => {
     onSelect(manufacturer);
-    fetchIcao24s(manufacturer); // ✅ API call instead of direct DB access
+    fetchIcao24s(manufacturer);
   };
 
   return (
     <div>
       <h3>Select Manufacturer</h3>
+      {error && <p className="text-red-500">{error}</p>}
+
       <ul>
-        {manufacturers.map((m) => (
-          <li key={m.value}>
-            <button onClick={() => handleSelect(m.value)}>
-              {m.label}
-            </button>
-          </li>
-        ))}
+        {Array.isArray(manufacturers) && manufacturers.length > 0 ? (
+          manufacturers.map((m) => (
+            <li key={m.value}>
+              <button
+                onClick={() => handleSelect(m.value)}
+                className={`p-2 rounded-md ${
+                  selectedManufacturer === m.value
+                    ? 'bg-blue-500 text-white'
+                    : 'bg-gray-200'
+                }`}
+              >
+                {m.label}
+              </button>
+            </li>
+          ))
+        ) : (
+          <li>No manufacturers available</li> // ✅ Graceful fallback message
+        )}
       </ul>
 
       {loading && <p>Loading ICAO24s...</p>}

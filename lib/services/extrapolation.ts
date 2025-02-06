@@ -1,4 +1,4 @@
-import { Position } from './aircraftPositionService';
+import { Position } from '../services/Unified-Aircraft-Position-Service';
 
 export interface ExtrapolatedPosition extends Position {
     isExtrapolated: boolean;

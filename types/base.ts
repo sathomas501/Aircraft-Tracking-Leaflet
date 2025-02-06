@@ -149,6 +149,7 @@ export interface CachedAircraftData {
   heading: number;
   on_ground: boolean;
 
+
   // Timestamps
   last_contact: number;
   lastSeen: number;
