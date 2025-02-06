@@ -1,5 +1,5 @@
 import React from 'react';
-import { useAircraftData } from '@/hooks/useAircraftData';
+import { useAircraftData } from '../customHooks/useAircraftData';
 
 interface AircraftStatsProps {
   manufacturer: string;
@@ -12,7 +12,7 @@ const AircraftStats: React.FC<AircraftStatsProps> = ({
   manufacturer,
   model,
   selectedType,
-  totalActive = 0
+  totalActive = 0,
 }) => {
   return (
     <div className="p-4">
@@ -29,4 +29,3 @@ const AircraftStats: React.FC<AircraftStatsProps> = ({
 };
 
 export default AircraftStats;
-

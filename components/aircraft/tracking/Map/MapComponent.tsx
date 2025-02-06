@@ -1,16 +1,21 @@
 import React, { useEffect, useState } from 'react';
-import DynamicMap from './DynamicMap';
-import { fetchLiveData } from '../../../../lib/services/fetch-Live-Data'; // Mock API call
+import { fetchLiveData } from '../../../../lib/services/Unified-Aircraft-Position-Service'; // Mock API call
 import type { Aircraft } from '@/types/base';
+import DynamicMap from '../Map/DynamicMap';
 
-const MapComponent: React.FC = () => {
-  const [aircraft, setAircraft] = useState<Aircraft[]>([]);
+// ✅ Define a proper interface for props
+interface MapComponentProps {
+  aircraft: Aircraft[];
+}
+
+const MapComponent: React.FC<MapComponentProps> = ({ aircraft }) => {
+  const [liveAircraft, setLiveAircraft] = useState<Aircraft[]>([]);
   const [filter, setFilter] = useState<'ALL' | 'GOV' | 'NON_GOV'>('ALL');
 
   useEffect(() => {
     const fetchData = async () => {
-      const data = await fetchLiveData([]); // Simulated API call with empty array
-      setAircraft(data);
+      const data = await fetchLiveData([]); // Simulated API call
+      setLiveAircraft(data);
     };
 
     fetchData();
@@ -18,10 +23,10 @@ const MapComponent: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
-  const filteredAircraft = aircraft
+  const filteredAircraft = liveAircraft
     .filter((ac) => {
-      if (filter === 'GOV') return ac.OWNER_TYPE === '5';      // Government aircraft
-      if (filter === 'NON_GOV') return ac.OWNER_TYPE !== '5';  // Non-Government aircraft
+      if (filter === 'GOV') return ac.OWNER_TYPE === '5'; // Government aircraft
+      if (filter === 'NON_GOV') return ac.OWNER_TYPE !== '5'; // Non-Government aircraft
       return true; // Show all aircraft
     })
     .map((ac) => ({

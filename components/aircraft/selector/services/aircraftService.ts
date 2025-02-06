@@ -36,7 +36,7 @@ export const fetchModels = async (manufacturer: string): Promise<Model[]> => {
 
 export const trackManufacturer = async (manufacturer: string) => {
   try {
-    const response = await fetch('/api/aircraft/track-manufacturer', {
+    const response = await fetch('/api/aircraft/tracking', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ manufacturer })

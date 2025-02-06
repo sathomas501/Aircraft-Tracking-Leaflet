@@ -1,184 +1,230 @@
 import { Database, open } from 'sqlite';
-import sqlite3 from 'sqlite3';
 import path from 'path';
-import { TrackingData } from '@/types/base'; 
 
-const TRACKING_DB_PATH = path.join(process.cwd(), 'lib', 'db', 'tracking.db');
+let sqlite3: typeof import('sqlite3') | null = null;
+
+// ✅ Ensures sqlite3 is only loaded on the server
+if (typeof window === 'undefined') {
+  try {
+    sqlite3 = require('sqlite3');
+    console.log('[TrackingDatabaseManager] Successfully loaded sqlite3');
+  } catch (error) {
+    console.error('[TrackingDatabaseManager] Failed to load sqlite3:', error);
+  }
+} else {
+  console.warn(
+    '[TrackingDatabaseManager] sqlite3 is not available in the browser.'
+  );
+}
+
+const TRACKING_DB_PATH = path.resolve(
+  process.cwd(),
+  'lib',
+  'db',
+  'tracking.db'
+);
 
 export class TrackingDatabaseManager {
-    private static instance: TrackingDatabaseManager;
-    private db: Database | null = null;
-    private isInitialized: boolean = false;
+  private static instance: TrackingDatabaseManager;
+  private db: Database | null = null;
+  private isInitialized: boolean = false;
 
-    private constructor() {}
+  private constructor() {}
 
-    public static getInstance(): TrackingDatabaseManager {
-        if (!TrackingDatabaseManager.instance) {
-            TrackingDatabaseManager.instance = new TrackingDatabaseManager();
-        }
-        return TrackingDatabaseManager.instance;
+  public static getInstance(): TrackingDatabaseManager {
+    if (!TrackingDatabaseManager.instance) {
+      TrackingDatabaseManager.instance = new TrackingDatabaseManager();
+    }
+    return TrackingDatabaseManager.instance;
+  }
+
+  public async initialize(): Promise<void> {
+    if (this.isInitialized && this.db) {
+      return;
     }
 
-    public async initialize(): Promise<void> {
-        if (this.isInitialized && this.db) {
-            return;
-        }
+    try {
+      if (!sqlite3) {
+        throw new Error('[TrackingDatabaseManager] sqlite3 is not loaded.');
+      }
 
-        try {
-            this.db = await open({
-                filename: TRACKING_DB_PATH,
-                driver: sqlite3.Database,
-            });
-            
-            await this.createTables();
-            this.isInitialized = true;
-            console.log('[TrackingDatabaseManager] Database initialized with schema.');
-        } catch (error) {
-            console.error('[TrackingDatabaseManager] Initialization failed:', error);
-            this.db = null;
-            this.isInitialized = false;
-            throw error;
-        }
+      this.db = await open({
+        filename: TRACKING_DB_PATH,
+        driver: sqlite3.Database,
+      });
+
+      await this.createTables();
+      this.isInitialized = true;
+      console.log(
+        '[TrackingDatabaseManager] Database initialized with schema.'
+      );
+    } catch (error) {
+      console.error('[TrackingDatabaseManager] Initialization failed:', error);
+      this.db = null;
+      this.isInitialized = false;
+      throw error;
+    }
+  }
+
+  public getDb(): Database | null {
+    return this.db;
+  }
+
+  public async getAll<T>(query: string, params: any[]): Promise<T[]> {
+    if (!this.db) {
+      throw new Error('Database not initialized');
     }
 
-    private async createTables(): Promise<void> {
-        if (!this.db) throw new Error('Database not initialized.');
-    
-        try {
-            // Drop and recreate tables for clean initialization
-            await this.db.exec(`
-                DROP TABLE IF EXISTS aircraft;
-    
-                CREATE TABLE IF NOT EXISTS aircraft (
+    return this.db.all<T[]>(query, params);
+  }
+
+  private async createTables(): Promise<void> {
+    if (!this.db)
+      throw new Error('[TrackingDatabaseManager] Database not initialized.');
+
+    try {
+      await this.db.exec(`
+                CREATE TABLE IF NOT EXISTS tracked_aircraft (
                     icao24 TEXT PRIMARY KEY,
-                    manufacturer TEXT,  -- ✅ Added manufacturer column
                     latitude REAL,
                     longitude REAL,
                     altitude REAL,
                     velocity REAL,
                     heading REAL,
-                    on_ground INTEGER,  -- SQLite uses INTEGER for boolean
                     last_contact INTEGER,
                     updated_at INTEGER DEFAULT (strftime('%s', 'now'))
                 );
-    
-                CREATE INDEX IF NOT EXISTS idx_last_contact ON aircraft(last_contact);
             `);
-            
-            console.log('[TrackingDatabaseManager] Tables created successfully');
-        } catch (error) {
-            console.error('[TrackingDatabaseManager] Failed to create tables:', error);
-            throw error;
-        }
+
+      console.log('[TrackingDatabaseManager] Tables created successfully');
+    } catch (error) {
+      console.error(
+        '[TrackingDatabaseManager] Failed to create tables:',
+        error
+      );
+      throw error;
+    }
+  }
+
+  public async upsertActiveAircraftBatch(aircraftData: any[]): Promise<void> {
+    await this.ensureInitialized();
+
+    const query = `INSERT INTO tracked_aircraft (icao24, updated_at) VALUES (?, ?) 
+                   ON CONFLICT(icao24) DO UPDATE SET updated_at = excluded.updated_at`;
+
+    const db = this.getDb();
+    if (!db) {
+      throw new Error('Database not initialized');
+    }
+    const stmt = await db.prepare(query);
+
+    for (const aircraft of aircraftData) {
+      await stmt.run([aircraft.icao24, Date.now()]);
     }
 
-    public async getAll<T>(query: string, params: any[] = []): Promise<T[]> {
-        await this.initialize();
-        return this.db!.all<T[]>(query, params);
-    }
-    
-    public getDb(): Database {
-        if (!this.db) {
-            throw new Error('Database is not initialized');
-        }
-        return this.db;
-    }
+    await stmt.finalize();
+    console.log(
+      `[TrackingDatabaseManager] Upserted ${aircraftData.length} records into tracked_aircraft.`
+    );
+  }
 
-    async upsertActiveAircraftBatch(trackingDataList: TrackingData[]): Promise<void> {
-        await this.initialize();
-    
-        if (trackingDataList.length === 0) {
-            console.warn("[TrackingDatabaseManager] No tracking data to upsert.");
-            return;
-        }
-    
-        try {
-            const placeholders = trackingDataList.map(() =>
-                "(?, ?, ?, ?, ?, ?, ?, ?, ?)"
-            ).join(", ");
-    
-            const values = trackingDataList.flatMap(data => [
-                data.icao24,
-                data.latitude,
-                data.longitude,
-                data.altitude,
-                data.velocity,
-                data.heading,
-                data.on_ground ? 1 : 0,  // SQLite expects 1/0 for boolean
-                data.last_contact,
-                data.updated_at
-            ]);
-    
-            const sql = `
-                INSERT INTO aircraft (
-                    icao24, latitude, longitude, altitude, velocity,
-                    heading, on_ground, last_contact, updated_at
-                )
-                VALUES ${placeholders}
-                ON CONFLICT(icao24) DO UPDATE SET
-                    latitude = excluded.latitude,
-                    longitude = excluded.longitude,
-                    altitude = excluded.altitude,
-                    velocity = excluded.velocity,
-                    heading = excluded.heading,
-                    on_ground = excluded.on_ground,
-                    last_contact = excluded.last_contact,
-                    updated_at = excluded.updated_at;
-            `;
-    
-            await this.db!.run(sql, values);
-            console.log(`[TrackingDatabaseManager] Batch upsert successful: ${trackingDataList.length} records.`);
-        } catch (error) {
-            console.error("[TrackingDatabaseManager] Failed to batch upsert tracking data:", error);
-            throw error;
-        }
+  public async executeQuery<T = any>(
+    query: string,
+    params: any[] = []
+  ): Promise<T[]> {
+    if (!this.db) {
+      throw new Error('[TrackingDatabaseManager] Database is not initialized.');
     }
-    
-    
-    public async getAircraft(icao24: string): Promise<any | null> {
-        await this.initialize();
-        return this.db!.get(`SELECT * FROM aircraft WHERE icao24 = ?`, [icao24]);
-    }
+    return this.db.all(query, params);
+  }
 
-    public async getQuery<T>(query: string, params: any[] = []): Promise<T | null> {
-        await this.initialize();
-        const result = await this.db!.get<T>(query, params);
-        return result || null;
+  public async close(): Promise<void> {
+    if (this.db) {
+      await this.db.close();
+      this.db = null;
+      this.isInitialized = false;
+      console.log('[TrackingDatabaseManager] Database connection closed.');
     }
-    
-    public async getStaleAircraft(): Promise<{ icao24: string }[]> {
-        await this.initialize();
-        const staleThreshold = Date.now() - 5 * 60 * 1000; // 5 minutes
-        return this.db!.all<{ icao24: string }[]>(
-            `SELECT icao24 FROM aircraft WHERE last_contact < ?`,
-            [staleThreshold]
-        );
-    }
+  }
 
-    public async cleanStaleRecords(staleThreshold: number): Promise<void> {
-        await this.initialize();
-        await this.db!.run(
-            `DELETE FROM aircraft WHERE last_contact < ?`,
-            [staleThreshold]
-        );
-        console.log(`[TrackingDatabaseManager] Cleaned stale records older than ${staleThreshold} ms.`);
-    }
+  public async trackAircraft(icao24: string): Promise<void> {
+    await this.ensureInitialized();
+    const query = `INSERT INTO tracked_aircraft (icao24, updated_at) VALUES (?, ?) 
+                       ON CONFLICT(icao24) DO UPDATE SET updated_at = excluded.updated_at`;
 
-    public async clearDatabase(): Promise<void> {
-        await this.initialize();
-        await this.db!.run(`DELETE FROM aircraft`);
-        console.log('[TrackingDatabaseManager] Cleared all records.');
-    }
+    await this.db!.run(query, [icao24, Date.now()]);
+  }
 
-    public async stop(): Promise<void> {
-        if (this.db) {
-            await this.db.close();
-            this.db = null;
-            this.isInitialized = false;
-            console.log('[TrackingDatabaseManager] Connection closed.');
-        }
+  public async updateAircraftPosition(
+    icao24: string,
+    lat: number,
+    lon: number,
+    heading: number
+  ): Promise<void> {
+    await this.ensureInitialized();
+    const query = `UPDATE tracked_aircraft SET latitude = ?, longitude = ?, heading = ?, updated_at = ? WHERE icao24 = ?`;
+    await this.db!.run(query, [lat, lon, heading, Date.now(), icao24]);
+  }
+
+  public async clearTrackingData(): Promise<void> {
+    await this.ensureInitialized();
+    await this.db!.run(`DELETE FROM tracked_aircraft`);
+  }
+
+  public async getTrackedAircraft(): Promise<any[]> {
+    await this.ensureInitialized();
+    return this.db!.all(`SELECT * FROM tracked_aircraft`);
+  }
+
+  public async getStaleAircraft(): Promise<{ icao24: string }[]> {
+    await this.ensureInitialized();
+    const staleThreshold = Date.now() - 5 * 60 * 1000;
+    return this.db!.all(
+      `SELECT icao24 FROM tracked_aircraft WHERE last_contact < ?`,
+      [staleThreshold]
+    );
+  }
+
+  public async cleanStaleRecords(): Promise<void> {
+    await this.ensureInitialized();
+    const staleThreshold = Date.now() - 5 * 60 * 1000;
+    await this.db!.run(`DELETE FROM tracked_aircraft WHERE last_contact < ?`, [
+      staleThreshold,
+    ]);
+    console.log(
+      `[TrackingDatabaseManager] Cleaned stale records older than ${staleThreshold} ms.`
+    );
+  }
+
+  public async deleteAircraft(icao24: string): Promise<void> {
+    await this.ensureInitialized();
+
+    const query = `DELETE FROM tracked_aircraft WHERE icao24 = ?`;
+    await this.db!.run(query, [icao24]);
+
+    console.log(
+      `[TrackingDatabaseManager] Deleted aircraft with ICAO24: ${icao24}`
+    );
+  }
+
+  public async stop(): Promise<void> {
+    if (this.db) {
+      await this.db.close();
+      this.db = null;
+      this.isInitialized = false;
+      console.log('[TrackingDatabaseManager] Connection closed.');
     }
+  }
+
+  private async ensureInitialized(): Promise<void> {
+    if (!this.isInitialized || !this.db) {
+      console.warn(
+        '[TrackingDatabaseManager] Database not fully initialized. Initializing now...'
+      );
+      await this.initialize();
+    }
+  }
 }
 
-// This exports the class, allowing you to call getInstance()
-export default TrackingDatabaseManager;
+const trackingDatabaseManager = TrackingDatabaseManager.getInstance();
+export default trackingDatabaseManager;

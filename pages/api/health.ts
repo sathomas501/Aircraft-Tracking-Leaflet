@@ -18,7 +18,7 @@ export default async function handler(
         await db.initialize(); // Ensure the database is initialized
 
         // Run a simple query to verify the database connection
-        await db.getQuery('SELECT 1');
+        await db.executeQuery('SELECT 1');
 
         res.status(200).json({
             status: 'healthy',

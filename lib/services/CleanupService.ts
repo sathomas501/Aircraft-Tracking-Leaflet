@@ -76,7 +76,7 @@ export class CleanupService {
         const staleThreshold = Date.now() - this.STALE_THRESHOLD;
 
         try {
-            await dbManager.cleanStaleRecords(staleThreshold); // Use the specific method
+            await dbManager.cleanStaleRecords(); // Use the specific method
             console.log('[Cleanup Service] Stale records cleaned up');
         } catch (error) {
             console.error('[Cleanup Service] Failed to clean stale records:', error);

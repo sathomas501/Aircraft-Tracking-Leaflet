@@ -3,7 +3,11 @@ import dynamic from 'next/dynamic';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 
 const DynamicMap = dynamic(
-  () => import('@/components/aircraft/tracking/mapWrapper/MapWrapper').then(mod => mod.default),
+  () =>
+    import('../components/aircraft/tracking/Map/DynamicMap').then(
+      (mod) => mod.default
+    ),
+
   {
     ssr: false,
     loading: () => (
@@ -17,7 +21,7 @@ const DynamicMap = dynamic(
 export default function HomePage() {
   return (
     <main className="min-h-screen">
-      <DynamicMap />
+      <DynamicMap aircraft={[]} />
     </main>
   );
 }
