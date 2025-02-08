@@ -284,6 +284,10 @@ class AircraftService {
 
   public async fetchLiveData(icao24s: string[]): Promise<Aircraft[]> {
     if (!icao24s?.length) return [];
+<<<<<<< Updated upstream
+=======
+    console.log('[fetchLiveData] Requesting live data for ICAO24s:', icao24s);
+>>>>>>> Stashed changes
 
     const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
     const subBatchSize = API_CONFIG.PARAMS.MAX_ICAO_QUERY;
@@ -336,6 +340,12 @@ class AircraftService {
         }
       } catch (error) {
         console.error('[fetchLiveData] Error:', error);
+<<<<<<< Updated upstream
+=======
+        const data = await response.json();
+        console.log('[fetchLiveData] API Response:', data);
+
+>>>>>>> Stashed changes
         errorHandler.handleError(ErrorType.OPENSKY_SERVICE, error as Error);
       }
 

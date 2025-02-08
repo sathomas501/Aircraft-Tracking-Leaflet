@@ -1,4 +1,8 @@
+<<<<<<< Updated upstream
 import React, { useEffect, useState } from 'react';
+=======
+import React, { useEffect } from 'react';
+>>>>>>> Stashed changes
 import { useFetchModels } from '../customHooks/useFetchModels';
 import { Model } from '../selector/services/aircraftService';
 import {
@@ -8,15 +12,17 @@ import {
 
 interface ModelSelectorProps {
   selectedModel: string;
+  setSelectedModel: (model: string) => void;
   selectedManufacturer: string;
   modelCounts: Map<string, number>;
-  onSelect: (model: string) => void;
 }
 
 const ModelSelector: React.FC<ModelSelectorProps> = ({
   selectedModel,
+  setSelectedModel,
   selectedManufacturer,
   modelCounts,
+<<<<<<< Updated upstream
   onSelect,
 }) => {
   const { models, loading } = useFetchModels(selectedManufacturer);
@@ -46,6 +52,17 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
       fetchModels();
     }
   }, [selectedManufacturer, clearError]);
+=======
+}) => {
+  const { models, loading } = useFetchModels(selectedManufacturer);
+
+  useEffect(() => {
+    // ✅ Clear the model selection when the manufacturer changes
+    if (selectedModel && !models.some((m) => m.model === selectedModel)) {
+      setSelectedModel('');
+    }
+  }, [selectedManufacturer, models, selectedModel, setSelectedModel]);
+>>>>>>> Stashed changes
 
   return (
     <div className="px-4 pb-4">
@@ -60,9 +77,13 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
 
       <select
         value={selectedModel}
-        onChange={(e) => onSelect(e.target.value)}
+        onChange={(e) => setSelectedModel(e.target.value)}
         className="w-full p-2 border border-blue-200 rounded bg-white"
+<<<<<<< Updated upstream
         disabled={loading}
+=======
+        disabled={loading || models.length === 0}
+>>>>>>> Stashed changes
       >
         <option value="">All Models</option>
         {localModels.map((modelItem: Model) => (

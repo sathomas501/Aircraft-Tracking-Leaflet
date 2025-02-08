@@ -1,9 +1,17 @@
+<<<<<<< Updated upstream
 import React, { useEffect, useState } from 'react';
 import { fetchLiveData } from '../../../../lib/services/Unified-Aircraft-Position-Service'; // Mock API call
 import type { Aircraft } from '@/types/base';
 import DynamicMap from '../Map/DynamicMap';
 
 // ✅ Define a proper interface for props
+=======
+import React, { useEffect, useState, useMemo } from 'react';
+import { fetchLiveData } from '../../../../lib/services/Unified-Aircraft-Position-Service';
+import type { Aircraft } from '@/types/base';
+import DynamicMap from '../Map/DynamicMap';
+
+>>>>>>> Stashed changes
 interface MapComponentProps {
   aircraft: Aircraft[];
 }
@@ -14,15 +22,34 @@ const MapComponent: React.FC<MapComponentProps> = ({ aircraft }) => {
 
   useEffect(() => {
     const fetchData = async () => {
+<<<<<<< Updated upstream
       const data = await fetchLiveData([]); // Simulated API call
       setLiveAircraft(data);
+=======
+      if (aircraft.length === 0) return; // ✅ Prevents unnecessary API calls
+      try {
+        const data = await fetchLiveData(aircraft.map((ac) => ac.icao24));
+        setLiveAircraft((prev) =>
+          JSON.stringify(prev) === JSON.stringify(data) ? prev : data
+        ); // ✅ Prevent unnecessary updates
+      } catch (error) {
+        console.error('Error fetching live data:', error);
+      }
+>>>>>>> Stashed changes
     };
+
+    console.log('[MapComponent] Live Aircraft:', liveAircraft);
+
+    useEffect(() => {
+      console.log('[MapComponent] Received aircraft:', aircraft);
+    }, [aircraft]);
 
     fetchData();
     const interval = setInterval(fetchData, 10000); // Refresh every 10 seconds
     return () => clearInterval(interval);
-  }, []);
+  }, [JSON.stringify(aircraft)]); // ✅ Only re-run when `aircraft` actually changes
 
+<<<<<<< Updated upstream
   const filteredAircraft = liveAircraft
     .filter((ac) => {
       if (filter === 'GOV') return ac.OWNER_TYPE === '5'; // Government aircraft
@@ -34,6 +61,23 @@ const MapComponent: React.FC<MapComponentProps> = ({ aircraft }) => {
       type: ac.OWNER_TYPE === '5' ? 'Government' : 'Non-Government',
       isGovernment: ac.OWNER_TYPE === '5',
     }));
+=======
+  const filteredAircraft = useMemo(() => {
+    return liveAircraft
+      .filter((ac) => {
+        if (filter === 'GOV') return ac.OWNER_TYPE === '5';
+        if (filter === 'NON_GOV') return ac.OWNER_TYPE !== '5';
+        return true;
+      })
+      .map((ac) => ({
+        ...ac,
+        type: ac.OWNER_TYPE === '5' ? 'Government' : 'Non-Government',
+        isGovernment: ac.OWNER_TYPE === '5',
+      }));
+  }, [liveAircraft, filter]); // ✅ Memoized
+
+  console.log('[MapComponent] Filtered Aircraft:', filteredAircraft);
+>>>>>>> Stashed changes
 
   return (
     <div className="flex flex-col items-center p-4">

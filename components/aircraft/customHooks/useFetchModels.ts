@@ -1,33 +1,35 @@
-//components/aircraft/customHooks/useFetchModels
-
 import { useState, useEffect } from 'react';
 import { fetchModels, Model } from '../selector/services/aircraftService';
 
-
-export const useFetchModels = (selectedManufacturer: string) => {
+export const useFetchModels = (manufacturer: string) => {
   const [models, setModels] = useState<Model[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!selectedManufacturer) {
-      setModels([]);
-      return;
-    }
-
     const loadModels = async () => {
+      if (!manufacturer) {
+        setModels([]);
+        setError(null);
+        return;
+      }
+
       setLoading(true);
+      setError(null); // Clear previous errors
+
       try {
-        const data = await fetchModels(selectedManufacturer);
-        setModels(data);
-      } catch (error) {
-        console.error('Error loading models:', error);
+        const fetchedModels = await fetchModels(manufacturer);
+        setModels(fetchedModels);
+      } catch (err) {
+        console.error('Error fetching models:', err);
+        setError('Failed to load models.');
       } finally {
         setLoading(false);
       }
     };
 
     loadModels();
-  }, [selectedManufacturer]);
+  }, [manufacturer]);
 
-  return { models, loading };
+  return { models, loading, error };
 };

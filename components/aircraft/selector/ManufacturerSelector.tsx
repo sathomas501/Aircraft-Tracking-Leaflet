@@ -1,5 +1,11 @@
+<<<<<<< Updated upstream
 import React, { useState, useEffect } from 'react';
 import { SelectOption } from '@/types/base';
+=======
+import React, { useState } from 'react';
+import { useFetchManufacturers } from '../customHooks/useFetchManufactures';
+import { fetchIcao24s } from '../selector/services/aircraftService'; // ✅ Import fetchIcao24s
+>>>>>>> Stashed changes
 
 interface ManufacturerSelectorProps {
   onSelect: (manufacturer: string) => void;
@@ -11,6 +17,7 @@ const ManufacturerSelector: React.FC<ManufacturerSelectorProps> = ({
   onSelect,
   selectedManufacturer,
 }) => {
+<<<<<<< Updated upstream
   const [manufacturers, setManufacturers] = useState<SelectOption[]>([]);
   const [icao24s, setIcao24s] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
@@ -97,12 +104,53 @@ const ManufacturerSelector: React.FC<ManufacturerSelectorProps> = ({
           <li>No manufacturers available</li> // ✅ Graceful fallback message
         )}
       </ul>
+=======
+  const { manufacturers, loading } = useFetchManufacturers();
+  const [error, setError] = useState<string | null>(null);
 
-      {loading && <p>Loading ICAO24s...</p>}
-      {!loading && icao24s.length > 0 && (
-        <ul>
-          {icao24s.map((code) => (
-            <li key={code}>{code}</li>
+  const handleSelect = async (manufacturer: string) => {
+    if (manufacturer !== selectedManufacturer) {
+      onSelect(manufacturer); // ✅ Update selection first
+
+      // ✅ Delay ICAO fetch until after state updates
+      setTimeout(async () => {
+        try {
+          const icao24s = await fetchIcao24s(manufacturer);
+          console.log(
+            `✈️ Retrieved ${icao24s.length} ICAO24s for ${manufacturer}`
+          );
+        } catch (err) {
+          console.error('Error fetching ICAO24s:', err);
+          setError('Failed to fetch ICAO24s.');
+        }
+      }, 100); // Small delay to ensure state updates
+    }
+  };
+
+  return (
+    <div>
+      <h3 className="text-lg font-semibold mb-2">Select Manufacturer</h3>
+>>>>>>> Stashed changes
+
+      {error && <p className="text-red-500">{error}</p>}
+
+      {loading ? (
+        <p className="text-gray-600">Loading manufacturers...</p>
+      ) : (
+        <ul className="space-y-2">
+          {manufacturers.map((m) => (
+            <li key={m.value}>
+              <button
+                onClick={() => handleSelect(m.value)}
+                className={`w-full p-2 rounded-md transition ${
+                  selectedManufacturer === m.value
+                    ? 'bg-blue-500 text-white'
+                    : 'bg-gray-200 hover:bg-gray-300'
+                }`}
+              >
+                {m.label} ({m.count})
+              </button>
+            </li>
           ))}
         </ul>
       )}

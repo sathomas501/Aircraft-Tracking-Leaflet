@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import  {fetchManufacturers}  from '../selector/services/aircraftService';
-import { SelectOption } from '@/types/base'; // Import SelectOption
+import { fetchManufacturers } from '../selector/services/aircraftService';
+import { SelectOption } from '@/types/base';
 
 export const useFetchManufacturers = () => {
   const [manufacturers, setManufacturers] = useState<SelectOption[]>([]);
@@ -11,16 +11,22 @@ export const useFetchManufacturers = () => {
     const loadManufacturers = async () => {
       setLoading(true);
       try {
+        console.log('📡 Calling /api/manufacturers...');
         const data = await fetchManufacturers();
+        console.log('✅ Received Manufacturers:', data);
 
-        if (Array.isArray(data)) {  // ✅ Validate response
-          setManufacturers(data);
+        if (Array.isArray(data) && data.length > 0) {
+          setManufacturers(data); // ✅ Now correctly setting manufacturers
+          console.log('✔️ Manufacturers state updated:', data);
         } else {
-          console.warn('Invalid data format:', data);
+          console.warn(
+            '⚠️ API returned empty or invalid manufacturers list:',
+            data
+          );
           setManufacturers([]);
         }
       } catch (error) {
-        console.error('Error fetching manufacturers:', error);
+        console.error('❌ Error fetching manufacturers:', error);
       } finally {
         setLoading(false);
       }

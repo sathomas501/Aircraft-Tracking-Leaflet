@@ -1,4 +1,8 @@
+<<<<<<< Updated upstream
 import React, { useEffect, useState } from 'react';
+=======
+import React, { useEffect, useState, useMemo } from 'react';
+>>>>>>> Stashed changes
 import { fetchLiveData } from '../../../../lib/services/Unified-Aircraft-Position-Service'; // Mock API call
 import type { Aircraft } from '@/types/base';
 import DynamicMap from './DynamicMap'; // Adjust the path as necessary
@@ -6,6 +10,11 @@ import DynamicMap from './DynamicMap'; // Adjust the path as necessary
 // ✅ Define a proper interface for props
 interface MapComponentProps {
   aircraft: Aircraft[];
+<<<<<<< Updated upstream
+=======
+  onError?: (error: Error) => void; // ✅ Ensure this exists
+  onSelectManufacturer?: (manufacturer: string) => void; // ✅ Ensure this exists
+>>>>>>> Stashed changes
 }
 
 const MapComponent: React.FC<MapComponentProps> = ({ aircraft }) => {
@@ -15,8 +24,18 @@ const MapComponent: React.FC<MapComponentProps> = ({ aircraft }) => {
   useEffect(() => {
     const fetchData = async () => {
       try {
+<<<<<<< Updated upstream
         const data = await fetchLiveData(aircraft.map((ac) => ac.icao24)); // Pass valid ICAO24 list
         setLiveAircraft(data);
+=======
+        const icaoList = aircraft.map((ac) => ac.icao24);
+        if (icaoList.length === 0) return; // ✅ Prevent fetching with empty list
+
+        const data = await fetchLiveData(icaoList);
+        setLiveAircraft((prev) =>
+          JSON.stringify(prev) === JSON.stringify(data) ? prev : data
+        ); // ✅ Prevent unnecessary state updates
+>>>>>>> Stashed changes
       } catch (error) {
         console.error('Error fetching live data:', error);
       }
@@ -25,6 +44,7 @@ const MapComponent: React.FC<MapComponentProps> = ({ aircraft }) => {
     fetchData();
     const interval = setInterval(fetchData, 10000); // Refresh every 10 seconds
 
+<<<<<<< Updated upstream
     return () => clearInterval(interval); // Cleanup on unmount
   }, [aircraft]); // Depend on `aircraft` to fetch when it updates
 
@@ -40,6 +60,25 @@ const MapComponent: React.FC<MapComponentProps> = ({ aircraft }) => {
       type: ac.OWNER_TYPE === '5' ? 'Government' : 'Non-Government',
       isGovernment: ac.OWNER_TYPE === '5',
     }));
+=======
+    return () => clearInterval(interval); // Cleanup
+  }, [JSON.stringify(aircraft)]); // ✅ Prevent unnecessary reruns
+
+  const filteredAircraft = useMemo(() => {
+    return liveAircraft
+      .filter((ac) => {
+        if (!ac.OWNER_TYPE) return false;
+        if (filter === 'GOV') return ac.OWNER_TYPE === '5';
+        if (filter === 'NON_GOV') return ac.OWNER_TYPE !== '5';
+        return true;
+      })
+      .map((ac) => ({
+        ...ac,
+        type: ac.OWNER_TYPE === '5' ? 'Government' : 'Non-Government',
+        isGovernment: ac.OWNER_TYPE === '5',
+      }));
+  }, [liveAircraft, filter]); // ✅ Only recalculates when necessary
+>>>>>>> Stashed changes
 
   return (
     <div className="flex flex-col items-center p-4">

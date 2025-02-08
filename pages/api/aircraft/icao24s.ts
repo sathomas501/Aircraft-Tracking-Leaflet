@@ -1,52 +1,59 @@
-// pages/api/aircraft/icao24s.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
-import databaseManager from '@/lib/db/databaseManager'; // ✅ Fix import
+import databaseManager from '@/lib/db/databaseManager'; // ✅ Correct import
 
 interface Icao24Response {
+  success: boolean;
+  message: string;
+  data: {
     icao24List: string[];
-    meta?: {
-        total: number;
-        manufacturer: string;
-        model?: string;
-        timestamp: string;
+    meta: {
+      total: number;
+      manufacturer: string;
+      timestamp: string;
     };
-    error?: string;
-    message?: string;
+  };
+  error?: string;
 }
 
 export default async function handler(
-    req: NextApiRequest,
-    res: NextApiResponse<Icao24Response>
+  req: NextApiRequest,
+  res: NextApiResponse<Icao24Response>
 ) {
-    console.log('ICAO24s endpoint called with:', {
-        method: req.method,
-        body: req.body,
-        query: req.query
-    });
+  console.log('📡 [API] ICAO24s endpoint called:', {
+    method: req.method,
+    body: req.body,
+    query: req.query,
+  });
 
-    try {
-        // For POST request, get manufacturer from body
-        const manufacturer = req.method === 'POST' 
-            ? req.body.manufacturer 
-            : req.query.manufacturer as string; // ✅ Ensure it's a string
+  try {
+    const manufacturer =
+      req.method === 'POST'
+        ? req.body.manufacturer
+        : (req.query.manufacturer as string);
 
-        console.log('Extracted manufacturer:', manufacturer);
+    if (!manufacturer) {
+      console.warn('⚠️ [API] No manufacturer provided');
+      return res.status(400).json({
+        success: false,
+        message: 'Manufacturer query parameter is required',
+        data: {
+          icao24List: [],
+          meta: {
+            total: 0,
+            manufacturer: '',
+            timestamp: new Date().toISOString(),
+          },
+        },
+        error: 'Missing manufacturer parameter',
+      });
+    }
 
-        if (!manufacturer) {
-            console.log('No manufacturer provided');
-            return res.status(400).json({ 
-                icao24List: [],
-                error: 'Manufacturer parameter required',
-                message: 'Request body or query must include manufacturer'
-            });
-        }
+    console.log(`🔍 [API] Fetching ICAO24s for manufacturer: ${manufacturer}`);
 
-        // ✅ Fix: Use DatabaseManager instance instead of `getDatabase`
-     // Removed unnecessary initialization
+    // ✅ Ensure Database is initialized
+    await databaseManager.initializeDatabase();
 
-        const db = databaseManager;
-
-        let query = `
+    const query = `
             SELECT DISTINCT icao24
             FROM aircraft
             WHERE manufacturer = ?
@@ -55,28 +62,41 @@ export default async function handler(
             LIMIT 2000
         `;
 
-        console.log('Executing query:', { query, params: [manufacturer] });
+    console.time(`[API] ICAO24 Query Execution`); // ✅ Measure execution time
+    const results: { icao24: string }[] = await databaseManager.executeQuery(
+      query,
+      [manufacturer]
+    );
+    console.timeEnd(`[API] ICAO24 Query Execution`);
 
-        const results: { icao24: string }[] = await db.executeQuery(query, [manufacturer]);
+    const icao24List = results.map((item) => item.icao24);
 
-// ✅ Use proper type annotation to avoid nested array interpretation
-const icao24List = results.map(item => item.icao24);
-
-return res.status(200).json({
-    icao24List,
-    meta: {
-        total: results.length,
-        manufacturer: manufacturer,
-        timestamp: new Date().toISOString()
-    }
-});
-
-    } catch (error) {
-        console.error('[API] Database error:', error);
-        return res.status(500).json({ 
-            icao24List: [], 
-            error: 'Internal server error', 
-            message: error instanceof Error ? error.message : 'Unknown error' 
-        });
-    }
+    return res.status(200).json({
+      success: true,
+      message: `Found ${results.length} ICAO24 codes for ${manufacturer}`,
+      data: {
+        icao24List,
+        meta: {
+          total: results.length,
+          manufacturer,
+          timestamp: new Date().toISOString(),
+        },
+      },
+    });
+  } catch (error) {
+    console.error('❌ [API] Database error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      data: {
+        icao24List: [],
+        meta: {
+          total: 0,
+          manufacturer: '',
+          timestamp: new Date().toISOString(),
+        },
+      },
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
 }
