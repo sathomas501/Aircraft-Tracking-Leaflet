@@ -1,16 +1,12 @@
-// pages/map.tsx
 import dynamic from 'next/dynamic';
-import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 
 const MapWithNoSSR = dynamic(
-  () => import('../components/aircraft/tracking/mapWrapper').then(mod => mod.MapWrapper),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="flex items-center justify-center min-h-screen bg-gray-50">
-        <LoadingSpinner message="Loading map..." />
-      </div>
+  () =>
+    import('../components/aircraft/tracking/mapWrapper').then(
+      (mod) => mod.MapWrapper
     ),
+  {
+    ssr: false, // ✅ Still prevents server-side rendering
   }
 );
 

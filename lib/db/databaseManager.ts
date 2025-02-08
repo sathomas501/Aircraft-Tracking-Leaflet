@@ -3,6 +3,7 @@ import path from 'path';
 
 let sqlite3: typeof import('sqlite3') | null = null;
 
+<<<<<<< Updated upstream
 // ✅ Ensures sqlite3 is only loaded on the server
 if (typeof window === 'undefined') {
   try {
@@ -13,6 +14,18 @@ if (typeof window === 'undefined') {
   }
 } else {
   console.warn('[DatabaseManager] sqlite3 is not available in the browser.');
+=======
+if (typeof window === 'undefined') {
+  try {
+    sqlite3 = require('sqlite3').verbose();
+    console.log('[DatabaseManager] ✅ Loaded sqlite3 successfully');
+  } catch (error) {
+    console.error('[DatabaseManager] ❌ Failed to load sqlite3:', error);
+    throw error;
+  }
+} else {
+  console.warn('[DatabaseManager] ⚠️ sqlite3 is not available in the browser.');
+>>>>>>> Stashed changes
 }
 
 const STATIC_DB_PATH = path.resolve(process.cwd(), 'lib', 'db', 'static.db');
@@ -21,7 +34,11 @@ export class DatabaseManager {
   private static instance: DatabaseManager;
   private db: Database | null = null;
   private isInitialized: boolean = false;
+<<<<<<< Updated upstream
   private isInitializing: boolean = false;
+=======
+  private initializationPromise: Promise<void> | null = null;
+>>>>>>> Stashed changes
 
   private constructor() {}
 
@@ -34,26 +51,47 @@ export class DatabaseManager {
 
   private async initializeConnection(): Promise<Database> {
     if (typeof window !== 'undefined') {
+<<<<<<< Updated upstream
       throw new Error('[DatabaseManager] Cannot use database in the browser.');
+=======
+      throw new Error(
+        '[DatabaseManager] ❌ Cannot use database in the browser.'
+      );
+>>>>>>> Stashed changes
     }
 
     if (!sqlite3) {
       throw new Error(
+<<<<<<< Updated upstream
         '[DatabaseManager] sqlite3 is only available in the server environment.'
+=======
+        '[DatabaseManager] ❌ sqlite3 is only available in the server environment.'
+>>>>>>> Stashed changes
       );
     }
 
     if (!this.db) {
       try {
+<<<<<<< Updated upstream
         console.log('[DatabaseManager] Initializing database connection...');
+=======
+        console.log('[DatabaseManager] 🔄 Initializing database connection...');
+>>>>>>> Stashed changes
         this.db = await open({
           filename: STATIC_DB_PATH,
           driver: sqlite3.Database,
         });
+<<<<<<< Updated upstream
         console.log('[DatabaseManager] Database connection established.');
       } catch (error) {
         console.error(
           '[DatabaseManager] Error initializing database connection:',
+=======
+        console.log('[DatabaseManager] ✅ Database connection established.');
+      } catch (error) {
+        console.error(
+          '[DatabaseManager] ❌ Error initializing database:',
+>>>>>>> Stashed changes
           error
         );
         throw error;
@@ -65,6 +103,7 @@ export class DatabaseManager {
 
   public async initializeDatabase(): Promise<void> {
     if (this.isInitialized) {
+<<<<<<< Updated upstream
       console.log('[DatabaseManager] Database already initialized. Skipping.');
       return;
     }
@@ -92,10 +131,39 @@ export class DatabaseManager {
         "SELECT name FROM sqlite_master WHERE type='table'"
       );
       console.log('[Database] Existing tables:', tables);
+=======
+      console.log('[DatabaseManager] ✅ Database already initialized.');
+      return;
+    }
+
+    if (!this.initializationPromise) {
+      this.initializationPromise = this.performInitialization();
+    }
+
+    return this.initializationPromise;
+  }
+
+  private async performInitialization(): Promise<void> {
+    try {
+      await this.initializeConnection();
+      if (!this.db) {
+        throw new Error('[DatabaseManager] ❌ Database connection is null.');
+      }
+
+      console.log('[DatabaseManager] 🔍 Checking existing tables...');
+      const tables = await this.db.all(
+        "SELECT name FROM sqlite_master WHERE type='table'"
+      );
+      console.log(
+        '[DatabaseManager] ✅ Existing tables:',
+        tables.map((t) => t.name)
+      );
+>>>>>>> Stashed changes
 
       const [{ count }] = await this.db.all(
         'SELECT COUNT(*) AS count FROM aircraft'
       );
+<<<<<<< Updated upstream
       console.log(`[Database] Aircraft count: ${count}`);
 
       this.isInitialized = true;
@@ -105,6 +173,20 @@ export class DatabaseManager {
       throw error;
     } finally {
       this.isInitializing = false;
+=======
+      console.log(`[DatabaseManager] ✈️ Aircraft Count: ${count}`);
+
+      this.isInitialized = true;
+      console.log('[DatabaseManager] ✅ Database successfully initialized.');
+    } catch (error) {
+      console.error(
+        '[DatabaseManager] ❌ Database initialization failed:',
+        error
+      );
+      throw error;
+    } finally {
+      this.initializationPromise = null; // Reset promise to allow reinitialization if needed
+>>>>>>> Stashed changes
     }
   }
 
@@ -112,6 +194,7 @@ export class DatabaseManager {
     query: string,
     params: any[] = []
   ): Promise<T[]> {
+<<<<<<< Updated upstream
     if (!this.isInitialized || !this.db) {
       console.warn(
         '[DatabaseManager] Database not fully initialized. Ensuring completion...'
@@ -130,6 +213,29 @@ export class DatabaseManager {
     } catch (error) {
       console.error(
         `[DatabaseManager] Query execution failed: ${query}`,
+=======
+    if (!this.isInitialized) {
+      console.error(
+        '[DatabaseManager] ❌ Attempted to query an uninitialized database.'
+      );
+      throw new Error(
+        '[DatabaseManager] ❌ Database is not initialized. Cannot execute queries.'
+      );
+    }
+
+    if (!this.db) {
+      throw new Error('[DatabaseManager] ❌ Database connection is null.');
+    }
+
+    try {
+      console.time(`[DatabaseManager] ⏳ Query Execution Time: ${query}`);
+      const result = await this.db.all(query, params);
+      console.timeEnd(`[DatabaseManager] ⏳ Query Execution Time: ${query}`);
+      return result;
+    } catch (error) {
+      console.error(
+        `[DatabaseManager] ❌ Query execution failed: ${query} | Params: ${JSON.stringify(params)}`,
+>>>>>>> Stashed changes
         error
       );
       throw error;
@@ -140,6 +246,7 @@ export class DatabaseManager {
     query: string,
     params: any[] = []
   ): Promise<T[]> {
+<<<<<<< Updated upstream
     if (!this.isInitialized || !this.db) {
       console.warn(
         '[DatabaseManager] Database not fully initialized. Initializing...'
@@ -165,20 +272,34 @@ export class DatabaseManager {
       );
       throw error;
     }
+=======
+    return this.executeQuery<T>(query, params);
+>>>>>>> Stashed changes
   }
 
   public async close(): Promise<void> {
     if (this.db) {
       try {
+<<<<<<< Updated upstream
+=======
+        console.log('[DatabaseManager] 🔄 Running PRAGMA optimize...');
+>>>>>>> Stashed changes
         await this.db.run('PRAGMA optimize');
         await this.db.close();
         this.db = null;
         this.isInitialized = false;
         console.log(
+<<<<<<< Updated upstream
           '[DatabaseManager] Database connection closed successfully'
         );
       } catch (error) {
         console.error('[DatabaseManager] Error closing database:', error);
+=======
+          '[DatabaseManager] ✅ Database connection closed successfully.'
+        );
+      } catch (error) {
+        console.error('[DatabaseManager] ❌ Error closing database:', error);
+>>>>>>> Stashed changes
         throw error;
       }
     }
