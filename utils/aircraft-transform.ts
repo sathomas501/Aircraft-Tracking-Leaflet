@@ -1,10 +1,10 @@
 // lib/utils/aircraft-transform.ts
-import type { 
-  Aircraft, 
-  PositionData, 
-  OpenSkyState, 
-  CachedAircraftData, 
-  TrackingData 
+import type {
+  Aircraft,
+  PositionData,
+  OpenSkyState,
+  CachedAircraftData,
+  TrackingData,
 } from '@/types/base';
 import type { OpenSkyAircraft } from '@/types/opensky';
 
@@ -12,7 +12,7 @@ const DEFAULT_VALUES = {
   STRING: 'Unknown',
   NUMBER: 0,
   BOOL: false,
-  EMPTY_STRING: ''
+  EMPTY_STRING: '',
 } as const;
 
 /**
@@ -21,7 +21,7 @@ const DEFAULT_VALUES = {
 function createBaseAircraft(currentTime = Date.now()): Aircraft {
   return {
     icao24: DEFAULT_VALUES.EMPTY_STRING,
-    "N-NUMBER": DEFAULT_VALUES.STRING,
+    'N-NUMBER': DEFAULT_VALUES.STRING,
     manufacturer: DEFAULT_VALUES.STRING,
     model: DEFAULT_VALUES.STRING,
     operator: DEFAULT_VALUES.STRING,
@@ -38,22 +38,24 @@ function createBaseAircraft(currentTime = Date.now()): Aircraft {
     TYPE_AIRCRAFT: DEFAULT_VALUES.STRING,
     OWNER_TYPE: DEFAULT_VALUES.STRING,
     isTracked: DEFAULT_VALUES.BOOL,
-    lastSeen: currentTime
+    lastSeen: currentTime,
   };
 }
 
 /**
  * Normalizes any partial Aircraft data into a complete Aircraft object
  */
-export function normalizeAircraft(partialAircraft: Partial<Aircraft>): Aircraft {
+export function normalizeAircraft(
+  partialAircraft: Partial<Aircraft>
+): Aircraft {
   const base = createBaseAircraft(Date.now());
-  
+
   return {
     ...base,
     ...partialAircraft,
     // Ensure required fields are never undefined
     icao24: partialAircraft.icao24 || base.icao24,
-    "N-NUMBER": partialAircraft["N-NUMBER"] || base["N-NUMBER"],
+    'N-NUMBER': partialAircraft['N-NUMBER'] || base['N-NUMBER'],
     manufacturer: partialAircraft.manufacturer || base.manufacturer,
     latitude: partialAircraft.latitude ?? base.latitude,
     longitude: partialAircraft.longitude ?? base.longitude,
@@ -67,27 +69,27 @@ export function normalizeAircraft(partialAircraft: Partial<Aircraft>): Aircraft 
     STATE: partialAircraft.STATE || base.STATE,
     TYPE_AIRCRAFT: partialAircraft.TYPE_AIRCRAFT || base.TYPE_AIRCRAFT,
     OWNER_TYPE: partialAircraft.OWNER_TYPE || base.OWNER_TYPE,
-    isTracked: partialAircraft.isTracked ?? base.isTracked
+    isTracked: partialAircraft.isTracked ?? base.isTracked,
   };
 }
 
 // Export existing transform functions for backward compatibility
-export const transformOpenSkyState = (state: any[]): Aircraft => 
+export const transformOpenSkyState = (state: any[]): Aircraft =>
   AircraftTransforms.fromOpenSkyState(state);
 
-export const transformPositionData = (position: PositionData): Aircraft => 
+export const transformPositionData = (position: PositionData): Aircraft =>
   AircraftTransforms.fromPosition(position);
 
-export const transformOpenSkyAircraft = (aircraft: OpenSkyAircraft): Aircraft => 
+export const transformOpenSkyAircraft = (aircraft: OpenSkyAircraft): Aircraft =>
   AircraftTransforms.fromOpenSky(aircraft);
 
-export const transformFromCache = (cached: CachedAircraftData): Aircraft => 
+export const transformFromCache = (cached: CachedAircraftData): Aircraft =>
   CacheTransforms.fromCache(cached);
 
-export const transformToCache = (aircraft: Aircraft): CachedAircraftData => 
+export const transformToCache = (aircraft: Aircraft): CachedAircraftData =>
   CacheTransforms.toCache(aircraft);
 
-export const transformPositionBatch = (positions: PositionData[]): Aircraft[] => 
+export const transformPositionBatch = (positions: PositionData[]): Aircraft[] =>
   positions.map(AircraftTransforms.fromPosition);
 
 // Main transform namespaces
@@ -106,7 +108,7 @@ export const AircraftTransforms = {
       on_ground: state[8],
       last_contact: state[4],
       lastSeen: Date.now(),
-      isTracked: true
+      isTracked: true,
     });
   },
 
@@ -121,7 +123,7 @@ export const AircraftTransforms = {
       on_ground: position.on_ground,
       last_contact: position.last_contact,
       lastSeen: position.last_seen || Date.now(),
-      isTracked: true
+      isTracked: true,
     });
   },
 
@@ -138,9 +140,9 @@ export const AircraftTransforms = {
       on_ground: aircraft.on_ground,
       last_contact: aircraft.last_contact,
       lastSeen: Date.now(),
-      isTracked: true
+      isTracked: true,
     });
-  }
+  },
 };
 
 export const CacheTransforms = {
@@ -156,14 +158,14 @@ export const CacheTransforms = {
       last_contact: aircraft.last_contact,
       lastSeen: aircraft.lastSeen || Date.now(),
       lastUpdate: Date.now(),
-      "N-NUMBER": aircraft["N-NUMBER"],
+      'N-NUMBER': aircraft['N-NUMBER'],
       manufacturer: aircraft.manufacturer,
       model: aircraft.model,
       NAME: aircraft.NAME,
       CITY: aircraft.CITY,
       STATE: aircraft.STATE,
       TYPE_AIRCRAFT: aircraft.TYPE_AIRCRAFT,
-      OWNER_TYPE: aircraft.OWNER_TYPE
+      OWNER_TYPE: aircraft.OWNER_TYPE,
     };
   },
 
@@ -178,7 +180,7 @@ export const CacheTransforms = {
       on_ground: cached.on_ground,
       last_contact: cached.last_contact,
       lastSeen: cached.lastSeen,
-      "N-NUMBER": cached["N-NUMBER"],
+      'N-NUMBER': cached['N-NUMBER'],
       manufacturer: cached.manufacturer,
       model: cached.model,
       NAME: cached.NAME,
@@ -186,9 +188,9 @@ export const CacheTransforms = {
       STATE: cached.STATE,
       TYPE_AIRCRAFT: cached.TYPE_AIRCRAFT,
       OWNER_TYPE: cached.OWNER_TYPE,
-      isTracked: true
+      isTracked: true,
     });
-  }
+  },
 };
 
 export const DatabaseTransforms = {
@@ -202,11 +204,18 @@ export const DatabaseTransforms = {
       heading: aircraft.heading,
       on_ground: aircraft.on_ground,
       last_contact: aircraft.last_contact,
-      updated_at: Date.now()
+      updated_at: Date.now(),
     };
   },
 
   toBatch(aircraft: Aircraft[]): TrackingData[] {
-    return aircraft.map(a => this.toTracking(a));
-  }
+    return aircraft.map((a) => this.toTracking(a));
+  },
+};
+
+export const transformAircraft = (aircraft: Aircraft[]): Aircraft[] => {
+  return aircraft.map((plane) => ({
+    ...plane,
+    isTracked: plane.isTracked ?? false, // Ensure all Aircraft have `isTracked`
+  }));
 };

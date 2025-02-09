@@ -1,33 +1,25 @@
-import React, { useState } from 'react';
-import { Minus, Search } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { Search, Plus, Minus } from 'lucide-react';
 import ManufacturerSelector from './ManufacturerSelector';
 import NNumberSelector from './nNumberSelector';
-<<<<<<< Updated upstream
-=======
-import { fetchAircraftByNNumber } from '../selector/services/aircraftService'; // ✅ Import here
->>>>>>> Stashed changes
 import ModelSelector from './ModelSelector';
+import MinimizeToggle from './MinimizeToggle';
 import { Aircraft, SelectOption } from '@/types/base';
+import { Model } from '../selector/services/aircraftService';
 
-type UnifiedSelectorProps = {
-  selectedType: string;
+interface UnifiedSelectorProps {
   selectedManufacturer: string;
   selectedModel: string;
   setSelectedManufacturer: React.Dispatch<React.SetStateAction<string>>;
   setSelectedModel: React.Dispatch<React.SetStateAction<string>>;
-  modelCounts: Map<string, number>;
-  updateModelCounts: () => void;
-  totalActive: number;
   manufacturers: SelectOption[];
-<<<<<<< Updated upstream
-  onAircraftUpdate: (updatedAircraft: Aircraft[]) => void; // Add this line
-=======
+  modelCounts: Map<string, number>;
+  totalActive: number;
   onAircraftUpdate: (updatedAircraft: Aircraft[]) => void;
->>>>>>> Stashed changes
   onManufacturerSelect: (manufacturer: string) => void;
   onModelSelect: (model: string) => void;
   onReset: () => void;
-};
+}
 
 const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
   selectedManufacturer,
@@ -35,167 +27,141 @@ const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
   setSelectedManufacturer,
   setSelectedModel,
   manufacturers,
-  modelCounts,
   onManufacturerSelect,
   onModelSelect,
   onReset,
+  onAircraftUpdate,
+  totalActive,
 }) => {
   const [searchMode, setSearchMode] = useState<'manufacturer' | 'nNumber'>(
     'manufacturer'
   );
   const [nNumber, setNNumber] = useState('');
   const [isMinimized, setIsMinimized] = useState(false);
+  const [models, setModels] = useState<Model[]>([]);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
-<<<<<<< Updated upstream
-  // Toggle Minimize
-  if (isMinimized) {
-    return (
-      <button
-        onClick={() => setIsMinimized(false)}
-=======
-  const handleNNumberSearch = async (nNumber: string) => {
+  async function fetchAircraftByNNumber(
+    nNumber: string
+  ): Promise<Aircraft | null> {
     try {
-      const aircraftData = await fetchAircraftByNNumber(nNumber); // ✅ Call API
-      console.log(
-        `✈️ Retrieved aircraft for N-Number ${nNumber}:`,
-        aircraftData
-      );
+      const response = await fetch(`/api/aircraft?nNumber=${nNumber}`);
+      if (!response.ok) {
+        throw new Error('Network response was not ok');
+      }
+      const data = await response.json();
+      return data as Aircraft;
     } catch (error) {
       console.error('Error fetching aircraft by N-Number:', error);
+      return null;
     }
-  };
-
-  // ✅ Prevent unnecessary updates
-  const handleManufacturerSelect = (manufacturer: string) => {
-    if (manufacturer !== selectedManufacturer) {
-      setSelectedManufacturer(manufacturer);
-      onManufacturerSelect(manufacturer);
-    }
-  };
-
-  const restoreState = () => {
-    setIsMinimized(false);
-    if (!selectedManufacturer) {
-      setSearchMode('manufacturer'); // ✅ Restore search mode when reopening
-    }
-  };
-
-  if (isMinimized) {
-    return (
-      <button
-        onClick={restoreState}
->>>>>>> Stashed changes
-        className="absolute top-4 left-4 z-[2000] bg-white rounded-lg shadow-lg px-4 py-2 text-gray-700 hover:bg-gray-50 flex items-center gap-2"
-      >
-        <Search size={16} />
-        <span>Select Aircraft</span>
-      </button>
-    );
   }
 
+  // Reset manufacturer selection
+  const resetManufacturerSelection = () => {
+    console.log('Resetting manufacturer selection...');
+    if (abortControllerRef.current) {
+      console.log('Aborting ongoing fetch request during reset...');
+      abortControllerRef.current.abort();
+    }
+    setSelectedManufacturer('');
+    setSelectedModel('');
+    setModels([]);
+  };
+
   return (
-    <div className="absolute top-4 left-4 z-[2000] bg-white rounded-lg shadow-lg w-[350px] p-4">
-<<<<<<< Updated upstream
-      {/* Header with Reset & Minimize Buttons */}
-=======
->>>>>>> Stashed changes
-      <div className="flex justify-between items-center mb-2">
-        <h2 className="text-gray-700 text-lg">Select Aircraft</h2>
-        <div className="flex gap-2">
-          <button
-            onClick={() => setIsMinimized(true)}
-            className="text-gray-400 hover:text-gray-600 p-1"
-          >
-            <Minus size={20} />
-          </button>
-          <button
-            onClick={onReset}
-            className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600"
-          >
-            Reset
-          </button>
+    <>
+      {/* Only show the selector when NOT minimized */}
+      {!isMinimized && (
+        <div className="bg-white rounded-lg shadow-lg p-4 w-[320px] absolute top-4 left-4 z-[3000]">
+          {/* Header Section with Minimize Button in Top Left */}
+          <div className="flex justify-between items-center mb-2">
+            <div className="flex items-center">
+              {/* Minimize Toggle - Now Inside UI */}
+              <button
+                onClick={() => setIsMinimized(true)}
+                className="p-1 bg-gray-200 rounded-md mr-2 hover:bg-gray-300"
+              >
+                <Minus size={16} />
+              </button>
+              <h2 className="text-gray-700 text-lg">Select Aircraft</h2>
+            </div>
+
+            {/* Reset Button */}
+            <button
+              onClick={onReset}
+              className="px-3 py-1 bg-blue-500 text-white rounded-md hover:bg-blue-600"
+            >
+              Reset
+            </button>
+          </div>
+
+          {/* Search Mode Toggle */}
+          <div className="flex space-x-2 mb-4">
+            <button
+              onClick={() => setSearchMode('manufacturer')}
+              className={`flex-1 py-2 px-4 rounded-md ${
+                searchMode === 'manufacturer'
+                  ? 'bg-blue-500 text-white'
+                  : 'bg-gray-100 text-gray-700'
+              }`}
+            >
+              By Manufacturer
+            </button>
+            <button
+              onClick={() => setSearchMode('nNumber')}
+              className={`flex-1 py-2 px-4 rounded-md ${
+                searchMode === 'nNumber'
+                  ? 'bg-blue-500 text-white'
+                  : 'bg-gray-100 text-gray-700'
+              }`}
+            >
+              By N-Number
+            </button>
+          </div>
+
+          {searchMode === 'manufacturer' ? (
+            <>
+              <ManufacturerSelector
+                manufacturers={manufacturers}
+                selectedManufacturer={selectedManufacturer}
+                onSelect={onManufacturerSelect}
+                onAircraftUpdate={onAircraftUpdate}
+                onModelsUpdate={setModels}
+              />
+
+              {/* Hide Model Selector Until a Manufacturer is Chosen */}
+              {selectedManufacturer && models.length > 0 && (
+                <ModelSelector
+                  selectedModel={selectedModel}
+                  setSelectedModel={setSelectedModel}
+                  selectedManufacturer={selectedManufacturer}
+                  models={models}
+                  totalActive={totalActive}
+                  onModelUpdate={onModelSelect}
+                />
+              )}
+            </>
+          ) : (
+            <NNumberSelector
+              nNumber={nNumber}
+              setNNumber={setNNumber}
+              onSearch={fetchAircraftByNNumber}
+            />
+          )}
         </div>
-      </div>
-
-<<<<<<< Updated upstream
-      {/* Search Mode Toggle */}
-      <div className="flex space-x-2 mb-4">
-        <button
-          onClick={() => setSearchMode('manufacturer')}
-          className={`flex-1 py-2 px-4 rounded-md ${
-            searchMode === 'manufacturer'
-              ? 'bg-blue-500 text-white'
-              : 'bg-gray-100 text-gray-700'
-          }`}
-=======
-      <div className="flex space-x-2 mb-4">
-        <button
-          onClick={() => setSearchMode('manufacturer')}
-          className={`flex-1 py-2 px-4 rounded-md ${searchMode === 'manufacturer' ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-700'}`}
->>>>>>> Stashed changes
-        >
-          By Manufacturer
-        </button>
-        <button
-          onClick={() => setSearchMode('nNumber')}
-<<<<<<< Updated upstream
-          className={`flex-1 py-2 px-4 rounded-md ${
-            searchMode === 'nNumber'
-              ? 'bg-blue-500 text-white'
-              : 'bg-gray-100 text-gray-700'
-          }`}
-=======
-          className={`flex-1 py-2 px-4 rounded-md ${searchMode === 'nNumber' ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-700'}`}
->>>>>>> Stashed changes
-        >
-          By N-Number
-        </button>
-      </div>
-
-<<<<<<< Updated upstream
-      {/* Manufacturer & Model Selection */}
-      {searchMode === 'manufacturer' ? (
-        <>
-          {/* Manufacturer Selector */}
-          <ManufacturerSelector
-            manufacturers={manufacturers} // ✅ Ensure this is NOT empty
-            onSelect={onManufacturerSelect}
-            selectedManufacturer={selectedManufacturer}
-          />
-
-          {/* Model Selector (Only enabled after manufacturer selection) */}
-=======
-      {searchMode === 'manufacturer' ? (
-        <>
-          <ManufacturerSelector
-            onSelect={handleManufacturerSelect}
-            selectedManufacturer={selectedManufacturer}
-          />
-
->>>>>>> Stashed changes
-          <ModelSelector
-            selectedModel={selectedModel}
-            setSelectedModel={setSelectedModel}
-            selectedManufacturer={selectedManufacturer}
-            modelCounts={modelCounts}
-<<<<<<< Updated upstream
-            onSelect={setSelectedModel}
-=======
->>>>>>> Stashed changes
-          />
-        </>
-      ) : (
-        <NNumberSelector
-          nNumber={nNumber}
-          setNNumber={setNNumber}
-<<<<<<< Updated upstream
-          onSearch={() => console.log('Search N-Number:', nNumber)}
-=======
-          onSearch={handleNNumberSearch}
->>>>>>> Stashed changes
-        />
       )}
-    </div>
+
+      {/* Show Plus Button When UI is Minimized */}
+      {isMinimized && (
+        <button
+          onClick={() => setIsMinimized(false)}
+          className="absolute top-4 left-4 z-[3000] p-2 bg-white rounded-md shadow-lg hover:bg-gray-200"
+        >
+          <Plus size={16} />
+        </button>
+      )}
+    </>
   );
 };
 

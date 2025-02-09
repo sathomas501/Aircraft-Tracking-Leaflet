@@ -1,7 +1,7 @@
-// components/aircraft/tracking/Map/components/MapControls.tsx
 import React from 'react';
 import { useMap } from 'react-leaflet';
 import type { LatLngExpression } from 'leaflet';
+import { MAP_CONFIG } from '@/config/map'; // ✅ Import map settings
 
 interface MapControlsProps {
   onFitBounds?: () => void;
@@ -11,12 +11,12 @@ interface MapControlsProps {
   defaultZoom?: number;
 }
 
-export const MapControls: React.FC<MapControlsProps> = ({ 
-  onFitBounds, 
+export const MapControls: React.FC<MapControlsProps> = ({
+  onFitBounds,
   selectedAircraftPosition,
-  className = "",
-  defaultCenter = [51.505, -0.09],  // ✅ Default center
-  defaultZoom = 1                  // ✅ Default zoom
+  className = '',
+  defaultCenter = MAP_CONFIG.CENTER, // ✅ Use center from `map.ts`
+  defaultZoom = MAP_CONFIG.DEFAULT_ZOOM, // ✅ Use zoom from `map.ts`
 }) => {
   const map = useMap();
 
@@ -24,7 +24,7 @@ export const MapControls: React.FC<MapControlsProps> = ({
     console.log('[MapControl] Reset View Triggered');
     map.setView(defaultCenter, defaultZoom);
   };
-  
+
   const handleFocusSelected = () => {
     console.log('[MapControl] Focus Selected Triggered');
     if (selectedAircraftPosition) {
@@ -32,7 +32,7 @@ export const MapControls: React.FC<MapControlsProps> = ({
     } else if (onFitBounds) {
       onFitBounds();
     }
-  };  
+  };
 
   return (
     <div className={`absolute top-4 left-4 z-[1000] ${className}`}>
@@ -49,7 +49,11 @@ export const MapControls: React.FC<MapControlsProps> = ({
           <button
             onClick={handleFocusSelected}
             className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-            title={selectedAircraftPosition ? "Focus selected aircraft" : "Fit all aircraft"}
+            title={
+              selectedAircraftPosition
+                ? 'Focus selected aircraft'
+                : 'Fit all aircraft'
+            }
             type="button"
           >
             🎯

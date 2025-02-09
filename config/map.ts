@@ -2,8 +2,6 @@
 import type { LatLngBoundsExpression } from 'leaflet';
 import L from 'leaflet';
 
-
-
 export const MAP_CONFIG = {
   CENTER: [39.8283, -98.5795] as [number, number],
   DEFAULT_ZOOM: 4,
@@ -24,6 +22,7 @@ export const MAP_CONFIG = {
       MAX: 18,
       DEFAULT: 4,
       AIRCRAFT_FOCUS: 12,
+      POSITION: 'topright', // Move Zoom Control to the Top-Right
     },
     BOUNDS: {
       MAX_LAT: 85,
@@ -39,7 +38,8 @@ export const MAP_CONFIG = {
     },
     TILE_LAYER: {
       URL: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-      ATTRIBUTION: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      ATTRIBUTION:
+        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
     },
   },
   REFRESH_INTERVALS: {
@@ -65,5 +65,6 @@ export const MAP_CONFIG = {
 } as const;
 
 // Reusable Bounds and Tile Layer
-export const CONTINENTAL_US_BOUNDS: LatLngBoundsExpression = MAP_CONFIG.US_BOUNDS;
+export const CONTINENTAL_US_BOUNDS: LatLngBoundsExpression =
+  MAP_CONFIG.US_BOUNDS;
 export const TILE_LAYER = MAP_CONFIG.CONTROLS.TILE_LAYER;

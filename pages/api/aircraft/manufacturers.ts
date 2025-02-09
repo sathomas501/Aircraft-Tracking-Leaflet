@@ -18,31 +18,31 @@ export default async function handler(
 
   if (req.method === 'GET') {
     try {
-      console.log('[Manufacturers] Fetching manufacturers from DB...');
-      const result = await db.allQuery<{ name: string; count: number }>(
-        `SELECT 
-          manufacturer AS name, 
-          COUNT(*) AS count 
-        FROM aircraft 
-        WHERE manufacturer IS NOT NULL 
-        GROUP BY manufacturer 
-        ORDER BY count DESC 
-        LIMIT 50`
-      );
-
-      const manufacturers: SelectOption[] = result.map((m) => ({
-        value: m.name,
-        label: m.name,
-        count: m.count,
-      }));
-
       console.log(
-        `[Manufacturers] Found ${manufacturers.length} manufacturers`
+        '[Manufacturers] Fetching top 50 manufacturers, alphabetized...'
       );
-      return res.status(200).json({ manufacturers });
+      const result = await db.allQuery<{ name: string; count: number }>(
+        `SELECT name, count FROM (
+          SELECT 
+            manufacturer AS name, 
+            COUNT(*) AS count 
+          FROM aircraft 
+          WHERE manufacturer IS NOT NULL 
+          GROUP BY manufacturer 
+          ORDER BY count DESC  -- ✅ First, get the top 50 by count
+          LIMIT 50
+        ) AS TopManufacturers
+        ORDER BY name ASC  -- ✅ Then alphabetize the selected top 50`
+      );
+
+      const manufacturers = result.map((manufacturer) => ({
+        value: manufacturer.name,
+        label: manufacturer.name,
+      }));
+      res.status(200).json({ manufacturers });
     } catch (error) {
-      console.error('[Manufacturers] Database error:', error);
-      return res
+      console.error('[Manufacturers] Error fetching data:', error);
+      res
         .status(500)
         .json({ manufacturers: [], error: 'Failed to fetch manufacturers' });
     }
