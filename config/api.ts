@@ -20,7 +20,7 @@ export const API_CONFIG = {
     TIME: 'time',
     EXTENDED: 'extended',
     MAX_ICAO_QUERY: 200,
-    MAX_TOTAL_ICAO_QUERY: 1000
+    MAX_TOTAL_ICAO_QUERY: 2000,
   },
 
   API: {
@@ -28,5 +28,6 @@ export const API_CONFIG = {
     MAX_POLLING_INTERVAL: 30000,
     TIMEOUT_MS: 15000,
     DEFAULT_RETRY_LIMIT: 3,
-    MAX_RETRY_LIMIT: 5
-}} as const;
+    MAX_RETRY_LIMIT: 5,
+  },
+} as const;

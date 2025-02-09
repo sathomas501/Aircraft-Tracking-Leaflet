@@ -1,99 +1,71 @@
-<<<<<<< Updated upstream
-import React, { useEffect, useState } from 'react';
-=======
 import React, { useEffect } from 'react';
->>>>>>> Stashed changes
-import { useFetchModels } from '../customHooks/useFetchModels';
-import { Model } from '../selector/services/aircraftService';
-import {
-  useErrorHandler,
-  ErrorType,
-} from '../../../lib/services/error-handler';
+import { ChevronDown } from 'lucide-react';
+
+interface Model {
+  model: string;
+  label: string;
+  activeCount?: number;
+  count?: number;
+}
 
 interface ModelSelectorProps {
   selectedModel: string;
   setSelectedModel: (model: string) => void;
   selectedManufacturer: string;
-  modelCounts: Map<string, number>;
+  models: Model[];
+  totalActive: number;
+  onModelUpdate: (model: string) => void;
 }
 
 const ModelSelector: React.FC<ModelSelectorProps> = ({
   selectedModel,
   setSelectedModel,
   selectedManufacturer,
-  modelCounts,
-<<<<<<< Updated upstream
-  onSelect,
+  models = [],
+  totalActive,
+  onModelUpdate,
 }) => {
-  const { models, loading } = useFetchModels(selectedManufacturer);
-  const { error, clearError } = useErrorHandler(ErrorType.DATA);
-  const [localModels, setLocalModels] = useState<Model[]>([]);
-
   useEffect(() => {
-    const fetchModels = async () => {
-      try {
-        const response = await fetch(
-          `/api/aircraft/models?manufacturer=${selectedManufacturer}`
-        );
-        if (!response.ok) {
-          throw new Error(`Failed to fetch models: ${response.statusText}`);
-        }
-        const data = await response.json();
-        console.log('Fetched Models:', data);
-        setLocalModels(data.models || []);
-        clearError(); // Clear errors on successful fetch
-      } catch (err) {
-        console.error('Error fetching models:', err);
-        throw err; // Throwing the error to trigger the global error handler
-      }
-    };
-
-    if (selectedManufacturer) {
-      fetchModels();
-    }
-  }, [selectedManufacturer, clearError]);
-=======
-}) => {
-  const { models, loading } = useFetchModels(selectedManufacturer);
-
-  useEffect(() => {
-    // ✅ Clear the model selection when the manufacturer changes
     if (selectedModel && !models.some((m) => m.model === selectedModel)) {
       setSelectedModel('');
     }
   }, [selectedManufacturer, models, selectedModel, setSelectedModel]);
->>>>>>> Stashed changes
 
   return (
-    <div className="px-4 pb-4">
-      {error && (
-        <div className="text-red-500 text-sm mb-2">
-          {error.message}
-          <button onClick={clearError} className="ml-2 text-blue-500 underline">
-            Dismiss
-          </button>
-        </div>
-      )}
-
-      <select
-        value={selectedModel}
-        onChange={(e) => setSelectedModel(e.target.value)}
-        className="w-full p-2 border border-blue-200 rounded bg-white"
-<<<<<<< Updated upstream
-        disabled={loading}
-=======
-        disabled={loading || models.length === 0}
->>>>>>> Stashed changes
-      >
-        <option value="">All Models</option>
-        {localModels.map((modelItem: Model) => (
-          <option key={modelItem.model} value={modelItem.model}>
-            {modelItem.model} ({modelCounts.get(modelItem.model) || 0})
+    <div className="space-y-2">
+      <label className="block text-sm font-medium text-gray-600">Model</label>
+      <div className="relative">
+        <select
+          value={selectedModel}
+          onChange={(e) => {
+            setSelectedModel(e.target.value);
+            onModelUpdate(e.target.value);
+          }}
+          className="w-full p-2 pr-8 border border-gray-300 rounded-md shadow-sm 
+                     focus:ring-blue-500 focus:border-blue-500 
+                     bg-white text-gray-900 appearance-none
+                     disabled:bg-gray-100 disabled:text-gray-500"
+          disabled={!selectedManufacturer}
+        >
+          <option value="">
+            {selectedManufacturer
+              ? `All Models (${totalActive} active)`
+              : 'Select a manufacturer first'}
           </option>
-        ))}
-      </select>
+          {models.map((model) => (
+            <option key={model.model} value={model.model}>
+              {model.label} ({model.activeCount || 0} active /{' '}
+              {model.count?.toLocaleString() || 0} total)
+            </option>
+          ))}
+        </select>
+        <ChevronDown
+          className="absolute right-2 top-3 text-gray-500"
+          size={16}
+        />
+      </div>
     </div>
   );
 };
 
-export default ModelSelector;
+export default React.memo(ModelSelector);

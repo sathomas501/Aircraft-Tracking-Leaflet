@@ -1,5 +1,5 @@
 // src/config/opensky.ts
-import { API_CONFIG } from "./api";
+import { API_CONFIG } from './api';
 
 export const OPENSKY_CONFIG = {
   API: {

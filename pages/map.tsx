@@ -13,7 +13,11 @@ const MapWithNoSSR = dynamic(
 export default function MapPage() {
   return (
     <div className="w-full h-screen">
-      <MapWithNoSSR />
+      <MapWithNoSSR
+        initialAircraft={[]}
+        manufacturers={[]}
+        onError={(error) => console.error(error)}
+      />
     </div>
   );
 }

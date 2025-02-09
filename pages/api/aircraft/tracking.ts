@@ -37,11 +37,7 @@ export default async function handler(
 
   try {
     const trackingDb = TrackingDatabaseManager.getInstance();
-<<<<<<< Updated upstream
-    await trackingDb.initialize();
-=======
     await trackingDb.initialize(); // ✅ Just call `initialize()` safely
->>>>>>> Stashed changes
 
     const { action } = req.body;
 
@@ -85,21 +81,11 @@ export default async function handler(
 }
 
 export async function upsertActiveAircraftBatch(
-<<<<<<< Updated upstream
-  trackingDb: TrackingDatabaseManager, // ✅ Pass trackingDb explicitly
-  trackingData: TrackingData[]
-) {
-  try {
-    // ✅ Call the correct method from `trackingDb`
-    await upsertActiveAircraftBatch(trackingDb, trackingData);
-
-=======
   trackingDb: TrackingDatabaseManager,
   trackingData: TrackingData[]
 ) {
   try {
     await trackingDb.upsertActiveAircraftBatch(trackingData); // ✅ Correctly calls the method in `TrackingDatabaseManager`
->>>>>>> Stashed changes
     console.log(
       `[Tracking] Upserted ${trackingData.length} active aircraft records.`
     );
@@ -161,26 +147,6 @@ async function updatePositions(
   trackingDb: TrackingDatabaseManager, // ✅ Pass trackingDb explicitly
   positions: TrackingData[]
 ): Promise<number> {
-<<<<<<< Updated upstream
-  await trackingDb.initialize();
-  const db = trackingDb.getDb();
-
-  if (!db) {
-    throw new Error('Database connection is null');
-  }
-
-  try {
-    await db.run('BEGIN TRANSACTION');
-    let updatedCount = 0;
-
-    for (const position of positions) {
-      const result = (await db.run(
-        `INSERT INTO active_tracking (
-            icao24, last_contact, latitude, longitude,
-            altitude, velocity, heading, on_ground, last_seen
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-        ON CONFLICT(icao24) DO UPDATE SET
-=======
   try {
     // ✅ Ensure database is initialized
     await trackingDb.initialize(); // No need to check `isInitialized`, just call it
@@ -204,7 +170,6 @@ async function updatePositions(
             altitude, velocity, heading, on_ground, last_seen
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
           ON CONFLICT(icao24) DO UPDATE SET
->>>>>>> Stashed changes
             last_contact = excluded.last_contact,
             latitude = excluded.latitude,
             longitude = excluded.longitude,
@@ -213,32 +178,6 @@ async function updatePositions(
             heading = excluded.heading,
             on_ground = excluded.on_ground,
             last_seen = CURRENT_TIMESTAMP;
-<<<<<<< Updated upstream
-        `,
-        [
-          position.icao24,
-          position.last_contact,
-          position.latitude,
-          position.longitude,
-          position.altitude,
-          position.velocity,
-          position.heading,
-          position.on_ground ? 1 : 0,
-        ]
-      )) as unknown as { changes: number };
-
-      if (result && result.changes > 0) {
-        updatedCount++;
-      }
-    }
-
-    await db.run('COMMIT');
-    return updatedCount;
-  } catch (error) {
-    await db.run('ROLLBACK');
-    throw error;
-  } finally {
-=======
           `,
           [
             position.icao24,
@@ -285,7 +224,6 @@ async function updatePositions(
     throw error;
   } finally {
     // ✅ Ensure database is properly stopped
->>>>>>> Stashed changes
     await trackingDb.stop();
   }
 }

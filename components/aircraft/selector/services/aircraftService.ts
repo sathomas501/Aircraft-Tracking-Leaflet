@@ -2,6 +2,8 @@ import { SelectOption } from '@/types/base';
 
 export interface Model {
   model: string;
+  label: string;
+  activeCount?: number;
   count?: number;
 }
 
@@ -37,7 +39,7 @@ export const fetchIcao24s = async (manufacturer: string): Promise<string[]> => {
 // ✅ Fetch manufacturers with explicit return type
 export async function fetchManufacturers() {
   try {
-    const response = await fetch('/api/manufacturers', {
+    const response = await fetch('/api/aircraft/manufacturers', {
       method: 'GET',
       headers: { 'Content-Type': 'application/json' },
     });
@@ -64,7 +66,7 @@ export async function fetchManufacturers() {
 }
 
 // ✅ Fetch models with improved data parsing
-export const fetchModels = async (manufacturer: string): Promise<string[]> => {
+export const fetchModels = async (manufacturer: string): Promise<Model[]> => {
   if (!manufacturer) return [];
 
   try {
@@ -85,11 +87,7 @@ export const fetchModels = async (manufacturer: string): Promise<string[]> => {
 // ✅ Track manufacturer with improved request structure
 export const trackManufacturer = async (manufacturer: string) => {
   try {
-<<<<<<< Updated upstream
     const response = await fetch('/api/aircraft/tracking', {
-=======
-    const response = await fetch('/api/aircraft/byManufacturer', {
->>>>>>> Stashed changes
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ manufacturer }),

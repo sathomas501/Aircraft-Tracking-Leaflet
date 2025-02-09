@@ -1,158 +1,149 @@
-<<<<<<< Updated upstream
 import React, { useState, useEffect } from 'react';
-import { SelectOption } from '@/types/base';
-=======
-import React, { useState } from 'react';
-import { useFetchManufacturers } from '../customHooks/useFetchManufactures';
-import { fetchIcao24s } from '../selector/services/aircraftService'; // ✅ Import fetchIcao24s
->>>>>>> Stashed changes
+import { Aircraft, SelectOption } from '@/types/base';
 
 interface ManufacturerSelectorProps {
   onSelect: (manufacturer: string) => void;
   selectedManufacturer: string;
   manufacturers: SelectOption[];
+  onAircraftUpdate: (aircraft: Aircraft[]) => void;
+  onModelsUpdate: (
+    models: {
+      model: string;
+      label: string;
+      activeCount?: number;
+      count?: number;
+    }[]
+  ) => void;
 }
 
 const ManufacturerSelector: React.FC<ManufacturerSelectorProps> = ({
   onSelect,
   selectedManufacturer,
+  manufacturers,
+  onAircraftUpdate,
+  onModelsUpdate,
 }) => {
-<<<<<<< Updated upstream
-  const [manufacturers, setManufacturers] = useState<SelectOption[]>([]);
-  const [icao24s, setIcao24s] = useState<string[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filteredManufacturers, setFilteredManufacturers] =
+    useState(manufacturers);
+  const [showDropdown, setShowDropdown] = useState(false);
 
-  // Fetch manufacturers on mount
+  // Filter manufacturers based on search input
   useEffect(() => {
-    const fetchManufacturers = async () => {
-      try {
-        const response = await fetch('/api/manufacturers');
-        if (!response.ok)
-          throw new Error(`Failed to fetch manufacturers: ${response.status}`);
+    if (!searchTerm) {
+      setFilteredManufacturers(manufacturers);
+    } else {
+      setFilteredManufacturers(
+        manufacturers.filter((m) =>
+          m.label.toLowerCase().includes(searchTerm.toLowerCase())
+        )
+      );
+    }
+  }, [searchTerm, manufacturers]);
 
-        const data = await response.json();
-        console.log('Fetched Manufacturers (Raw):', data); // ✅ Check raw API response
+  // Handles manufacturer selection and loads models & aircraft
+  const handleSelect = async (manufacturer: string) => {
+    setSearchTerm(manufacturer); // ✅ Show selected manufacturer
+    setShowDropdown(false); // ✅ Close dropdown
+    onSelect(manufacturer);
 
-        // ✅ Access the manufacturers array inside the object
-        const formattedData = (data.manufacturers || []).map((item: any) => ({
-          value: item.value,
-          label: item.label,
-        }));
-
-        console.log('Formatted Manufacturers:', formattedData); // ✅ Check formatted data
-
-        setManufacturers(formattedData); // ✅ Update state
-      } catch (err) {
-        console.error('Error fetching manufacturers:', err);
-        setManufacturers([]);
-      }
-    };
-
-    fetchManufacturers();
-  }, []);
-
-  const fetchIcao24s = async (manufacturer: string) => {
-    setLoading(true);
     try {
-      const response = await fetch(`/api/aircraft/tracking`, {
+      // Fetch ICAO24 aircraft IDs
+      const icao24Response = await fetch('/api/aircraft/icao24s', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ manufacturer }),
       });
-      const data = await response.json();
 
-      if (data.icao24s) {
-        setIcao24s(data.icao24s);
-      } else {
-        console.warn('No ICAO24s found.');
+      const icao24Data = await icao24Response.json();
+      if (
+        !icao24Data.success ||
+        !Array.isArray(icao24Data.data.icao24List) ||
+        icao24Data.data.icao24List.length === 0
+      ) {
+        throw new Error(`No ICAO24s found for ${manufacturer}`);
       }
+
+      console.log('Fetched ICAO24s:', icao24Data.data.icao24List);
+
+      // Fetch aircraft positions from OpenSky API
+      const openSkyResponse = await fetch('/api/opensky', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          icao24s: icao24Data.data.icao24List.slice(0, 50), // ✅ Limit to 50 ICAO24s
+        }),
+      });
+
+      const openSkyData = await openSkyResponse.json();
+      if (!openSkyData.aircraft || !Array.isArray(openSkyData.aircraft)) {
+        throw new Error('Invalid aircraft data received from OpenSky');
+      }
+
+      console.log(
+        `Fetched ${openSkyData.aircraft.length} aircraft from OpenSky.`
+      );
+      onAircraftUpdate(openSkyData.aircraft); // ✅ Send aircraft data to parent
+
+      // Fetch models for the selected manufacturer
+      const modelResponse = await fetch(
+        `/api/aircraft/models?manufacturer=${manufacturer}`
+      );
+      const modelData = await modelResponse.json();
+
+      if (!modelData.success || !Array.isArray(modelData.models)) {
+        throw new Error(`No models found for manufacturer: ${manufacturer}`);
+      }
+
+      console.log('Fetched models:', modelData.models);
+      onModelsUpdate(modelData.models); // ✅ Send models to parent
     } catch (error) {
-      console.error('Error fetching ICAO24s:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSelect = (manufacturer: string) => {
-    onSelect(manufacturer);
-    fetchIcao24s(manufacturer);
-  };
-
-  return (
-    <div>
-      <h3>Select Manufacturer</h3>
-      {error && <p className="text-red-500">{error}</p>}
-
-      <ul>
-        {Array.isArray(manufacturers) && manufacturers.length > 0 ? (
-          manufacturers.map((m) => (
-            <li key={m.value}>
-              <button
-                onClick={() => handleSelect(m.value)}
-                className={`p-2 rounded-md ${
-                  selectedManufacturer === m.value
-                    ? 'bg-blue-500 text-white'
-                    : 'bg-gray-200'
-                }`}
-              >
-                {m.label}
-              </button>
-            </li>
-          ))
-        ) : (
-          <li>No manufacturers available</li> // ✅ Graceful fallback message
-        )}
-      </ul>
-=======
-  const { manufacturers, loading } = useFetchManufacturers();
-  const [error, setError] = useState<string | null>(null);
-
-  const handleSelect = async (manufacturer: string) => {
-    if (manufacturer !== selectedManufacturer) {
-      onSelect(manufacturer); // ✅ Update selection first
-
-      // ✅ Delay ICAO fetch until after state updates
-      setTimeout(async () => {
-        try {
-          const icao24s = await fetchIcao24s(manufacturer);
-          console.log(
-            `✈️ Retrieved ${icao24s.length} ICAO24s for ${manufacturer}`
-          );
-        } catch (err) {
-          console.error('Error fetching ICAO24s:', err);
-          setError('Failed to fetch ICAO24s.');
-        }
-      }, 100); // Small delay to ensure state updates
+      console.error('Error fetching ICAO24s, OpenSky data, or models:', error);
     }
   };
 
   return (
-    <div>
-      <h3 className="text-lg font-semibold mb-2">Select Manufacturer</h3>
->>>>>>> Stashed changes
+    <div className="relative w-full">
+      <label className="block text-sm font-medium text-gray-600">
+        Manufacturer
+      </label>
+      <input
+        type="text"
+        value={searchTerm}
+        onChange={(e) => {
+          setSearchTerm(e.target.value);
+          setShowDropdown(true); // ✅ Open dropdown on typing
+        }}
+        onFocus={() => setShowDropdown(true)}
+        placeholder="Search or select manufacturer..."
+        className="w-full p-2 pl-8 border border-gray-300 rounded-md shadow-sm
+                   focus:ring-blue-500 focus:border-blue-500
+                   bg-white text-gray-900"
+      />
 
-      {error && <p className="text-red-500">{error}</p>}
-
-      {loading ? (
-        <p className="text-gray-600">Loading manufacturers...</p>
-      ) : (
-        <ul className="space-y-2">
-          {manufacturers.map((m) => (
-            <li key={m.value}>
-              <button
-                onClick={() => handleSelect(m.value)}
-                className={`w-full p-2 rounded-md transition ${
-                  selectedManufacturer === m.value
-                    ? 'bg-blue-500 text-white'
-                    : 'bg-gray-200 hover:bg-gray-300'
-                }`}
-              >
-                {m.label} ({m.count})
-              </button>
+      {/* Manufacturer Dropdown */}
+      {showDropdown && filteredManufacturers.length > 0 && (
+        <ul className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-auto">
+          {filteredManufacturers.map((manufacturer) => (
+            <li
+              key={manufacturer.value}
+              className="px-4 py-2 text-left hover:bg-gray-100 flex justify-between cursor-pointer"
+              onClick={() => handleSelect(manufacturer.value)}
+            >
+              <span>{manufacturer.label}</span>
+              <span className="text-sm text-gray-500">
+                {manufacturer.activeCount && manufacturer.activeCount > 0
+                  ? `${manufacturer.activeCount.toLocaleString()} active / ${manufacturer.count?.toLocaleString()} total`
+                  : `${manufacturer.count?.toLocaleString()} total`}
+              </span>
             </li>
           ))}
         </ul>
+      )}
+
+      {/* No Results Message */}
+      {showDropdown && filteredManufacturers.length === 0 && (
+        <p className="text-sm text-gray-500 mt-1">No manufacturers found.</p>
       )}
     </div>
   );
