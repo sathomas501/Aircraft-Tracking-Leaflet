@@ -2,9 +2,9 @@
 import type {
   Aircraft,
   PositionData,
-  OpenSkyState,
   CachedAircraftData,
   TrackingData,
+  OpenSkyStateArray,
 } from '@/types/base';
 import type { OpenSkyAircraft } from '@/types/opensky';
 
@@ -143,6 +143,77 @@ export const AircraftTransforms = {
       isTracked: true,
     });
   },
+
+  fromOpenSkyStates(states: OpenSkyStateArray[]): Aircraft[] {
+    return states.map((state) => ({
+      icao24: state[0],
+      'N-NUMBER': '',
+      manufacturer: 'Unknown',
+      model: 'Unknown',
+      operator: 'Unknown',
+      latitude: state[6] || 0,
+      longitude: state[5] || 0,
+      altitude: state[7] || 0,
+      heading: state[10] || 0,
+      velocity: state[9] || 0,
+      on_ground: state[8] || false,
+      last_contact: state[4] || Math.floor(Date.now() / 1000),
+      lastSeen: Math.floor(Date.now() / 1000),
+      NAME: '',
+      CITY: '',
+      STATE: '',
+      OWNER_TYPE: 'Unknown',
+      TYPE_AIRCRAFT: 'Unknown',
+      isTracked: true,
+    }));
+  },
+
+  toCachedData(aircraft: Aircraft): CachedAircraftData {
+    return {
+      icao24: aircraft.icao24,
+      latitude: aircraft.latitude,
+      longitude: aircraft.longitude,
+      altitude: aircraft.altitude,
+      velocity: aircraft.velocity,
+      heading: aircraft.heading,
+      on_ground: aircraft.on_ground,
+      last_contact: aircraft.last_contact,
+      lastSeen: aircraft.lastSeen || Math.floor(Date.now() / 1000),
+      lastUpdated: Math.floor(Date.now() / 1000),
+      'N-NUMBER': aircraft['N-NUMBER'],
+      manufacturer: aircraft.manufacturer,
+      model: aircraft.model,
+      NAME: aircraft.NAME,
+      CITY: aircraft.CITY,
+      STATE: aircraft.STATE,
+      TYPE_AIRCRAFT: aircraft.TYPE_AIRCRAFT,
+      OWNER_TYPE: aircraft.OWNER_TYPE,
+    };
+  },
+
+  fromStatesResponse(states: any[]): Aircraft[] {
+    return states.map((state) => ({
+      icao24: state.icao,
+      'N-NUMBER': '',
+      manufacturer: state.manufacturer || 'Unknown',
+      model: state.model || 'Unknown',
+      operator: 'Unknown',
+      latitude: state.lat,
+      longitude: state.lon,
+      altitude: state.altitude || 0,
+      heading: state.heading || 0,
+      velocity: state.velocity || 0,
+      on_ground: state.on_ground || false,
+      last_contact: state.last_contact || Math.floor(Date.now() / 1000),
+      lastSeen: Math.floor(Date.now() / 1000),
+      NAME: '',
+      CITY: '',
+      STATE: '',
+      OWNER_TYPE: 'Unknown',
+      TYPE_AIRCRAFT: 'Unknown',
+      isTracked: true,
+    }));
+  },
 };
 
 export const CacheTransforms = {
@@ -157,7 +228,7 @@ export const CacheTransforms = {
       on_ground: aircraft.on_ground,
       last_contact: aircraft.last_contact,
       lastSeen: aircraft.lastSeen || Date.now(),
-      lastUpdate: Date.now(),
+      lastUpdated: Date.now(),
       'N-NUMBER': aircraft['N-NUMBER'],
       manufacturer: aircraft.manufacturer,
       model: aircraft.model,

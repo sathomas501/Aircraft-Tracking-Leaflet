@@ -41,13 +41,33 @@ export interface OpenSkyState {
   isTracked?: boolean;
 }
 
+export type OpenSkyStateArray = [
+  icao24: string, // [0]
+  callsign: string, // [1]
+  country: string, // [2]
+  timePosition: number, // [3]
+  lastContact: number, // [4]
+  longitude: number, // [5]
+  latitude: number, // [6]
+  altitude: number, // [7]
+  onGround: boolean, // [8]
+  velocity: number, // [9]
+  heading: number, // [10]
+  verticalRate: number, // [11]
+  sensors: number[], // [12]
+  altitudeGeometric: number, // [13]
+  squawk: string, // [14]
+  spi: boolean, // [15]
+  positionSource: number, // [16]
+];
+
 /**
  * Complete aircraft information including registration and tracking data
  */
 export interface Aircraft {
   // Core identification
   icao24: string;
-  "N-NUMBER": string;
+  'N-NUMBER': string;
   manufacturer: string;
   model?: string;
   operator?: string;
@@ -71,7 +91,7 @@ export interface Aircraft {
 
   // Tracking state
   isTracked: boolean;
-  
+
   // Optional fields
   registration?: string;
   manufacturerName?: string;
@@ -149,14 +169,13 @@ export interface CachedAircraftData {
   heading: number;
   on_ground: boolean;
 
-
   // Timestamps
   last_contact: number;
   lastSeen: number;
-  lastUpdate: number;
+  lastUpdated: number;
 
   // Static data
-  "N-NUMBER"?: string;
+  'N-NUMBER'?: string;
   manufacturer?: string;
   model?: string;
   NAME?: string;
@@ -242,3 +261,9 @@ export type AircraftPositionFromAircraft = Pick<
   Aircraft,
   'latitude' | 'longitude' | 'altitude' | 'heading' | 'velocity' | 'on_ground'
 >;
+
+export interface SubscriptionManager {
+  subscribe: (key: string, callback: (data: Aircraft[]) => void) => () => void;
+  unsubscribe: (key: string, callback: (data: Aircraft[]) => void) => void;
+  notifySubscribers: (key: string, data: Aircraft[]) => void;
+}

@@ -1,9 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Polyline } from 'react-leaflet';
-import {
-  UnifiedAircraftService,
-  aircraftService,
-} from '../../../../../../lib/services/Unified-Aircraft-Position-Service';
+import { aircraftPositionService } from '../../../../../../lib/services/aircraft-position-service'; // ✅ Use instance
 import { LatLngTuple, PathOptions } from 'leaflet';
 
 interface AircraftTrailProps {
@@ -15,13 +12,23 @@ const AircraftTrail: React.FC<AircraftTrailProps> = ({ icao24 }) => {
 
   useEffect(() => {
     // Get initial position history
-    const history = aircraftService.getPositionHistory(icao24);
-    setPositions(history.map((pos) => [pos.latitude, pos.longitude]));
+    const history = aircraftPositionService.getPositionHistory(icao24);
+    setPositions(
+      history.map((pos: { latitude: number; longitude: number }) => [
+        pos.latitude,
+        pos.longitude,
+      ])
+    );
 
-    // You could add an interval here to update the trail periodically if needed
+    // Periodic update for aircraft trail
     const interval = setInterval(() => {
-      const updatedHistory = aircraftService.getPositionHistory(icao24);
-      setPositions(updatedHistory.map((pos) => [pos.latitude, pos.longitude]));
+      const updatedHistory = aircraftPositionService.getPositionHistory(icao24);
+      setPositions(
+        updatedHistory.map((pos: { latitude: number; longitude: number }) => [
+          pos.latitude,
+          pos.longitude,
+        ])
+      );
     }, 5000); // Update every 5 seconds
 
     return () => clearInterval(interval);

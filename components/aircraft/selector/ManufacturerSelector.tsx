@@ -67,11 +67,12 @@ const ManufacturerSelector: React.FC<ManufacturerSelectorProps> = ({
       console.log('Fetched ICAO24s:', icao24Data.data.icao24List);
 
       // Fetch aircraft positions from OpenSky API
-      const openSkyResponse = await fetch('/api/opensky', {
+      const openSkyResponse = await fetch('/api/aircraft/tracking', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          icao24s: icao24Data.data.icao24List.slice(0, 50), // ✅ Limit to 50 ICAO24s
+          action: 'updatePositions', // ✅ Add the action field
+          icao24s: icao24Data.data.icao24List.slice(0, 200),
         }),
       });
 
@@ -91,12 +92,18 @@ const ManufacturerSelector: React.FC<ManufacturerSelectorProps> = ({
       );
       const modelData = await modelResponse.json();
 
-      if (!modelData.success || !Array.isArray(modelData.models)) {
-        throw new Error(`No models found for manufacturer: ${manufacturer}`);
+      if (
+        !modelData.success ||
+        !Array.isArray(modelData.models) ||
+        modelData.models.length === 0
+      ) {
+        console.warn(`No models found for manufacturer: ${manufacturer}`);
+        onModelsUpdate([]); // ✅ Send empty list to UI
+        return; // ✅ Do not throw an error, just log and allow user to proceed
       }
 
       console.log('Fetched models:', modelData.models);
-      onModelsUpdate(modelData.models); // ✅ Send models to parent
+      onModelsUpdate(modelData.models);
     } catch (error) {
       console.error('Error fetching ICAO24s, OpenSky data, or models:', error);
     }

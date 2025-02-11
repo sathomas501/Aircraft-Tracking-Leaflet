@@ -1,289 +1,275 @@
-import { PollingRateLimiter } from './rate-limiter';
-import { errorHandler, ErrorType } from './error-handler';
-import type { Aircraft } from '@/types/base';
-import  UnifiedCacheService  from './managers/unified-cache-system';
+// lib/services/manufacturer-tracking-service.ts
+import { BaseTrackingService } from './base-tracking-service';
+import { RateLimiterOptions } from './rate-limiter';
 
-interface TrackingData {
-    aircraft: Aircraft[];
+import {
+  errorHandler,
+  ErrorType,
+  OpenSkyError,
+  OpenSkyErrorCode,
+} from './error-handler';
+import { Aircraft } from '@/types/base';
+import { RATE_LIMITS } from '@/config/rate-limits';
+import { API_CONFIG } from '@/config/api';
+
+interface CacheResult {
+  aircraft: Aircraft[];
+  timestamp: number;
 }
 
-interface TrackingState {
-    icao24List: { icao24: string }[];
-    isPolling: boolean;
-    rateLimitInfo: {
-        remainingRequests: number;
-        remainingDaily: number;
+interface StaticAircraftData {
+  'N-NUMBER': string | undefined;
+  manufacturer: string | undefined;
+  model: string | undefined;
+  NAME: string | undefined;
+  CITY: string | undefined;
+  STATE: string | undefined;
+  TYPE_AIRCRAFT: string | undefined;
+  OWNER_TYPE: string | undefined;
+}
+
+export class ManufacturerTrackingService extends BaseTrackingService {
+  private static instance: ManufacturerTrackingService;
+  private staticData: Map<string, StaticAircraftData>;
+  private pollTimer: NodeJS.Timeout | null = null;
+  private isPolling: boolean = false;
+  private readonly POLL_TIMEOUT = 10000;
+
+  private constructor() {
+    const rateLimiterOptions: RateLimiterOptions = {
+      requestsPerMinute: RATE_LIMITS.AUTHENTICATED.REQUESTS_PER_10_MIN / 10,
+      requestsPerDay: RATE_LIMITS.AUTHENTICATED.REQUESTS_PER_DAY,
+      maxBatchSize: RATE_LIMITS.AUTHENTICATED.BATCH_SIZE,
+      minPollingInterval: RATE_LIMITS.AUTHENTICATED.MIN_INTERVAL,
+      maxPollingInterval: RATE_LIMITS.AUTHENTICATED.MAX_CONCURRENT,
+      retryLimit: RATE_LIMITS.AUTHENTICATED.MAX_RETRY_LIMIT,
+      requireAuthentication: true,
     };
-    aircraftData: Aircraft[];
-    staticData: Map<string, Partial<Aircraft>>; // Add static data cache
-}
 
-// Define type for OpenSky state array
-type OpenSkyState = [
-    string,      // icao24
-    string|null, // callsign
-    string|null, // origin_country
-    number|null, // time_position
-    number|null, // last_contact
-    number|null, // longitude
-    number|null, // latitude
-    number|null, // baro_altitude
-    boolean|null, // on_ground
-    number|null, // velocity
-    number|null, // true_track
-    number|null, // vertical_rate
-    number|null, // sensors
-    number|null, // geo_altitude
-    string|null  // squawk
-];
+    super(rateLimiterOptions);
+    this.staticData = new Map();
+  }
 
-class ManufacturerTrackingService {
-    private static instance: ManufacturerTrackingService;
-    private state: TrackingState;
-    private rateLimiter: PollingRateLimiter;
-    private subscribers = new Set<(data: TrackingData) => void>();
-    private readonly TIMEOUT = 10000;
+  public static getInstance(): ManufacturerTrackingService {
+    if (!ManufacturerTrackingService.instance) {
+      ManufacturerTrackingService.instance = new ManufacturerTrackingService();
+    }
+    return ManufacturerTrackingService.instance;
+  }
 
-    private constructor() {
-        this.state = {
-            icao24List: [],
-            isPolling: false,
-            rateLimitInfo: {
-                remainingRequests: 0,
-                remainingDaily: 0,
-            },
-            aircraftData: [],
-            staticData: new Map() // Initialize static data cache
-        };
+  private async fetchStaticData(icao24s: string[]): Promise<void> {
+    try {
+      // Try cache first
+      const cacheKey = icao24s.join('|');
+      const cachedData = await this.cacheService.getStaticData(cacheKey);
 
-        this.rateLimiter = new PollingRateLimiter({
-            requireAuthentication: true,
-            minPollingInterval: 5000,
-            maxPollingInterval: 30000,
-            maxWaitTime: 15000,
-            retryLimit: 3,
-            requestsPerMinute: 6000,    // 600 requests per rolling window of 10 minutes
-            requestsPerDay: 4000        // Per user basis
-        });
+      if (cachedData && Array.isArray(cachedData) && cachedData.length > 0) {
+        console.log('[ManufacturerTracking] Using cached static data');
+        this.staticData = new Map(
+          cachedData.map((aircraft: Aircraft) => [
+            aircraft.icao24,
+            this.extractStaticData(aircraft),
+          ])
+        );
+        return;
+      }
+
+      console.log('[ManufacturerTracking] Fetching static data', {
+        count: icao24s.length,
+        sample: icao24s.slice(0, 3),
+      });
+
+      const canProceed = await this.rateLimiter.tryAcquire();
+      if (!canProceed) {
+        const waitTime = this.rateLimiter.getTimeUntilNextSlot();
+        throw new OpenSkyError(
+          `Rate limited for static data fetch. Wait time: ${waitTime}ms`,
+          OpenSkyErrorCode.RATE_LIMIT,
+          429
+        );
+      }
+
+      const response = await fetch('/api/aircraft/static-data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ icao24s }),
+        signal: AbortSignal.timeout(this.POLL_TIMEOUT),
+      });
+
+      if (!response.ok) {
+        throw new OpenSkyError(
+          'Failed to fetch static data',
+          OpenSkyErrorCode.INVALID_DATA,
+          response.status
+        );
+      }
+
+      const staticData: Aircraft[] = await response.json();
+
+      this.staticData = new Map(
+        staticData.map((aircraft) => [
+          aircraft.icao24,
+          this.extractStaticData(aircraft),
+        ])
+      );
+
+      // Update cache
+      await this.cacheService.setStaticData(staticData);
+      this.rateLimiter.recordSuccess();
+    } catch (error) {
+      this.rateLimiter.recordFailure();
+      this.handleError(error);
+      throw error;
+    }
+  }
+
+  private extractStaticData(aircraft: Aircraft): StaticAircraftData {
+    return {
+      'N-NUMBER': aircraft['N-NUMBER'] || undefined,
+      manufacturer: aircraft.manufacturer,
+      model: aircraft.model,
+      NAME: aircraft.NAME || undefined,
+      CITY: aircraft.CITY || undefined,
+      STATE: aircraft.STATE || undefined,
+      TYPE_AIRCRAFT: aircraft.TYPE_AIRCRAFT || undefined,
+      OWNER_TYPE: aircraft.OWNER_TYPE || undefined,
+    };
+  }
+
+  protected handleError(error: unknown): void {
+    if (error instanceof OpenSkyError) {
+      errorHandler.handleError(ErrorType.OPENSKY_SERVICE, error.message, {
+        code: error.code,
+        status: error.statusCode,
+      });
+    } else if (error instanceof Error) {
+      errorHandler.handleError(ErrorType.OPENSKY_SERVICE, error.message, error);
+    } else {
+      errorHandler.handleError(
+        ErrorType.OPENSKY_SERVICE,
+        'Unknown error occurred',
+        { error }
+      );
+    }
+  }
+
+  public async startTracking(
+    manufacturer: string,
+    icao24s: string[]
+  ): Promise<void> {
+    if (!icao24s?.length) {
+      throw new OpenSkyError(
+        'No ICAO24 codes provided',
+        OpenSkyErrorCode.INVALID_REQUEST,
+        400
+      );
     }
 
-    public static getInstance(): ManufacturerTrackingService {
-        if (!ManufacturerTrackingService.instance) {
-            ManufacturerTrackingService.instance = new ManufacturerTrackingService();
-        }
-        return ManufacturerTrackingService.instance;
+    try {
+      await this.fetchStaticData(icao24s);
+      this.isPolling = true;
+      await this.poll(manufacturer, icao24s);
+    } catch (error) {
+      this.handleError(error);
+      throw error;
     }
+  }
 
-    private notifySubscribers(data: TrackingData): void {
-        console.log('[Polling Update] Notifying subscribers with updated aircraft data:', data);
-        this.subscribers.forEach(callback => callback(data));
+  private async poll(manufacturer: string, icao24s: string[]): Promise<void> {
+    if (!this.isPolling) return;
+
+    try {
+      const positions = await this.fetchPositionData(icao24s);
+
+      if (positions.length > 0) {
+        const enrichedPositions = positions.map((pos) => ({
+          ...pos,
+          ...this.staticData.get(pos.icao24),
+        }));
+
+        this.notifySubscribers(manufacturer, enrichedPositions);
+      }
+
+      const interval = this.rateLimiter.getCurrentPollingInterval();
+      this.pollTimer = setTimeout(
+        () => this.poll(manufacturer, icao24s),
+        interval
+      );
+    } catch (error) {
+      this.handleError(error);
+
+      // Retry with increased interval
+      const interval = this.rateLimiter.getCurrentPollingInterval() * 2;
+      this.pollTimer = setTimeout(
+        () => this.poll(manufacturer, icao24s),
+        interval
+      );
     }
-    
-    private async fetchStaticData(icao24List: { icao24: string }[]): Promise<void> {
-        try {
-            const response = await fetch('/api/aircraft/static-data', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                    icao24s: icao24List.map(item => item.icao24) 
-                })
-            });
-    
-            if (!response.ok) throw new Error('Failed to fetch static data');
-            
-            const staticData = await response.json();
-            
-            // Store in state
-            this.state.staticData = new Map(
-                staticData.map((aircraft: Aircraft) => [
-                    aircraft.icao24,
-                    {
-                        "N-NUMBER": aircraft["N-NUMBER"],
-                        manufacturer: aircraft.manufacturer,
-                        model: aircraft.model,
-                        NAME: aircraft.NAME,
-                        CITY: aircraft.CITY,
-                        STATE: aircraft.STATE,
-                        TYPE_AIRCRAFT: aircraft.TYPE_AIRCRAFT,
-                        OWNER_TYPE: aircraft.OWNER_TYPE
-                    }
-                ])
-            );
-        } catch (error) {
-            console.error('[ManufacturerTracking] Error fetching static data:', error);
-        }
-    }    
-    
-    private async pollData(): Promise<void> {
-        if (this.rateLimiter.isRateLimited()) {
-            errorHandler.handleError(
-                ErrorType.OPENSKY_RATE_LIMIT,
-                'Polling rate limit exceeded',
-                { nextAvailable: await this.rateLimiter.getNextAvailableSlot() }
-            );
-            return;
-        }
-    
-        this.rateLimiter.recordRequest();
-    
-        try {
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), this.TIMEOUT);
-    
-            const icao24List = this.state.icao24List
-                .map(item => item.icao24.toLowerCase().trim())
-                .filter(icao => icao.length > 0);
-    
-            if (icao24List.length === 0) {
-                errorHandler.handleError(
-                    ErrorType.OPENSKY_INVALID_ICAO,
-                    'No valid ICAO24 codes to track'
-                );
-                return;
-            }
-    
-            const queryParams = new URLSearchParams({
-                icao24: icao24List.join(',')
-            });
-    
-            const response = await fetch(`/api/proxy/opensky?${queryParams}`, {
-                method: 'GET',
-                signal: controller.signal,
-                headers: { 'Accept': 'application/json' }
-            });
-    
-            clearTimeout(timeoutId);
-    
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
-            }
-    
-            const data = await response.json();
-    
-            if (!data.states || !Array.isArray(data.states)) {
-                errorHandler.handleError(
-                    ErrorType.OPENSKY_DATA,
-                    'No state data received from OpenSky'
-                );
-                this.notifySubscribers({ aircraft: [] });
-                return;
-            }
-    
-            const aircraft = data.states
-                .filter((state: OpenSkyState) => state && Array.isArray(state) && state.length >= 12)
-                .map((state: OpenSkyState) => {
-                    const icao24 = state[0];
-                    const staticInfo = this.state.staticData.get(icao24) || {};
-    
-                    return {
-                        ...staticInfo,
-                        icao24,
-                        callsign: state[1],
-                        originCountry: state[2],
-                        longitude: state[5],
-                        latitude: state[6],
-                        altitude: state[7],
-                        velocity: state[9],
-                        heading: state[10],
-                        verticalRate: state[11],
-                        timestamp: state[3],
-                        updated_at: Date.now()  // ✅ Ensure fresh timestamp for every poll
-                    };
-                });
-    
-            // ✅ Update internal state
-            this.state.aircraftData = aircraft;
-    
-            // ✅ Update Cache
-            const cacheService = UnifiedCacheService.getInstance();
-            cacheService.setLiveData('manufacturer', aircraft); // Replace 'manufacturer' as needed
-    
-            // ✅ Notify Subscribers
-            this.notifySubscribers({ aircraft });
-    
-            this.rateLimiter.decreasePollingInterval();
-    
-        } catch (error) {
-            this.handlePollingError(error);
-        }
+  }
+
+  private async fetchPositionData(icao24s: string[]): Promise<Aircraft[]> {
+    try {
+      const canProceed = await this.rateLimiter.tryAcquire();
+      if (!canProceed) {
+        const waitTime = this.rateLimiter.getTimeUntilNextSlot();
+        throw new OpenSkyError(
+          `Rate limited for position fetch. Wait time: ${waitTime}ms`,
+          OpenSkyErrorCode.RATE_LIMIT,
+          429
+        );
+      }
+
+      const cacheKey = icao24s.join('|');
+      const cachedData = await this.cacheService.getLiveData(cacheKey);
+      if (cachedData && Array.isArray(cachedData) && cachedData.length > 0) {
+        console.log('[ManufacturerTracking] Using cached position data');
+        return cachedData;
+      }
+
+      const response = await fetch('/api/aircraft/positions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ icao24s }),
+        signal: AbortSignal.timeout(this.POLL_TIMEOUT),
+      });
+
+      if (!response.ok) {
+        throw new OpenSkyError(
+          'Failed to fetch position data',
+          OpenSkyErrorCode.INVALID_DATA,
+          response.status
+        );
+      }
+
+      const data: { positions: Aircraft[] } = await response.json();
+
+      if (data.positions && data.positions.length > 0) {
+        // Update cache
+        await this.cacheService.setLiveData(cacheKey, data.positions);
+      }
+
+      this.rateLimiter.recordSuccess();
+      return data.positions || [];
+    } catch (error) {
+      this.rateLimiter.recordFailure();
+      this.handleError(error);
+      throw error;
     }
-    
+  }
 
-    private handlePollingError(error: unknown): void {
-        console.error('[ManufacturerTracking] Polling error:', error);
-        this.rateLimiter.increasePollingInterval();
-
-        if (error instanceof Error) {
-            if (error.message.includes('rate limit')) {
-                errorHandler.handleError(
-                    ErrorType.OPENSKY_RATE_LIMIT,
-                    error.message
-                );
-            } else if (error.message.includes('authentication')) {
-                errorHandler.handleError(
-                    ErrorType.OPENSKY_AUTH,
-                    error.message
-                );
-            } else if (error.message.includes('timeout')) {
-                errorHandler.handleError(
-                    ErrorType.OPENSKY_TIMEOUT,
-                    error.message
-                );
-            } else {
-                errorHandler.handleError(
-                    ErrorType.OPENSKY_SERVICE,
-                    error.message
-                );
-            }
-        }
+  public stopTracking(): void {
+    this.isPolling = false;
+    if (this.pollTimer) {
+      clearTimeout(this.pollTimer);
+      this.pollTimer = null;
     }
+    this.staticData.clear();
+  }
 
-    public subscribe(callback: (data: TrackingData) => void): { unsubscribe: () => void } {
-        this.subscribers.add(callback);
-        return {
-            unsubscribe: () => this.subscribers.delete(callback),
-        };
-    }
-
-    public async startPolling(icao24List: { icao24: string }[]): Promise<void> {
-        if (!icao24List || icao24List.length === 0) {
-            errorHandler.handleError(
-                ErrorType.OPENSKY_INVALID_ICAO,
-                'Empty ICAO24 list provided'
-            );
-            throw new Error('Invalid ICAO24 list');
-        }
-    
-        console.log('[ManufacturerTracking] Starting polling with:', {
-            icao24Count: icao24List.length,
-            sample: icao24List.slice(0, 5)
-        });
-    
-        this.state.icao24List = icao24List;
-        
-        // Fetch static data before starting polling
-        await this.fetchStaticData(icao24List);
-        
-        this.state.isPolling = true;
-        await this.pollData();
-        this.schedulePoll();
-    }
-
-    private schedulePoll(): void {
-        if (!this.state.isPolling) return;
-
-        const interval = this.rateLimiter.getCurrentPollingInterval();
-        setTimeout(() => {
-            this.pollData().then(() => this.schedulePoll());
-        }, interval);
-    }
-
-    public stopPolling(): void {
-        this.state.isPolling = false;
-        this.state.icao24List = [];
-        this.rateLimiter.resetPollingInterval();
-    }
+  public destroy(): void {
+    this.stopTracking();
+    this.subscriptions.clear();
+  }
 }
 
 export const manufacturerTracking = ManufacturerTrackingService.getInstance();

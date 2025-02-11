@@ -1,4 +1,4 @@
-// pages/api/opensky.ts
+// pages/api/proxy/opensky.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { PollingRateLimiter } from '@/lib/services/rate-limiter';
 import { openSkyAuth } from '@/lib/services/opensky-auth';

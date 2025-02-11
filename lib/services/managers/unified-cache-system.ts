@@ -1,5 +1,5 @@
 // lib/services/managers/unified-cache-system.ts
-import { CachedAircraftData, Aircraft } from "@/types/base";
+import { CachedAircraftData, Aircraft } from '@/types/base';
 import { CacheTransforms } from '@/utils/aircraft-transform';
 
 export type UnsubscribeFunction = () => void;
@@ -28,7 +28,7 @@ class UnifiedCacheService {
   private startCleanup(): void {
     this.cleanupInterval = setInterval(() => {
       const now = Date.now();
-      
+
       // Clean live data cache
       for (const [key, entry] of this.cache.entries()) {
         if (now - entry.timestamp > this.CACHE_EXPIRY) {
@@ -38,7 +38,7 @@ class UnifiedCacheService {
 
       // Clean static data cache
       for (const [key, data] of this.staticCache.entries()) {
-        if (now - data.lastUpdate > this.STATIC_CACHE_EXPIRY) {
+        if (now - data.lastUpdated > this.STATIC_CACHE_EXPIRY) {
           this.staticCache.delete(key);
         }
       }
@@ -79,7 +79,7 @@ class UnifiedCacheService {
   public setLiveData(manufacturer: string, aircraft: Aircraft[]): void {
     const key = this.normalizeKey(manufacturer);
     const cachedData = aircraft.map(CacheTransforms.toCache);
-    
+
     const entry = this.cache.get(key) || {
       data: [],
       timestamp: Date.now(),
@@ -94,7 +94,7 @@ class UnifiedCacheService {
   }
 
   public setStaticData(aircraft: Aircraft[]): void {
-    aircraft.forEach(a => {
+    aircraft.forEach((a) => {
       const cachedData = CacheTransforms.toCache(a);
       this.staticCache.set(a.icao24, cachedData);
     });
@@ -102,7 +102,7 @@ class UnifiedCacheService {
 
   public getStaticData(icao24: string): Aircraft | undefined {
     const data = this.staticCache.get(icao24);
-    if (!data || Date.now() - data.lastUpdate > this.STATIC_CACHE_EXPIRY) {
+    if (!data || Date.now() - data.lastUpdated > this.STATIC_CACHE_EXPIRY) {
       if (data) this.staticCache.delete(icao24);
       return undefined;
     }
@@ -112,15 +112,15 @@ class UnifiedCacheService {
   public getAllStaticData(): Aircraft[] {
     const now = Date.now();
     const validData: Aircraft[] = [];
-    
+
     for (const [key, data] of this.staticCache.entries()) {
-      if (now - data.lastUpdate <= this.STATIC_CACHE_EXPIRY) {
+      if (now - data.lastUpdated <= this.STATIC_CACHE_EXPIRY) {
         validData.push(CacheTransforms.fromCache(data));
       } else {
         this.staticCache.delete(key);
       }
     }
-    
+
     return validData;
   }
 
@@ -150,7 +150,10 @@ class UnifiedCacheService {
       const currentEntry = this.cache.get(key);
       if (currentEntry) {
         currentEntry.subscriptions.delete(wrappedCallback);
-        if (currentEntry.subscriptions.size === 0 && currentEntry.data.length === 0) {
+        if (
+          currentEntry.subscriptions.size === 0 &&
+          currentEntry.data.length === 0
+        ) {
           this.cache.delete(key);
         }
       }
