@@ -37,9 +37,10 @@ export const MAP_CONFIG = {
       BOTTOM_LEFT: 'bottomleft',
     },
     TILE_LAYER: {
-      URL: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+      URL: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
       ATTRIBUTION:
-        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+        '&copy; <a href="https://opentopomap.org">OpenTopoMap</a> contributors',
+      maxZoom: 17,
     },
   },
   REFRESH_INTERVALS: {

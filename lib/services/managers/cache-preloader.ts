@@ -92,7 +92,7 @@ class CachePreloaderService {
     maxAircraft: number = 500
   ): Promise<void> {
     try {
-      const response = await fetch('/api/opensky', {
+      const response = await fetch('/api/aircraft/tracking', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ region, maxAircraft }),
@@ -137,7 +137,7 @@ class CachePreloaderService {
         const { icao24List } = await response.json();
         if (icao24List?.length) {
           const positions = await fetch(
-            `/api/opensky?icao24s=${icao24List.join(',')}`
+            `/api/aircraft/tracking?icao24s=${icao24List.join(',')}`
           );
           if (positions.ok) {
             const data = await positions.json();

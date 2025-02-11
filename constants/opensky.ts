@@ -14,22 +14,21 @@ export const OPENSKY_CONSTANTS = {
       MAX_CONCURRENT: 2,
     },
 
-  AUTHENTICATED: {
+    AUTHENTICATED: {
       REQUESTS_PER_MINUTE: 100,
       REQUESTS_PER_10_MIN: 600,
       REQUESTS_PER_DAY: 50000,
-      MAX_BATCH_SIZE: 100,
+      MAX_BATCH_SIZE: 200,
       MIN_INTERVAL: 1000,
       MAX_CONCURRENT: 5,
       MAX_ICAO_QUERY: 500,
       MAX_TOTAL_ICAO_QUERY: 1000,
       MAX_RETRY_LIMIT: 5,
-    }
+    },
   },
 
   TIME_WINDOWS: {
     TEN_MINUTES_MS: 10 * 60 * 1000,
     ONE_DAY_MS: 24 * 60 * 60 * 1000,
   },
-    
-}
+};

@@ -1,5 +1,6 @@
 import { Database, open } from 'sqlite';
 import path from 'path';
+import { Aircraft } from '@/types/base';
 
 let sqlite3: typeof import('sqlite3') | null = null;
 
@@ -110,6 +111,29 @@ export class DatabaseManager {
     } finally {
       this.initializationPromise = null; // Reset promise to allow reinitialization if needed
     }
+  }
+
+  public async getStaticAircraftData(): Promise<Aircraft[]> {
+    if (!this.db) {
+      console.error('[DatabaseManager] ❌ Database not initialized.');
+      return [];
+    }
+
+    const query = `SELECT icao24, "N-NUMBER", manufacturer, model, NAME, CITY, STATE, TYPE_AIRCRAFT, OWNER_TYPE FROM static_aircraft`;
+
+    return new Promise((resolve, reject) => {
+      this.db?.all(query, [], (err: Error | null, rows: any[]) => {
+        if (err) {
+          console.error(
+            '[DatabaseManager] ❌ Error fetching static aircraft data:',
+            err
+          );
+          reject(err);
+        } else {
+          resolve(rows);
+        }
+      });
+    });
   }
 
   public async executeQuery<T = any>(
