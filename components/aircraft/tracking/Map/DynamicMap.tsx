@@ -3,6 +3,8 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { MAP_CONFIG } from '@/config/map'; // ✅ Import the map configuration
 import type { Aircraft } from '@/types/base';
+import markerIconPng from 'leaflet/dist/images/marker-icon.png';
+import markerShadowPng from 'leaflet/dist/images/marker-shadow.png';
 
 // Extended Aircraft type to include UI-specific properties
 export interface ExtendedAircraft extends Aircraft {
@@ -17,6 +19,26 @@ export interface DynamicMapProps {
 const DynamicMap: React.FC<DynamicMapProps> = ({ aircraft }) => {
   const mapRef = useRef<L.Map | null>(null);
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
+
+  const getAircraftIcon = (type: string) => {
+    const iconMapping: Record<string, string> = {
+      jet: '/icons/jetIconImg.png',
+      prop: '/icons/propIconImg.png',
+      rotor: '/icons/rotorIconImg.png',
+      helicopter: '/icons/helicopter.png',
+      government_jet: '/icons/governmentJetIconImg.png',
+      government_rotor: '/icons/governmentRotorIconImg.png',
+      balloon: '/icons/aircraft_balloon.png',
+      default: '/icons/defaultIconImg.png',
+    };
+
+    return new L.Icon({
+      iconUrl: iconMapping[type.toLowerCase()] || iconMapping['default'], // Fallback to default if type is unknown
+      iconSize: [30, 30], // Adjust as needed
+      iconAnchor: [15, 15],
+      popupAnchor: [1, -15],
+    });
+  };
 
   useEffect(() => {
     if (!mapContainerRef.current) return;
@@ -61,10 +83,12 @@ const DynamicMap: React.FC<DynamicMapProps> = ({ aircraft }) => {
       }
     });
 
-    // Add aircraft markers
+    // Add aircraft markers with custom icons
     aircraft.forEach((plane) => {
       if (plane.latitude && plane.longitude) {
-        L.marker([plane.latitude, plane.longitude])
+        L.marker([plane.latitude, plane.longitude], {
+          icon: getAircraftIcon(plane.TYPE_AIRCRAFT), // Use TYPE_AIRCRAFT to assign icons
+        })
           .addTo(mapRef.current!)
           .bindPopup(
             `<b>${plane.NAME}</b><br>${plane.model}<br>${plane.CITY}, ${plane.STATE}`

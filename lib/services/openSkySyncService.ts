@@ -2,8 +2,11 @@
 import { Aircraft } from '@/types/base';
 import UnifiedCacheService from '@/lib/services/managers/unified-cache-system';
 import { PollingRateLimiter } from './rate-limiter';
-import { errorHandler, ErrorType } from './error-handler';
-import { DatabaseTransforms } from '@/utils/aircraft-transform';
+import {
+  errorHandler,
+  ErrorType,
+} from '../services/error-handler/error-handler';
+import { DatabaseTransforms } from '@/utils/aircraft-transform1';
 
 export class OpenSkySyncService {
   private static instance: OpenSkySyncService;

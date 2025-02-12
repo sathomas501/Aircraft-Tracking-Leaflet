@@ -4,7 +4,6 @@ import ModelSelector from '../../selector/ModelSelector';
 import NNumberSelector from '../../selector/nNumberSelector';
 import DynamicMap from '../Map/DynamicMap';
 import { Aircraft, SelectOption } from '@/types/base';
-import { transformAircraft } from '@/utils/aircraft-transform'; // ✅ Ensure correct import path
 import { Model } from '../../selector/services/aircraftService';
 
 interface ExtendedAircraft extends Aircraft {
@@ -29,6 +28,20 @@ const MapComponent: React.FC<MapComponentProps> = ({
   const [nNumber, setNNumber] = useState<string>('');
   const [models, setModels] = useState<Model[]>([]);
   const [isMapReady, setIsMapReady] = useState(false);
+  // Function to update displayed aircraft list
+  const handleAircraftUpdate = (aircraft: Aircraft[]) => {
+    setDisplayedAircraft(transformToExtendedAircraft(aircraft));
+  };
+
+  // Function to update model list when a manufacturer is selected
+  const handleModelsUpdate = (models: Model[]) => {
+    setModels(models);
+  };
+
+  const handleError = (message: string) => {
+    console.error(`[Error]: ${message}`);
+    alert(`Error: ${message}`);
+  };
 
   useEffect(() => {
     setIsMapReady(true);
@@ -159,11 +172,11 @@ const MapComponent: React.FC<MapComponentProps> = ({
         <ManufacturerSelector
           onSelect={handleManufacturerSelect}
           selectedManufacturer={selectedManufacturer}
+          setSelectedManufacturer={setSelectedManufacturer}
           manufacturers={manufacturers}
-          onAircraftUpdate={(aircraft) =>
-            setDisplayedAircraft(transformToExtendedAircraft(aircraft))
-          } // ✅ Fix type mismatch
-          onModelsUpdate={setModels}
+          onAircraftUpdate={handleAircraftUpdate} // ✅ Now defined
+          onModelsUpdate={handleModelsUpdate} // ✅ Now defined
+          onError={handleError} // ✅ Now defined
         />
       </div>
 

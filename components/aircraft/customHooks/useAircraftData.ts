@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { trackManufacturer } from '../selector/services/aircraftService';
 
 interface AircraftData {
@@ -6,6 +6,7 @@ interface AircraftData {
   liveAircraft: string[]; // ✅ Includes the full list of ICAO24 codes
   loading: boolean;
   error: Error | null;
+  reload: () => void; // ✅ Allows manual re-fetching
 }
 
 export const useAircraftData = (manufacturer: string): AircraftData => {
@@ -13,38 +14,35 @@ export const useAircraftData = (manufacturer: string): AircraftData => {
   const [liveAircraft, setLiveAircraft] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
-  const [prevManufacturer, setPrevManufacturer] = useState<string | null>(null); // ✅ Store previous manufacturer
+  const [prevManufacturer, setPrevManufacturer] = useState<string | null>(null);
+
+  const fetchData = useCallback(async () => {
+    if (!manufacturer || manufacturer === prevManufacturer) return;
+
+    const controller = new AbortController();
+    setLoading(true);
+    setError(null);
+    setPrevManufacturer(manufacturer);
+
+    try {
+      console.log(`📡 Fetching ICAO24s for manufacturer: ${manufacturer}`);
+      const result = await trackManufacturer(manufacturer);
+      if (controller.signal.aborted) return;
+
+      setActiveCount(result.liveAircraft.length);
+      setLiveAircraft(result.icao24s);
+    } catch (err) {
+      if (controller.signal.aborted) return;
+      setError(err instanceof Error ? err : new Error('Failed to fetch data'));
+    } finally {
+      setLoading(false);
+    }
+  }, [manufacturer, prevManufacturer]);
 
   useEffect(() => {
-    if (!manufacturer || manufacturer === prevManufacturer) return; // ✅ Prevent unnecessary API calls
-
-    const controller = new AbortController(); // ✅ Create an AbortController to cancel requests
-
-    const fetchData = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        setPrevManufacturer(manufacturer); // ✅ Store the latest manufacturer
-
-        const result = await trackManufacturer(manufacturer);
-        if (controller.signal.aborted) return; // ✅ Prevent updating state if request is canceled
-
-        setActiveCount(result.liveAircraft.length);
-        setLiveAircraft(result.icao24s);
-      } catch (err) {
-        if (controller.signal.aborted) return; // ✅ Ignore errors if request was canceled
-        setError(
-          err instanceof Error ? err : new Error('Failed to fetch data')
-        );
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchData();
+    return () => console.log('🔄 Cleanup: Cancelling API request');
+  }, [fetchData]);
 
-    return () => controller.abort(); // ✅ Cleanup function: cancels API request if the component unmounts or manufacturer changes
-  }, [manufacturer]);
-
-  return { activeCount, liveAircraft, loading, error };
+  return { activeCount, liveAircraft, loading, error, reload: fetchData };
 };

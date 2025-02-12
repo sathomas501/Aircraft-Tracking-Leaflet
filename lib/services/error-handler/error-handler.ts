@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { NextApiResponse } from 'next';
-import { PollingRateLimiter } from '../services/rate-limiter';
+import { PollingRateLimiter } from '../rate-limiter';
 
 // --- OpenSky Specific Errors ---
 export class OpenSkyError extends Error {
