@@ -1,6 +1,6 @@
 // lib/middleware/error-handler.ts
 import { NextApiRequest, NextApiResponse } from 'next';
-import { APIError, handleAPIError } from '../services/error-handler/api-error';
+import { APIError, handleAPIError } from './api-error';
 
 type ApiHandler = (req: NextApiRequest, res: NextApiResponse) => Promise<void>;
 

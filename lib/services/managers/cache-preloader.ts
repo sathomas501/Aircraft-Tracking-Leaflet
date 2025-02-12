@@ -1,5 +1,5 @@
 // lib/services/managers/cache-preloader.ts
-import { errorHandler, ErrorType } from '../error-handler';
+import { errorHandler, ErrorType } from '../error-handler/error-handler';
 
 interface Region {
   lamin: number;

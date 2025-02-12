@@ -1,13 +1,13 @@
-import trackingDatabaseManager from '../db/trackingDatabaseManager';
-import { PollingRateLimiter, RateLimiterOptions } from './rate-limiter';
-import UnifiedCacheService from '../services/managers/unified-cache-system';
-import { Aircraft } from '../../types/base';
+import trackingDatabaseManager from '../../db/trackingDatabaseManager';
+import { PollingRateLimiter, RateLimiterOptions } from '../rate-limiter';
+import UnifiedCacheService from '../../services/managers/unified-cache-system';
+import { Aircraft } from '../../../types/base';
 import {
   errorHandler,
   ErrorType,
   OpenSkyError,
   OpenSkyErrorCode,
-} from './error-handler';
+} from '../error-handler/error-handler';
 
 // base-tracking-service.ts
 export abstract class BaseTrackingService {

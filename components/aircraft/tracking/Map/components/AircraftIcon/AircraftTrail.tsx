@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Polyline } from 'react-leaflet';
-import { aircraftPositionService } from '../../../../../../lib/services/aircraft-position-service'; // ✅ Use instance
+import { aircraftPositionService } from '../../../../../../lib/services/tracking-services/aircraft-position-service'; // ✅ Use instance
 import { LatLngTuple, PathOptions } from 'leaflet';
 
 interface AircraftTrailProps {

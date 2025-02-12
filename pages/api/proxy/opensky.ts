@@ -2,8 +2,9 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { PollingRateLimiter } from '@/lib/services/rate-limiter';
 import { openSkyAuth } from '@/lib/services/opensky-auth';
-import { errorHandler, ErrorType } from '@/lib/services/error-handler';
+import { ErrorType } from '@/lib/services/error-handler/error-handler';
 import { API_CONFIG } from '@/config/api';
+import { OpenSkyTransforms } from '@/utils/aircraft-transform1';
 
 const rateLimiter = new PollingRateLimiter({
   requestsPerMinute: 100,
@@ -22,6 +23,7 @@ export default async function handler(
 ) {
   if (req.method !== 'POST') {
     return res.status(405).json({
+      success: false,
       error: 'Method Not Allowed. Use POST.',
       errorType: ErrorType.OPENSKY_SERVICE,
     });
@@ -35,6 +37,7 @@ export default async function handler(
     icao24s.length > API_CONFIG.PARAMS.MAX_ICAO_QUERY
   ) {
     return res.status(400).json({
+      success: false,
       error: `Invalid ICAO24 list. Maximum ${API_CONFIG.PARAMS.MAX_ICAO_QUERY} codes per request.`,
       errorType: ErrorType.OPENSKY_REQUEST,
     });
@@ -43,6 +46,7 @@ export default async function handler(
   try {
     if (!(await openSkyAuth.ensureAuthenticated())) {
       return res.status(401).json({
+        success: false,
         error: 'Failed to authenticate with OpenSky',
         errorType: ErrorType.OPENSKY_AUTH,
       });
@@ -51,6 +55,7 @@ export default async function handler(
     if (rateLimiter.isRateLimited()) {
       const nextSlot = await rateLimiter.getNextAvailableSlot();
       return res.status(429).json({
+        success: false,
         error: 'Rate limit reached',
         errorType: ErrorType.OPENSKY_RATE_LIMIT,
         nextAvailable: nextSlot,
@@ -59,7 +64,17 @@ export default async function handler(
     }
 
     if (!icao24s.length) {
-      return res.status(200).json({ states: [] });
+      return res.status(200).json({
+        success: true,
+        data: {
+          states: [],
+          timestamp: Date.now(),
+          meta: {
+            total: 0,
+            requestedIcaos: 0,
+          },
+        },
+      });
     }
 
     const formattedIcaos = icao24s
@@ -68,6 +83,7 @@ export default async function handler(
 
     if (formattedIcaos.length === 0) {
       return res.status(400).json({
+        success: false,
         error: 'No valid ICAO24s provided',
         errorType: ErrorType.OPENSKY_REQUEST,
       });
@@ -92,11 +108,29 @@ export default async function handler(
     });
 
     rateLimiter.recordSuccess();
-    return res.status(200).json({ states: responseData.states || [] });
+
+    // Transform and validate the response
+    const validStates = (responseData.states || []).filter(
+      OpenSkyTransforms.validateState
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        states: validStates,
+        timestamp: responseData.time || Date.now(),
+        meta: {
+          total: validStates.length,
+          requestedIcaos: formattedIcaos.length,
+        },
+      },
+    });
   } catch (error) {
     rateLimiter.recordFailure();
     console.error('[OpenSky Proxy] Error:', error);
+
     return res.status(503).json({
+      success: false,
       error:
         error instanceof Error
           ? error.message

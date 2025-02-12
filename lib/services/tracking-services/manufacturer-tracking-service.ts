@@ -1,16 +1,15 @@
 // lib/services/manufacturer-tracking-service.ts
 import { BaseTrackingService } from './base-tracking-service';
-import { RateLimiterOptions } from './rate-limiter';
+import { RateLimiterOptions } from '../rate-limiter';
 
 import {
   errorHandler,
   ErrorType,
   OpenSkyError,
   OpenSkyErrorCode,
-} from './error-handler';
+} from '../error-handler/error-handler';
 import { Aircraft } from '@/types/base';
 import { RATE_LIMITS } from '@/config/rate-limits';
-import { API_CONFIG } from '@/config/api';
 
 interface CacheResult {
   aircraft: Aircraft[];

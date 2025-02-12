@@ -1,9 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import { Aircraft, SelectOption } from '@/types/base';
+import React, { useEffect, useCallback, useMemo } from 'react';
+import type { Aircraft, SelectOption } from '@/types/base';
+import { useFetchManufacturers } from '../customHooks/useFetchManufactures';
+import { clientTrackingService } from '../../../lib/services/tracking-services/client-tracking-service';
 
 interface ManufacturerSelectorProps {
-  onSelect: (manufacturer: string) => void;
+  onSelect: (manufacturer: string) => Promise<void>;
   selectedManufacturer: string;
+  setSelectedManufacturer: (manufacturer: string) => void; // ✅ Added this
   manufacturers: SelectOption[];
   onAircraftUpdate: (aircraft: Aircraft[]) => void;
   onModelsUpdate: (
@@ -14,98 +17,115 @@ interface ManufacturerSelectorProps {
       count?: number;
     }[]
   ) => void;
+  onError: (message: string) => void; // ✅ Ensure this is included
 }
 
 const ManufacturerSelector: React.FC<ManufacturerSelectorProps> = ({
   onSelect,
   selectedManufacturer,
-  manufacturers,
+  setSelectedManufacturer, // ✅ Now included
+  manufacturers: externalManufacturers,
   onAircraftUpdate,
   onModelsUpdate,
+  onError, // ✅ Now included
 }) => {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [filteredManufacturers, setFilteredManufacturers] =
-    useState(manufacturers);
-  const [showDropdown, setShowDropdown] = useState(false);
+  const {
+    searchTerm,
+    setSearchTerm,
+    loading: hookLoading,
+  } = useFetchManufacturers();
 
-  // Filter manufacturers based on search input
+  // Filter manufacturers based on search
+  const filteredManufacturers = useMemo(() => {
+    return externalManufacturers.filter(
+      (m: SelectOption) =>
+        m.label.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        m.value.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+  }, [externalManufacturers, searchTerm]);
+
+  // Handle manufacturer selection
+  const handleManufacturerSelect = useCallback(
+    async (manufacturer: string) => {
+      if (
+        manufacturer === selectedManufacturer &&
+        !clientTrackingService.isTrackingActive()
+      ) {
+        console.log(
+          `[Tracking] ❌ No active aircraft previously found. Not restarting.`
+        );
+        return;
+      }
+
+      try {
+        setSelectedManufacturer(manufacturer); // ✅ Fixing missing function
+        clientTrackingService.setTrackingActive(true);
+        await clientTrackingService.startTracking(manufacturer);
+      } catch (error) {
+        console.error('Failed to fetch aircraft:', error);
+        if (onError) {
+          onError('Failed to fetch aircraft data'); // ✅ Fixing missing function
+        }
+      }
+    },
+    [selectedManufacturer, setSelectedManufacturer, onError]
+  );
+
+  // Subscribe to manufacturer updates
   useEffect(() => {
-    if (!searchTerm) {
-      setFilteredManufacturers(manufacturers);
-    } else {
-      setFilteredManufacturers(
-        manufacturers.filter((m) =>
-          m.label.toLowerCase().includes(searchTerm.toLowerCase())
-        )
+    if (selectedManufacturer) {
+      const unsubscribe = clientTrackingService.subscribe(
+        selectedManufacturer,
+        (aircraft) => {
+          onAircraftUpdate(aircraft);
+
+          // Update models with proper type checking
+          const modelsMap = aircraft.reduce(
+            (acc, a) => {
+              if (a.model && typeof a.model === 'string') {
+                if (!acc.has(a.model)) {
+                  acc.set(a.model, {
+                    model: a.model,
+                    label: a.model,
+                    activeCount: 0,
+                    count: 0,
+                  });
+                }
+                const modelData = acc.get(a.model)!;
+                modelData.activeCount = (modelData.activeCount || 0) + 1;
+                modelData.count = (modelData.count || 0) + 1;
+              }
+              return acc;
+            },
+            new Map<
+              string,
+              {
+                model: string;
+                label: string;
+                activeCount: number;
+                count: number;
+              }
+            >()
+          );
+
+          const models = Array.from(modelsMap.values());
+
+          if (models.length > 0) {
+            onModelsUpdate(models);
+          }
+        }
       );
+
+      return unsubscribe;
     }
-  }, [searchTerm, manufacturers]);
+  }, [selectedManufacturer, onAircraftUpdate, onModelsUpdate]);
 
-  // Handles manufacturer selection and loads models & aircraft
   const handleSelect = async (manufacturer: string) => {
-    setSearchTerm(manufacturer); // ✅ Show selected manufacturer
-    setShowDropdown(false); // ✅ Close dropdown
-    onSelect(manufacturer);
-
     try {
-      // Fetch ICAO24 aircraft IDs
-      const icao24Response = await fetch('/api/aircraft/icao24s', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ manufacturer }),
-      });
-
-      const icao24Data = await icao24Response.json();
-      if (
-        !icao24Data.success ||
-        !Array.isArray(icao24Data.data.icao24List) ||
-        icao24Data.data.icao24List.length === 0
-      ) {
-        throw new Error(`No ICAO24s found for ${manufacturer}`);
-      }
-
-      console.log('Fetched ICAO24s:', icao24Data.data.icao24List);
-
-      // Fetch aircraft positions from OpenSky API
-      const openSkyResponse = await fetch('/api/aircraft/tracking', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'updatePositions', // ✅ Add the action field
-          icao24s: icao24Data.data.icao24List.slice(0, 200),
-        }),
-      });
-
-      const openSkyData = await openSkyResponse.json();
-      if (!openSkyData.aircraft || !Array.isArray(openSkyData.aircraft)) {
-        throw new Error('Invalid aircraft data received from OpenSky');
-      }
-
-      console.log(
-        `Fetched ${openSkyData.aircraft.length} aircraft from OpenSky.`
-      );
-      onAircraftUpdate(openSkyData.aircraft); // ✅ Send aircraft data to parent
-
-      // Fetch models for the selected manufacturer
-      const modelResponse = await fetch(
-        `/api/aircraft/models?manufacturer=${manufacturer}`
-      );
-      const modelData = await modelResponse.json();
-
-      if (
-        !modelData.success ||
-        !Array.isArray(modelData.models) ||
-        modelData.models.length === 0
-      ) {
-        console.warn(`No models found for manufacturer: ${manufacturer}`);
-        onModelsUpdate([]); // ✅ Send empty list to UI
-        return; // ✅ Do not throw an error, just log and allow user to proceed
-      }
-
-      console.log('Fetched models:', modelData.models);
-      onModelsUpdate(modelData.models);
+      setSearchTerm(manufacturer);
+      await onSelect(manufacturer); // This is the prop passed from MapWrapper
     } catch (error) {
-      console.error('Error fetching ICAO24s, OpenSky data, or models:', error);
+      console.error('Error in manufacturer selection:', error);
     }
   };
 
@@ -117,25 +137,24 @@ const ManufacturerSelector: React.FC<ManufacturerSelectorProps> = ({
       <input
         type="text"
         value={searchTerm}
-        onChange={(e) => {
-          setSearchTerm(e.target.value);
-          setShowDropdown(true); // ✅ Open dropdown on typing
-        }}
-        onFocus={() => setShowDropdown(true)}
+        onChange={(e) => setSearchTerm(e.target.value)}
         placeholder="Search or select manufacturer..."
         className="w-full p-2 pl-8 border border-gray-300 rounded-md shadow-sm
-                   focus:ring-blue-500 focus:border-blue-500
-                   bg-white text-gray-900"
+             focus:ring-blue-500 focus:border-blue-500
+             bg-white text-gray-900"
       />
 
       {/* Manufacturer Dropdown */}
-      {showDropdown && filteredManufacturers.length > 0 && (
+      {hookLoading ? (
+        <p className="text-sm text-gray-500 mt-1">Loading manufacturers...</p>
+      ) : filteredManufacturers.length > 0 ? (
         <ul className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-auto">
-          {filteredManufacturers.map((manufacturer) => (
+          {filteredManufacturers.map((manufacturer: SelectOption) => (
             <li
               key={manufacturer.value}
-              className="px-4 py-2 text-left hover:bg-gray-100 flex justify-between cursor-pointer"
-              onClick={() => handleSelect(manufacturer.value)}
+              className={`px-4 py-2 text-left hover:bg-gray-100 flex justify-between cursor-pointer
+          ${manufacturer.value === selectedManufacturer ? 'bg-blue-50' : ''}`}
+              onClick={() => handleManufacturerSelect(manufacturer.value)}
             >
               <span>{manufacturer.label}</span>
               <span className="text-sm text-gray-500">
@@ -146,10 +165,7 @@ const ManufacturerSelector: React.FC<ManufacturerSelectorProps> = ({
             </li>
           ))}
         </ul>
-      )}
-
-      {/* No Results Message */}
-      {showDropdown && filteredManufacturers.length === 0 && (
+      ) : (
         <p className="text-sm text-gray-500 mt-1">No manufacturers found.</p>
       )}
     </div>

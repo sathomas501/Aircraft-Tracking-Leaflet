@@ -1,13 +1,25 @@
 import sqlite3 from 'sqlite3';
 import { Database } from 'sqlite3';
 import { Aircraft } from '@/types/base';
-import { normalizeAircraft } from '@/utils/aircraft-transform';
+import { normalizeAircraft } from '@/utils/aircraft-transform1';
 
 class TrackingDatabaseManager {
   private static instance: TrackingDatabaseManager;
   private db: Database | null = null;
 
   private readonly STALE_THRESHOLD: number = 2 * 60 * 60 * 1000; // 2 hours in milliseconds
+
+  private readonly REQUIRED_COLUMNS: Record<string, string> = {
+    icao24: 'TEXT PRIMARY KEY',
+    latitude: 'REAL',
+    longitude: 'REAL',
+    altitude: 'REAL',
+    velocity: 'REAL',
+    heading: 'REAL',
+    on_ground: 'INTEGER',
+    last_contact: 'INTEGER',
+    updated_at: "INTEGER DEFAULT (strftime('%s', 'now'))",
+  };
 
   private constructor() {
     if (typeof window !== 'undefined') {
@@ -25,7 +37,7 @@ class TrackingDatabaseManager {
     return TrackingDatabaseManager.instance;
   }
 
-  public initialize() {
+  private initialize() {
     if (typeof window !== 'undefined') {
       throw new Error(
         '[TrackingDatabaseManager] Database cannot be initialized on the client-side.'
@@ -35,38 +47,181 @@ class TrackingDatabaseManager {
     this.db = new sqlite3.Database('tracking.db', (err) => {
       if (err) {
         console.error(
-          '[TrackingDatabaseManager] Database connection failed:',
+          '[TrackingDatabaseManager] ❌ Database connection failed:',
           err
         );
       } else {
-        console.log('[TrackingDatabaseManager] Database connected.');
-        this.createTables();
+        console.log('[TrackingDatabaseManager] ✅ Database connected.');
       }
     });
   }
 
-  private createTables() {
-    if (!this.db) return;
-    this.db.run(
-      `
-            CREATE TABLE IF NOT EXISTS tracked_aircraft (
-                icao24 TEXT PRIMARY KEY,
-                latitude REAL,
-                longitude REAL,
-                heading REAL,
-                updated_at INTEGER DEFAULT (strftime('%s', 'now'))
+  public async validateSchema(): Promise<void> {
+    if (!this.db) {
+      console.error(
+        '[TrackingDatabaseManager] ❌ Database is not initialized.'
+      );
+      return;
+    }
+
+    try {
+      const rows: any[] = await new Promise((resolve, reject) => {
+        this.db!.all('PRAGMA table_info(tracked_aircraft);', (err, rows) => {
+          if (err) {
+            console.error(
+              '[TrackingDatabaseManager] ❌ Error checking table structure:',
+              err
             );
-        `,
-      (err) => {
-        if (err) {
-          console.error(
-            '[TrackingDatabaseManager] Table creation failed:',
-            err
-          );
-        } else {
-          console.log('[TrackingDatabaseManager] Tables created successfully.');
-        }
+            reject(err);
+          } else {
+            resolve(rows);
+          }
+        });
+      });
+
+      const existingColumns = new Set(rows.map((row: any) => row.name));
+
+      // 🚀 If table does not exist, create it
+      if (rows.length === 0) {
+        console.log(
+          '[TrackingDatabaseManager] ❗ Table does not exist. Creating...'
+        );
+        await this.createTable();
+        return;
       }
+
+      // 🔎 Identify missing columns
+      const missingColumns = Object.keys(this.REQUIRED_COLUMNS).filter(
+        (column) => !existingColumns.has(column)
+      );
+
+      if (missingColumns.length === 0) {
+        console.log('[TrackingDatabaseManager] ✅ Table is up to date.');
+        return;
+      }
+
+      console.log(
+        `[TrackingDatabaseManager] ⚠️ Missing columns detected: ${missingColumns.join(', ')}`
+      );
+
+      // 🚨 If fewer than 3 columns exist, drop and recreate the table
+      if (existingColumns.size < 3) {
+        console.log(
+          '[TrackingDatabaseManager] ❗ Too many missing columns, dropping and recreating table.'
+        );
+        await this.recreateTable();
+      } else {
+        await this.addMissingColumns(missingColumns);
+      }
+
+      console.log('[TrackingDatabaseManager] ✅ Schema validation complete.');
+    } catch (error) {
+      console.error(
+        '[TrackingDatabaseManager] ❌ Schema validation failed:',
+        error
+      );
+    }
+  }
+
+  private createTable(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      if (!this.db) {
+        reject('[TrackingDatabaseManager] ❌ Database is not initialized.');
+        return;
+      }
+
+      const columnDefinitions = Object.entries(this.REQUIRED_COLUMNS)
+        .map(([name, type]) => `${name} ${type}`)
+        .join(', ');
+
+      console.log(
+        '[TrackingDatabaseManager] 🔄 Creating new table with full schema...'
+      );
+
+      this.db.run(
+        `CREATE TABLE tracked_aircraft (${columnDefinitions});`,
+        (err) => {
+          if (err) {
+            console.error(
+              '[TrackingDatabaseManager] ❌ Table creation failed:',
+              err
+            );
+            reject(err);
+          } else {
+            console.log(
+              '[TrackingDatabaseManager] ✅ Table created successfully.'
+            );
+            resolve();
+          }
+        }
+      );
+    });
+  }
+
+  private async recreateTable(): Promise<void> {
+    if (!this.db) {
+      throw new Error(
+        '[TrackingDatabaseManager] ❌ Database is not initialized.'
+      );
+    }
+
+    console.log(
+      '[TrackingDatabaseManager] 🔄 Dropping and recreating table...'
+    );
+
+    await new Promise((resolve, reject) => {
+      this.db!.run('DROP TABLE IF EXISTS tracked_aircraft;', (dropErr) => {
+        if (dropErr) {
+          console.error(
+            '[TrackingDatabaseManager] ❌ Failed to drop table:',
+            dropErr
+          );
+          reject(dropErr);
+        } else {
+          resolve(null);
+        }
+      });
+    });
+
+    await this.createTable();
+  }
+
+  private async addMissingColumns(missingColumns: string[]): Promise<void> {
+    if (!this.db) {
+      throw new Error(
+        '[TrackingDatabaseManager] ❌ Database is not initialized.'
+      );
+    }
+
+    for (const column of missingColumns) {
+      const columnType = this.REQUIRED_COLUMNS[column];
+      console.log(
+        `[TrackingDatabaseManager] ➕ Adding missing column: ${column} (${columnType})`
+      );
+
+      await new Promise((resolve, reject) => {
+        this.db!.run(
+          `ALTER TABLE tracked_aircraft ADD COLUMN ${column} ${columnType};`,
+          (err) => {
+            if (err) {
+              console.error(
+                `[TrackingDatabaseManager] ❌ Failed to add column '${column}':`,
+                err
+              );
+              reject(err);
+            } else {
+              console.log(
+                `[TrackingDatabaseManager] ✅ Added column '${column}'.`
+              );
+              resolve(null);
+            }
+          }
+        );
+      });
+    }
+
+    console.log(
+      '[TrackingDatabaseManager] ✅ All missing columns added successfully.'
     );
   }
 
@@ -118,19 +273,23 @@ class TrackingDatabaseManager {
       return [];
     }
 
-    // ✅ Convert ICAO24s to lowercase to ensure case-insensitive matching
     const formattedIcaos = icao24s.map((icao) => icao.toLowerCase());
 
+    console.log(
+      `[TrackingDatabaseManager] 🔍 Querying DB for ICAO24s:`,
+      formattedIcaos
+    );
+
     const query = `
-      SELECT * FROM tracked_aircraft 
-      WHERE LOWER(icao24) IN (${formattedIcaos.map(() => '?').join(', ')})
-    `;
+    SELECT * FROM tracked_aircraft 
+    WHERE LOWER(icao24) IN (${formattedIcaos.map(() => '?').join(', ')})
+  `;
 
     return new Promise((resolve, reject) => {
       this.db?.all(query, formattedIcaos, (err, rows: any[]) => {
         if (err) {
           console.error(
-            '[TrackingDatabaseManager] ❌ Error fetching tracked aircraft:',
+            `[TrackingDatabaseManager] ❌ Error fetching tracked aircraft:`,
             err
           );
           reject(err);
@@ -151,37 +310,43 @@ class TrackingDatabaseManager {
     }
 
     const query = `
-      INSERT INTO tracked_aircraft (icao24, latitude, longitude, altitude, velocity, heading, on_ground, last_contact, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(icao24) DO UPDATE SET
-        latitude = excluded.latitude,
-        longitude = excluded.longitude,
-        altitude = excluded.altitude,
-        velocity = excluded.velocity,
-        heading = excluded.heading,
-        on_ground = excluded.on_ground,
-        last_contact = excluded.last_contact,
-        updated_at = excluded.updated_at;
-    `;
+    INSERT INTO tracked_aircraft (icao24, latitude, longitude, altitude, velocity, heading, on_ground, last_contact, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(icao24) DO UPDATE SET
+      latitude = excluded.latitude,
+      longitude = excluded.longitude,
+      altitude = excluded.altitude,
+      velocity = excluded.velocity,
+      heading = excluded.heading,
+      on_ground = excluded.on_ground,
+      last_contact = excluded.last_contact,
+      updated_at = excluded.updated_at;
+  `;
 
     const stmt = this.db.prepare(query);
     for (const ac of aircraft) {
-      await stmt.run([
-        ac.icao24,
-        ac.latitude,
-        ac.longitude,
-        ac.altitude,
-        ac.velocity,
-        ac.heading,
-        ac.on_ground,
-        ac.last_contact,
-        Date.now(), // Ensure timestamps are updated
-      ]);
+      try {
+        await stmt.run([
+          ac.icao24,
+          ac.latitude,
+          ac.longitude,
+          ac.altitude,
+          ac.velocity,
+          ac.heading,
+          ac.on_ground,
+          ac.last_contact,
+          Date.now(),
+        ]);
+        console.log(
+          `[TrackingDatabaseManager] ✅ Upserted ${ac.icao24} successfully.`
+        );
+      } catch (error) {
+        console.error(
+          `[TrackingDatabaseManager] ❌ Upsert failed for ${ac.icao24}:`,
+          error
+        );
+      }
     }
-
-    console.log(
-      `[TrackingDatabaseManager] ✅ Upserted ${aircraft.length} live aircraft positions.`
-    );
   }
 
   public async getLiveAircraftData(): Promise<Aircraft[]> {
