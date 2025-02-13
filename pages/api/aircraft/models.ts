@@ -45,10 +45,12 @@ export default async function handler(
         console.warn(`[API] No models found for manufacturer: ${manufacturer}`);
       }
 
+      console.log('[API] Raw models response:', models);
+
       return res.status(200).json({
         success: true,
         message: `Found ${models.length} models for ${manufacturer}`,
-        data: models.map((m) => m.model), // ✅ Return array of model names
+        data: models.map((m) => m.model), // ✅ Ensure correct format
       });
     } catch (error) {
       console.error(`[API] Database error:`, error);

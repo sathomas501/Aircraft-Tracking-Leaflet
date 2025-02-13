@@ -11,8 +11,7 @@ interface Model {
 interface ModelSelectorProps {
   selectedModel: string;
   setSelectedModel: (model: string) => void;
-  selectedManufacturer: string;
-  models: Model[];
+  models: { model: string; label: string }[]; // ✅ Ensure correct type
   totalActive: number;
   onModelUpdate: (model: string) => void;
 }
@@ -20,50 +19,29 @@ interface ModelSelectorProps {
 const ModelSelector: React.FC<ModelSelectorProps> = ({
   selectedModel,
   setSelectedModel,
-  selectedManufacturer,
-  models = [],
+  models,
   totalActive,
   onModelUpdate,
 }) => {
-  useEffect(() => {
-    if (selectedModel && !models.some((m) => m.model === selectedModel)) {
-      setSelectedModel('');
-    }
-  }, [selectedManufacturer, models, selectedModel, setSelectedModel]);
-
   return (
-    <div className="space-y-2">
-      <label className="block text-sm font-medium text-gray-600">Model</label>
-      <div className="relative">
-        <select
-          value={selectedModel}
-          onChange={(e) => {
-            setSelectedModel(e.target.value);
-            onModelUpdate(e.target.value);
-          }}
-          className="w-full p-2 pr-8 border border-gray-300 rounded-md shadow-sm 
-                     focus:ring-blue-500 focus:border-blue-500 
-                     bg-white text-gray-900 appearance-none
-                     disabled:bg-gray-100 disabled:text-gray-500"
-          disabled={!selectedManufacturer}
-        >
-          <option value="">
-            {selectedManufacturer
-              ? `All Models (${totalActive} active)`
-              : 'Select a manufacturer first'}
+    <div>
+      <label htmlFor="model-select">Model</label>
+      <select
+        id="model-select"
+        value={selectedModel}
+        onChange={(e) => {
+          const selected = e.target.value;
+          setSelectedModel(selected);
+          onModelUpdate(selected);
+        }}
+      >
+        <option value="">All Models ({totalActive} active)</option>
+        {models.map((m) => (
+          <option key={m.model} value={m.model}>
+            {m.label}
           </option>
-          {models.map((model) => (
-            <option key={model.model} value={model.model}>
-              {model.label} ({model.activeCount || 0} active /{' '}
-              {model.count?.toLocaleString() || 0} total)
-            </option>
-          ))}
-        </select>
-        <ChevronDown
-          className="absolute right-2 top-3 text-gray-500"
-          size={16}
-        />
-      </div>
+        ))}
+      </select>
     </div>
   );
 };

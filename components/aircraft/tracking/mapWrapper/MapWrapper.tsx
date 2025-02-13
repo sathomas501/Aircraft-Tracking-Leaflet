@@ -64,14 +64,12 @@ const MapWrapper: React.FC<MapWrapperProps> = ({
   >(initialAircraft.map(toExtendedAircraft));
 
   const [selectedType] = useState<string>('manufacturer');
-  const [selectedManufacturer, setSelectedManufacturer] = useState<
-    string | null
-  >('');
-  const [selectedModel, setSelectedModel] = useState<string>('');
   const [isMapReady, setIsMapReady] = useState(false);
   const [models, setModels] = useState<
     { model: string; label: string; activeCount?: number; count?: number }[]
   >([]);
+  const [selectedManufacturer, setSelectedManufacturer] = useState<string>('');
+  const [selectedModel, setSelectedModel] = useState<string>('');
 
   const handleModelsUpdate = (
     models: {
@@ -110,20 +108,19 @@ const MapWrapper: React.FC<MapWrapperProps> = ({
   // Fix the function and ensure it has a closing bracket
   const handleManufacturerSelect = useCallback(
     async (manufacturer: string | null) => {
-      // ✅ Allow `null`
-      if (manufacturer === selectedManufacturer) return; // Prevent duplicate calls
-      try {
-        setSelectedManufacturer(manufacturer); // ✅ Now correctly handles null
-        if (manufacturer) {
-          // Prevent API call if null
+      setSelectedManufacturer(manufacturer || ''); // ✅ Ensure string value
+      setSelectedModel(''); // ✅ Reset model when changing manufacturer
+
+      if (manufacturer) {
+        try {
+          console.log(`[Tracking] Starting tracking for ${manufacturer}`);
           await clientTrackingService.startTracking(manufacturer);
+        } catch (error) {
+          console.error('[Tracking] Error fetching aircraft:', error);
         }
-      } catch (error) {
-        console.error('Failed to fetch aircraft:', error);
-        onError('Failed to fetch aircraft data');
       }
     },
-    [selectedManufacturer, onError]
+    [setSelectedManufacturer]
   );
 
   const handleReset = useCallback(() => {
@@ -154,18 +151,20 @@ const MapWrapper: React.FC<MapWrapperProps> = ({
     <div className="relative w-full h-screen">
       <div className="absolute top-0 left-0 right-0 z-10 max-w-sm ml-4">
         <UnifiedSelector
-          selectedManufacturer={selectedManufacturer} // ✅ Now handles null
-          setSelectedManufacturer={setSelectedManufacturer} // ✅ Matches expected type
-          onManufacturerSelect={handleManufacturerSelect} // ✅ Matches expected type
+          selectedManufacturer={selectedManufacturer}
           selectedModel={selectedModel}
+          setSelectedManufacturer={(manufacturer) =>
+            setSelectedManufacturer(manufacturer || '')
+          } // ✅ Fix: Convert `null` to an empty string
           setSelectedModel={setSelectedModel}
+          onManufacturerSelect={handleManufacturerSelect}
+          onModelSelect={setSelectedModel}
           modelCounts={modelCounts}
           totalActive={displayedAircraft.length}
           manufacturers={manufacturers}
           onAircraftUpdate={handleAircraftUpdate}
-          onModelSelect={handleModelSelect}
-          onReset={handleReset}
           onModelsUpdate={handleModelsUpdate}
+          onReset={handleReset}
           onError={handleError}
         />
       </div>
