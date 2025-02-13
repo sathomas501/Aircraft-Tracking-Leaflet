@@ -30,6 +30,7 @@ class TrackingDatabaseManager {
     this.initialize();
   }
 
+  /** ✅ Get or create singleton instance */
   public static getInstance(): TrackingDatabaseManager {
     if (!TrackingDatabaseManager.instance) {
       TrackingDatabaseManager.instance = new TrackingDatabaseManager();
@@ -37,25 +38,31 @@ class TrackingDatabaseManager {
     return TrackingDatabaseManager.instance;
   }
 
-  private initialize() {
+  /** ✅ Initialize database connection */
+  public async initialize(): Promise<void> {
     if (typeof window !== 'undefined') {
       throw new Error(
-        '[TrackingDatabaseManager] Database cannot be initialized on the client-side.'
+        '[TrackingDatabaseManager] ❌ Cannot initialize on the client side.'
       );
     }
 
-    this.db = new sqlite3.Database('tracking.db', (err) => {
-      if (err) {
-        console.error(
-          '[TrackingDatabaseManager] ❌ Database connection failed:',
-          err
-        );
-      } else {
-        console.log('[TrackingDatabaseManager] ✅ Database connected.');
-      }
+    return new Promise((resolve, reject) => {
+      this.db = new sqlite3.Database('tracking.db', (err) => {
+        if (err) {
+          console.error(
+            '[TrackingDatabaseManager] ❌ Database connection failed:',
+            err
+          );
+          reject(err);
+        } else {
+          console.log('[TrackingDatabaseManager] ✅ Database connected.');
+          this.validateSchema().then(resolve).catch(reject);
+        }
+      });
     });
   }
 
+  /** ✅ Validate schema & auto-fix missing columns */
   public async validateSchema(): Promise<void> {
     if (!this.db) {
       console.error(
@@ -69,7 +76,7 @@ class TrackingDatabaseManager {
         this.db!.all('PRAGMA table_info(tracked_aircraft);', (err, rows) => {
           if (err) {
             console.error(
-              '[TrackingDatabaseManager] ❌ Error checking table structure:',
+              '[TrackingDatabaseManager] ❌ Schema check failed:',
               err
             );
             reject(err);
@@ -80,8 +87,10 @@ class TrackingDatabaseManager {
       });
 
       const existingColumns = new Set(rows.map((row: any) => row.name));
+      const missingColumns = Object.keys(this.REQUIRED_COLUMNS).filter(
+        (column) => !existingColumns.has(column)
+      );
 
-      // 🚀 If table does not exist, create it
       if (rows.length === 0) {
         console.log(
           '[TrackingDatabaseManager] ❗ Table does not exist. Creating...'
@@ -90,24 +99,18 @@ class TrackingDatabaseManager {
         return;
       }
 
-      // 🔎 Identify missing columns
-      const missingColumns = Object.keys(this.REQUIRED_COLUMNS).filter(
-        (column) => !existingColumns.has(column)
-      );
-
       if (missingColumns.length === 0) {
-        console.log('[TrackingDatabaseManager] ✅ Table is up to date.');
+        console.log('[TrackingDatabaseManager] ✅ Schema is up to date.');
         return;
       }
 
       console.log(
-        `[TrackingDatabaseManager] ⚠️ Missing columns detected: ${missingColumns.join(', ')}`
+        `[TrackingDatabaseManager] ⚠️ Missing columns: ${missingColumns.join(', ')}`
       );
 
-      // 🚨 If fewer than 3 columns exist, drop and recreate the table
       if (existingColumns.size < 3) {
         console.log(
-          '[TrackingDatabaseManager] ❗ Too many missing columns, dropping and recreating table.'
+          '[TrackingDatabaseManager] ❗ Too many missing columns. Dropping and recreating table.'
         );
         await this.recreateTable();
       } else {
@@ -123,6 +126,7 @@ class TrackingDatabaseManager {
     }
   }
 
+  /** ✅ Create a fresh tracking table */
   private createTable(): Promise<void> {
     return new Promise((resolve, reject) => {
       if (!this.db) {
@@ -133,10 +137,6 @@ class TrackingDatabaseManager {
       const columnDefinitions = Object.entries(this.REQUIRED_COLUMNS)
         .map(([name, type]) => `${name} ${type}`)
         .join(', ');
-
-      console.log(
-        '[TrackingDatabaseManager] 🔄 Creating new table with full schema...'
-      );
 
       this.db.run(
         `CREATE TABLE tracked_aircraft (${columnDefinitions});`,
@@ -158,25 +158,25 @@ class TrackingDatabaseManager {
     });
   }
 
+  /** ✅ Drop & recreate table if schema is incorrect */
   private async recreateTable(): Promise<void> {
-    if (!this.db) {
+    if (!this.db)
       throw new Error(
         '[TrackingDatabaseManager] ❌ Database is not initialized.'
       );
-    }
 
     console.log(
       '[TrackingDatabaseManager] 🔄 Dropping and recreating table...'
     );
 
     await new Promise((resolve, reject) => {
-      this.db!.run('DROP TABLE IF EXISTS tracked_aircraft;', (dropErr) => {
-        if (dropErr) {
+      this.db!.run('DROP TABLE IF EXISTS tracked_aircraft;', (err) => {
+        if (err) {
           console.error(
             '[TrackingDatabaseManager] ❌ Failed to drop table:',
-            dropErr
+            err
           );
-          reject(dropErr);
+          reject(err);
         } else {
           resolve(null);
         }
@@ -186,18 +186,15 @@ class TrackingDatabaseManager {
     await this.createTable();
   }
 
+  /** ✅ Dynamically add missing columns */
   private async addMissingColumns(missingColumns: string[]): Promise<void> {
-    if (!this.db) {
+    if (!this.db)
       throw new Error(
         '[TrackingDatabaseManager] ❌ Database is not initialized.'
       );
-    }
 
     for (const column of missingColumns) {
       const columnType = this.REQUIRED_COLUMNS[column];
-      console.log(
-        `[TrackingDatabaseManager] ➕ Adding missing column: ${column} (${columnType})`
-      );
 
       await new Promise((resolve, reject) => {
         this.db!.run(
@@ -219,10 +216,6 @@ class TrackingDatabaseManager {
         );
       });
     }
-
-    console.log(
-      '[TrackingDatabaseManager] ✅ All missing columns added successfully.'
-    );
   }
 
   public async executeQuery(sql: string, params: any[] = []): Promise<any> {
@@ -485,21 +478,25 @@ class TrackingDatabaseManager {
     });
   }
 
+  /** ✅ Close database safely */
   public stop(): void {
     if (this.db) {
       this.db.close((err) => {
         if (err) {
-          console.error('Error closing database:', err);
+          console.error(
+            '[TrackingDatabaseManager] ❌ Error closing database:',
+            err
+          );
         } else {
-          console.log('Database connection closed successfully.');
+          console.log('[TrackingDatabaseManager] ✅ Database closed.');
+          this.db = null; // ✅ Only nullify on successful close
         }
       });
-      this.db = null;
     }
   }
 }
 
-// Ensure instance is only created server-side
+// 🚀 Singleton instance, only created when needed
 const trackingDatabaseManager = TrackingDatabaseManager.getInstance();
 export default trackingDatabaseManager;
 export { TrackingDatabaseManager };

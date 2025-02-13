@@ -64,7 +64,9 @@ const MapWrapper: React.FC<MapWrapperProps> = ({
   >(initialAircraft.map(toExtendedAircraft));
 
   const [selectedType] = useState<string>('manufacturer');
-  const [selectedManufacturer, setSelectedManufacturer] = useState<string>('');
+  const [selectedManufacturer, setSelectedManufacturer] = useState<
+    string | null
+  >('');
   const [selectedModel, setSelectedModel] = useState<string>('');
   const [isMapReady, setIsMapReady] = useState(false);
   const [models, setModels] = useState<
@@ -107,11 +109,15 @@ const MapWrapper: React.FC<MapWrapperProps> = ({
 
   // Fix the function and ensure it has a closing bracket
   const handleManufacturerSelect = useCallback(
-    async (manufacturer: string) => {
+    async (manufacturer: string | null) => {
+      // ✅ Allow `null`
       if (manufacturer === selectedManufacturer) return; // Prevent duplicate calls
       try {
-        setSelectedManufacturer(manufacturer);
-        await clientTrackingService.startTracking(manufacturer);
+        setSelectedManufacturer(manufacturer); // ✅ Now correctly handles null
+        if (manufacturer) {
+          // Prevent API call if null
+          await clientTrackingService.startTracking(manufacturer);
+        }
       } catch (error) {
         console.error('Failed to fetch aircraft:', error);
         onError('Failed to fetch aircraft data');
@@ -148,19 +154,19 @@ const MapWrapper: React.FC<MapWrapperProps> = ({
     <div className="relative w-full h-screen">
       <div className="absolute top-0 left-0 right-0 z-10 max-w-sm ml-4">
         <UnifiedSelector
-          selectedManufacturer={selectedManufacturer}
+          selectedManufacturer={selectedManufacturer} // ✅ Now handles null
+          setSelectedManufacturer={setSelectedManufacturer} // ✅ Matches expected type
+          onManufacturerSelect={handleManufacturerSelect} // ✅ Matches expected type
           selectedModel={selectedModel}
-          setSelectedManufacturer={setSelectedManufacturer}
           setSelectedModel={setSelectedModel}
           modelCounts={modelCounts}
           totalActive={displayedAircraft.length}
           manufacturers={manufacturers}
           onAircraftUpdate={handleAircraftUpdate}
-          onManufacturerSelect={handleManufacturerSelect}
           onModelSelect={handleModelSelect}
           onReset={handleReset}
-          onModelsUpdate={handleModelsUpdate} // ✅ Now properly passed
-          onError={handleError} // ✅ Now properly passed
+          onModelsUpdate={handleModelsUpdate}
+          onError={handleError}
         />
       </div>
 
