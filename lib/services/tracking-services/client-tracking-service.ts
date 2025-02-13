@@ -63,13 +63,20 @@ export class ClientTrackingService {
     }
   }
 
-  private async pollAircraftData(): Promise<void> {
-    if (!this.currentManufacturer || !this.currentIcao24s.length) return;
+  public async pollAircraftData(): Promise<void> {
+    if (!this.currentManufacturer || !this.currentIcao24s.length) {
+      console.warn(
+        '[Tracking] ❌ No manufacturer or ICAO24s set. Skipping poll.'
+      );
+      return;
+    }
 
     try {
-      console.log(`[Tracking] Checking tracking database first...`);
+      console.log(
+        `[Tracking] Checking tracking database for ${this.currentManufacturer}...`
+      );
 
-      // Step 1: Check tracking database for existing aircraft
+      // Query tracking database first
       const trackingResponse = await fetch('/api/aircraft/tracking', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -84,100 +91,60 @@ export class ClientTrackingService {
         const data = await trackingResponse.json();
         if (data.success && data.aircraft?.length > 0) {
           console.log(
-            `[Tracking] ✅ Found ${data.aircraft.length} tracked aircraft.`
+            `[Tracking] ✅ Found ${data.aircraft.length} aircraft in tracking DB.`
           );
           this.notifySubscribers(data.aircraft);
-          return; // ✅ Stop here, no need to query OpenSky.
+          return; // 🚀 Skip OpenSky API if data is already available
         }
       }
 
       console.log(
-        `[Tracking] ❌ No active aircraft found in tracking DB. Querying OpenSky for fresh data...`
+        `[Tracking] ❌ No active aircraft in DB. Fetching fresh data from OpenSky...`
       );
 
-      // Step 2: Break ICAO24s into batches of 200
-      const CHUNK_SIZE = 200;
-      const icaoChunks: string[][] = [];
-      for (let i = 0; i < this.currentIcao24s.length; i += CHUNK_SIZE) {
-        icaoChunks.push(this.currentIcao24s.slice(i, i + CHUNK_SIZE));
+      // Fetch new data if tracking DB has none
+      const openSkyResponse = await fetch('/api/proxy/opensky', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          icao24s: this.currentIcao24s,
+          time: Math.floor(Date.now() / 1000),
+        }),
+      });
+
+      if (!openSkyResponse.ok) {
+        throw new Error(
+          `[Tracking] ❌ Failed to fetch OpenSky data: ${openSkyResponse.statusText}`
+        );
       }
 
-      console.log(
-        `[Tracking] 📡 Splitting ${this.currentIcao24s.length} ICAO24s into ${icaoChunks.length} batches`
-      );
-
-      let allAircraft: Aircraft[] = [];
-
-      // Step 3: Process each batch sequentially
-      for (let i = 0; i < icaoChunks.length; i++) {
-        const chunk = icaoChunks[i];
+      const openSkyData = await openSkyResponse.json();
+      if (openSkyData.success && openSkyData.data.states?.length) {
         console.log(
-          `[Tracking] 📦 Sending batch ${i + 1}/${icaoChunks.length} (${chunk.length} ICAO24s) to OpenSky`
+          `[Tracking] ✅ Received ${openSkyData.data.states.length} aircraft from OpenSky.`
         );
 
-        try {
-          const openSkyResponse = await fetch('/api/proxy/opensky', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              icao24s: chunk,
-              time: Math.floor(Date.now() / 1000),
-            }),
-          });
+        const aircraft = openSkyData.data.states.map(
+          (state: OpenSkyStateArray) =>
+            OpenSkyTransforms.toExtendedAircraft(
+              state,
+              this.currentManufacturer!
+            )
+        );
 
-          if (!openSkyResponse.ok) {
-            console.error(
-              `[Tracking] ❌ OpenSky request failed for batch ${i + 1}: ${openSkyResponse.statusText}`
-            );
-            continue; // Skip failed batch
-          }
-
-          const openSkyData = await openSkyResponse.json();
-          if (openSkyData.success && openSkyData.data.states?.length) {
-            console.log(
-              `[Tracking] ✅ Batch ${i + 1}: Received ${openSkyData.data.states.length} aircraft.`
-            );
-
-            const manufacturer = this.currentManufacturer ?? '';
-            const aircraftBatch = openSkyData.data.states.map(
-              (state: OpenSkyStateArray) =>
-                OpenSkyTransforms.toExtendedAircraft(state, manufacturer)
-            );
-
-            allAircraft = [...allAircraft, ...aircraftBatch];
-          } else {
-            console.log(
-              `[Tracking] ❌ No active aircraft found in batch ${i + 1}`
-            );
-          }
-
-          // Step 4: Add delay to avoid rate-limiting
-          if (i < icaoChunks.length - 1) {
-            await new Promise((resolve) => setTimeout(resolve, 1000));
-          }
-        } catch (error) {
-          console.error(
-            `[Tracking] ❌ Network error in batch ${i + 1}:`,
-            error
-          );
+        if (aircraft.length > 0) {
+          await this.updateTrackingDatabase(aircraft);
+          this.notifySubscribers(aircraft);
+        } else {
+          console.warn(`[Tracking] ❌ No active aircraft found.`);
+          this.notifySubscribers([]);
         }
-      }
-
-      // Step 5: Save results and notify subscribers
-      if (allAircraft.length > 0) {
-        console.log(
-          `[Tracking] ✅ Retrieved ${allAircraft.length} total aircraft from OpenSky.`
-        );
-        await this.updateTrackingDatabase(allAircraft);
-        this.notifySubscribers(allAircraft);
       } else {
-        console.log(
-          `[Tracking] ❌ No active aircraft found in OpenSky. Stopping tracking.`
-        );
+        console.warn(`[Tracking] ❌ OpenSky returned no aircraft.`);
         this.notifySubscribers([]);
       }
     } catch (error) {
-      console.error('[Tracking] ❌ Failed to poll aircraft data:', error);
+      console.error(`[Tracking] ❌ Error polling aircraft data:`, error);
     }
   }
 
@@ -280,6 +247,7 @@ export class ClientTrackingService {
   }
 
   private startPolling(): void {
+    console.log('[Tracking] pollAircraftData triggered');
     if (this.pollingInterval) return;
     this.pollingInterval = setInterval(() => this.pollAircraftData(), 30000); // Poll every 30 seconds
   }

@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Search, Plus, Minus } from 'lucide-react';
+import { Plus, Minus } from 'lucide-react';
 import ManufacturerSelector from './ManufacturerSelector';
 import NNumberSelector from './nNumberSelector';
 import ModelSelector from './ModelSelector';
@@ -54,8 +54,53 @@ export const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
     }));
   }, [modelCounts]);
 
-  const onManufacturerSelect = (manufacturer: string | null) => {
-    setSelectedManufacturer(manufacturer); // ✅ Now accepts both string and null
+  const onManufacturerSelect = async (manufacturer: string | null) => {
+    setSelectedManufacturer(manufacturer || ''); // ✅ Ensure valid string
+    setSelectedModel(''); // ✅ Reset model selection when changing manufacturer
+
+    if (manufacturer) {
+      try {
+        const response = await fetch(
+          `/api/aircraft/models?manufacturer=${manufacturer}`
+        );
+        if (!response.ok)
+          throw new Error(`Failed to fetch models: ${response.statusText}`);
+
+        const data = await response.json();
+        console.log('[Tracking] Raw API Response:', data); // Debugging API response
+
+        if (!data || !data.data) {
+          console.error('[Tracking] Invalid models response:', data);
+          setModels([]); // ✅ Prevents app hang
+          return;
+        }
+
+        // ✅ Properly extract models
+        const modelObjects: Model[] = data.data.map((m: any, index: number) => {
+          console.log(`[Tracking] Processing Model ${index}:`, m); // ✅ Log raw model data
+
+          // ✅ Ensure valid string format for model
+          const modelName =
+            typeof m === 'string' && m.trim() ? m.trim() : 'Unknown';
+
+          return {
+            model: modelName,
+            label: modelName, // ✅ Set label correctly
+          };
+        });
+
+        console.log('[Tracking] ✅ Final Processed Models:', modelObjects); // ✅ Log mapped models
+        setModels(modelObjects);
+
+        console.log('[Tracking] Processed Models:', modelObjects);
+        setModels(modelObjects); // ✅ Ensure proper `Model[]` type
+      } catch (error) {
+        console.error('[Tracking] Error fetching models:', error);
+        setModels([]); // ✅ Prevents app hang
+      }
+    } else {
+      setModels([]);
+    }
   };
 
   async function fetchAircraftByNNumber(
@@ -148,8 +193,7 @@ export const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
                 <ModelSelector
                   selectedModel={selectedModel}
                   setSelectedModel={setSelectedModel}
-                  selectedManufacturer={selectedManufacturer}
-                  models={models}
+                  models={models} // ✅ Now correctly passing `Model[]`
                   totalActive={totalActive}
                   onModelUpdate={onModelSelect}
                 />
