@@ -7,9 +7,9 @@ import { Aircraft, SelectOption } from '@/types/base';
 import { Model } from '../selector/services/aircraftService';
 
 interface UnifiedSelectorProps {
-  selectedManufacturer: string;
+  selectedManufacturer: string | null; // ✅ Allow null values
+  setSelectedManufacturer: (manufacturer: string | null) => void; // ✅ Allow null
   selectedModel: string;
-  setSelectedManufacturer: (manufacturer: string) => void;
   setSelectedModel: (model: string) => void;
   modelCounts: Map<string, number>;
   totalActive: number;
@@ -37,12 +37,8 @@ export const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
   modelCounts,
   totalActive,
   manufacturers,
-  onAircraftUpdate,
-  onManufacturerSelect,
   onModelSelect,
   onReset,
-  onModelsUpdate, // ✅ Now included
-  onError, // ✅ Now included
 }) => {
   const [searchMode, setSearchMode] = useState<'manufacturer' | 'nNumber'>(
     'manufacturer'
@@ -57,6 +53,11 @@ export const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
       count,
     }));
   }, [modelCounts]);
+
+  const onManufacturerSelect = (manufacturer: string | null) => {
+    setSelectedManufacturer(manufacturer); // ✅ Now accepts both string and null
+  };
+
   async function fetchAircraftByNNumber(
     nNumber: string
   ): Promise<Aircraft | null> {
@@ -137,13 +138,10 @@ export const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
           {searchMode === 'manufacturer' ? (
             <>
               <ManufacturerSelector
-                onSelect={onManufacturerSelect} // ✅ Fix
+                manufacturers={manufacturers.map((m) => m.label)} // ✅ Convert SelectOption[] to string[]
                 selectedManufacturer={selectedManufacturer}
                 setSelectedManufacturer={setSelectedManufacturer}
-                manufacturers={manufacturers}
-                onAircraftUpdate={onAircraftUpdate} // ✅ Fix
-                onModelsUpdate={onModelsUpdate} // ✅ Fix
-                onError={onError} // ✅ Fix
+                onSelect={onManufacturerSelect}
               />
 
               {selectedManufacturer && models.length > 0 && (
