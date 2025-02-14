@@ -1,16 +1,16 @@
+// ManufacturerSelector.tsx
 import { useState, useEffect, useRef } from 'react';
 
 interface ManufacturerSelectorProps {
-  manufacturers: string[]; // ✅ Ensure it's a string array
+  manufacturers: string[];
   selectedManufacturer: string | null;
   setSelectedManufacturer: (manufacturer: string | null) => void;
-  onSelect: (manufacturer: string) => void;
+  onSelect: (manufacturer: string | null) => Promise<void>;
 }
 
 const ManufacturerSelector: React.FC<ManufacturerSelectorProps> = ({
   manufacturers,
   selectedManufacturer,
-  setSelectedManufacturer,
   onSelect,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -19,7 +19,6 @@ const ManufacturerSelector: React.FC<ManufacturerSelectorProps> = ({
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement | null>(null);
 
-  // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (
@@ -34,30 +33,21 @@ const ManufacturerSelector: React.FC<ManufacturerSelectorProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Update filtered manufacturers based on search input
   useEffect(() => {
-    if (!searchTerm) {
-      setFilteredManufacturers(manufacturers);
-    } else {
-      setFilteredManufacturers(
-        manufacturers.filter((manufacturer) =>
-          manufacturer.toLowerCase().includes(searchTerm.toLowerCase())
-        )
-      );
-    }
+    const filtered = manufacturers.filter((manufacturer) =>
+      manufacturer.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+    setFilteredManufacturers(filtered);
   }, [searchTerm, manufacturers]);
 
-  // Handle selection
   const handleSelect = (manufacturer: string) => {
-    setSelectedManufacturer(manufacturer);
-    setSearchTerm(manufacturer); // Show selected in input
-    setIsOpen(false); // Close dropdown
     onSelect(manufacturer);
+    setSearchTerm(manufacturer);
+    setIsOpen(false);
   };
 
-  // Reset the dropdown when the reset button is clicked
   const handleReset = () => {
-    setSelectedManufacturer(null);
+    onSelect(null);
     setSearchTerm('');
     setIsOpen(false);
   };
@@ -74,7 +64,7 @@ const ManufacturerSelector: React.FC<ManufacturerSelectorProps> = ({
       />
 
       {isOpen && (
-        <div className="absolute w-full bg-white border rounded-md shadow-lg mt-1 max-h-48 overflow-y-auto">
+        <div className="absolute w-full bg-white border rounded-md shadow-lg mt-1 max-h-48 overflow-y-auto z-50">
           {filteredManufacturers.length > 0 ? (
             filteredManufacturers.map((manufacturer) => (
               <div
@@ -93,8 +83,8 @@ const ManufacturerSelector: React.FC<ManufacturerSelectorProps> = ({
 
       {selectedManufacturer && (
         <button
-          className="mt-2 px-3 py-1 bg-red-500 text-white rounded-md hover:bg-red-600"
           onClick={handleReset}
+          className="mt-2 px-3 py-1 bg-red-500 text-white rounded-md hover:bg-red-600"
         >
           Reset
         </button>
