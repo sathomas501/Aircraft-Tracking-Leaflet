@@ -1,5 +1,4 @@
 import React, { useEffect } from 'react';
-import { ChevronDown } from 'lucide-react';
 
 interface Model {
   model: string;
@@ -11,7 +10,7 @@ interface Model {
 interface ModelSelectorProps {
   selectedModel: string;
   setSelectedModel: (model: string) => void;
-  models: { model: string; label: string }[]; // ✅ Ensure correct type
+  models: { model: string; label: string }[]; // ✅ Ensuring correct type
   totalActive: number;
   onModelUpdate: (model: string) => void;
 }
@@ -23,22 +22,45 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
   totalActive,
   onModelUpdate,
 }) => {
+  // 🔍 Debugging logs to verify component updates
+  useEffect(() => {
+    console.log(`[ModelSelector] Component mounted. Available models:`, models);
+  }, []);
+
+  useEffect(() => {
+    console.log(
+      `[ModelSelector] State updated - selectedModel:`,
+      selectedModel
+    );
+  }, [selectedModel]);
+
   return (
-    <div>
-      <label htmlFor="model-select">Model</label>
+    <div className="mt-2">
+      <label
+        htmlFor="model-select"
+        className="block text-gray-700 text-sm font-bold mb-2"
+      >
+        Model
+      </label>
       <select
         id="model-select"
+        className="w-full p-2 border rounded-md bg-white shadow-sm"
         value={selectedModel}
         onChange={(e) => {
           const selected = e.target.value;
+          console.log(`[ModelSelector] Model selected:`, selected);
+
           setSelectedModel(selected);
           onModelUpdate(selected);
         }}
       >
+        {/* Default Option */}
         <option value="">All Models ({totalActive} active)</option>
-        {models.map((m) => (
-          <option key={m.model} value={m.model}>
-            {m.label}
+
+        {/* List Models */}
+        {models.map((m, index) => (
+          <option key={index} value={m.model}>
+            {m.label} ({m.model})
           </option>
         ))}
       </select>

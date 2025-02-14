@@ -1,4 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
+import CacheManager from '@/lib/services/managers/cache-manager';
+
+const cache = new CacheManager<string[]>(5 * 60); // 5-minute ICAO24 cache
 
 export default async function handler(
   req: NextApiRequest,
@@ -12,16 +15,34 @@ export default async function handler(
       .json({ error: 'Method Not Allowed. Use GET instead.' });
   }
 
-  const { icao24List } = req.query;
+  let { icao24List, manufacturer } = req.query;
 
-  if (!icao24List) {
-    return res.status(400).json({ error: 'icao24List parameter is required' });
+  if (!icao24List && !manufacturer) {
+    return res.status(400).json({
+      error: 'Either icao24List or manufacturer parameter is required',
+    });
   }
 
-  // Ensure ICAO24 list is correctly formatted
-  const icao24String = Array.isArray(icao24List)
-    ? icao24List.join(',')
-    : icao24List;
+  let icao24String: string;
+
+  if (manufacturer) {
+    const cachedIcao24s = cache.get(manufacturer as string);
+
+    if (cachedIcao24s) {
+      console.log(
+        `[Aircraft Positions] ✅ Using cached ICAO24s for ${manufacturer}`
+      );
+      icao24String = cachedIcao24s.join(',');
+    } else {
+      return res.status(400).json({
+        error: `ICAO24s for manufacturer ${manufacturer} not found in cache.`,
+      });
+    }
+  } else {
+    icao24String = Array.isArray(icao24List)
+      ? icao24List.join(',')
+      : (icao24List as string);
+  }
 
   // Use the proxy instead of direct OpenSky requests
   const proxyUrl = `http://localhost:3001/api/proxy/opensky?icao24=${icao24String}`;
