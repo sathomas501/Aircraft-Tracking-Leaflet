@@ -1,46 +1,73 @@
 // pages/api/aircraft/static-data.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { DatabaseManager } from '@/lib/db/databaseManager';
-import { handleApiError } from '@/lib/services/error-handler/error-handler';
+import { withErrorHandler } from '@/lib/middleware/error-handler';
+import { APIErrors } from '@/lib/services/error-handler/api-error';
+import {
+  errorHandler,
+  ErrorType,
+} from '@/lib/services/error-handler/error-handler';
+import databaseManager from '@/lib/db/databaseManager';
 import { Aircraft } from '@/types/base';
 
-const dbManager = DatabaseManager.getInstance();
-
-export default async function handler(
-  req: NextApiRequest,
-  res: NextApiResponse<Aircraft[] | { error: string }>
-) {
+async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
+    throw APIErrors.BadRequest('Method not allowed');
+  }
+
+  const { icao24s } = req.body;
+
+  if (!Array.isArray(icao24s) || icao24s.length === 0) {
+    throw APIErrors.BadRequest('Invalid ICAO24 list');
   }
 
   try {
-    const { icao24s } = req.body;
+    // Ensure database is initialized
+    await databaseManager.initializeDatabase();
 
-    if (!Array.isArray(icao24s) || icao24s.length === 0) {
-      return res.status(400).json({ error: 'Valid ICAO24 list required' });
-    }
+    // Build query with proper parameter placeholders
+    const placeholders = icao24s.map(() => '?').join(',');
+    const query = `
+      SELECT 
+        icao24,
+        "N-NUMBER",
+        manufacturer,
+        model,
+        NAME,
+        CITY,
+        STATE,
+        TYPE_AIRCRAFT,
+        OWNER_TYPE
+      FROM aircraft
+      WHERE icao24 IN (${placeholders})
+    `;
 
-    await dbManager.initializeDatabase();
+    console.log(
+      `[Static Data API] 🔍 Fetching data for ${icao24s.length} aircraft`
+    );
 
-    const staticData = await dbManager.executeQuery<Aircraft>(
-      `SELECT 
-                icao24,
-                "N-NUMBER",
-                manufacturer,
-                model,
-                NAME,
-                CITY,
-                STATE,
-                TYPE_AIRCRAFT,
-                OWNER_TYPE
-            FROM aircraft 
-            WHERE icao24 IN (${icao24s.map(() => '?').join(',')})`,
+    const aircraft = await databaseManager.executeQuery<Aircraft>(
+      query,
       icao24s
     );
 
-    return res.status(200).json(staticData);
+    console.log(`[Static Data API] ✅ Found ${aircraft.length} aircraft`);
+
+    return res.status(200).json({
+      success: true,
+      aircraft,
+    });
   } catch (error) {
-    return handleApiError(res, error);
+    console.error('[Static Data API] ❌ Error:', error);
+
+    errorHandler.handleError(
+      ErrorType.OPENSKY_SERVICE,
+      error instanceof Error
+        ? error
+        : new Error('Failed to fetch static aircraft data')
+    );
+
+    throw error;
   }
 }
+
+export default withErrorHandler(handler);

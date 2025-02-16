@@ -1,28 +1,49 @@
 import { useState, useEffect, useCallback } from 'react';
-import { fetchModels, Model } from '../selector/services/aircraftService';
+import { useFetchManufacturers } from './useFetchManufactures'; // ✅ Import manufacturer tracking
 
-export const useFetchModels = (manufacturer: string) => {
+interface Model {
+  model: string;
+  activeCount: number;
+  isActive: boolean;
+}
+
+export const useFetchModels = () => {
+  const { manufacturers, loading: manufacturersLoading } =
+    useFetchManufacturers();
+  const [selectedManufacturer, setSelectedManufacturer] = useState<
+    string | null
+  >(null);
   const [models, setModels] = useState<Model[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<Error | null>(null);
   const [prevManufacturer, setPrevManufacturer] = useState<string | null>(null);
 
-  // Function to fetch models
+  // Function to fetch models from API
   const loadModels = useCallback(async () => {
-    if (!manufacturer || manufacturer === prevManufacturer) return;
+    if (!selectedManufacturer || selectedManufacturer === prevManufacturer)
+      return;
 
     setLoading(true);
-    setError(null); // Reset error state
-    setPrevManufacturer(manufacturer); // Store selected manufacturer
+    setError(null);
+    setPrevManufacturer(selectedManufacturer);
 
     try {
-      console.log(`📡 Fetching models for manufacturer: ${manufacturer}`);
-      const fetchedModels = await fetchModels(manufacturer);
+      console.log(
+        `📡 Fetching models for manufacturer: ${selectedManufacturer}`
+      );
 
-      if (Array.isArray(fetchedModels)) {
-        setModels(fetchedModels);
+      const response = await fetch(
+        `/api/models?manufacturer=${encodeURIComponent(selectedManufacturer)}`
+      );
+      if (!response.ok) {
+        throw new Error(`Failed to fetch models: ${response.statusText}`);
+      }
+
+      const result = await response.json();
+      if (result.success && Array.isArray(result.data)) {
+        setModels(result.data);
       } else {
-        console.warn(`⚠️ Unexpected API response for models:`, fetchedModels);
+        console.warn(`⚠️ Unexpected API response:`, result);
         setModels([]);
       }
     } catch (err) {
@@ -33,12 +54,20 @@ export const useFetchModels = (manufacturer: string) => {
     } finally {
       setLoading(false);
     }
-  }, [manufacturer, prevManufacturer]);
+  }, [selectedManufacturer, prevManufacturer]);
 
   // Fetch models when manufacturer changes
   useEffect(() => {
     loadModels();
   }, [loadModels]);
 
-  return { models, loading, error, reload: loadModels };
+  return {
+    manufacturers,
+    selectedManufacturer,
+    setSelectedManufacturer, // ✅ Allows UI to update selected manufacturer
+    models,
+    loading: loading || manufacturersLoading, // ✅ Merges loading states
+    error,
+    reload: loadModels,
+  };
 };

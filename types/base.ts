@@ -100,6 +100,7 @@ export interface Aircraft {
   manufacturerIcao?: string;
   operatorIcao?: string;
   active?: boolean;
+  marker?: string;
 }
 
 /**

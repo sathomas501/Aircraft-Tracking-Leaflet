@@ -1,4 +1,3 @@
-// UnifiedSelector.tsx
 import React, { useState, useRef } from 'react';
 import { Plus, Minus } from 'lucide-react';
 import ManufacturerSelector from './ManufacturerSelector';
@@ -11,6 +10,12 @@ interface ActiveModel {
   activeCount: number;
 }
 
+interface Model {
+  model: string;
+  label: string;
+  activeCount?: number;
+}
+
 interface UnifiedSelectorProps {
   selectedManufacturer: string | null;
   setSelectedManufacturer: (manufacturer: string | null) => void;
@@ -19,7 +24,7 @@ interface UnifiedSelectorProps {
   modelCounts: Map<string, number>;
   totalActive: number;
   manufacturers: SelectOption[];
-  onAircraftUpdate: (aircraft: Aircraft[]) => void;
+  onAircraftUpdate: (aircraft: Aircraft[]) => void; // ✅ Add missing prop
   onManufacturerSelect: (manufacturer: string) => Promise<void>;
   onModelSelect: (model: string) => void;
   onReset: () => void;
@@ -40,6 +45,7 @@ export const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
   onModelsUpdate,
   onError,
   onManufacturerSelect,
+  onAircraftUpdate, // ✅ Fix: Include this prop
 }) => {
   const [searchMode, setSearchMode] = useState<'manufacturer' | 'nNumber'>(
     'manufacturer'
@@ -49,56 +55,52 @@ export const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
   const [models, setModels] = useState<ActiveModel[]>([]);
   const [isLoadingModels, setIsLoadingModels] = useState(false);
 
-  const pollForActiveModels = async (
-    manufacturer: string,
-    maxAttempts = 3
-  ): Promise<boolean> => {
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
-      try {
-        console.log(
-          `[Polling] Attempt ${attempt + 1} of ${maxAttempts} for ${manufacturer}`
-        );
+  const pollForActiveModels = async (manufacturer: string) => {
+    setIsLoadingModels(true);
 
-        const response = await fetch(
-          `/api/aircraft/models?manufacturer=${manufacturer}`
-        );
-        if (!response.ok) {
-          throw new Error('Failed to fetch active models');
-        }
+    try {
+      console.log(
+        `[Polling] Fetching models for manufacturer: ${manufacturer}`
+      );
+      const response = await fetch(
+        `/api/aircraft/models?manufacturer=${manufacturer}`
+      );
 
-        const data = await response.json();
-        console.log('[Polling] Active models response:', data);
-
-        if (data.success && Array.isArray(data.data) && data.data.length > 0) {
-          const activeModels: ActiveModel[] = data.data.map(
-            (model: { model: string; activeCount: number }) => ({
-              model: model.model,
-              label: `${model.model} (${model.activeCount} active)`,
-              activeCount: model.activeCount,
-            })
-          );
-
-          console.log('[Polling] Found active models:', activeModels);
-          setModels(activeModels);
-          onModelsUpdate(activeModels);
-          return true;
-        }
-
-        console.log('[Polling] Waiting for active aircraft data...');
-        await new Promise((resolve) => setTimeout(resolve, 2000));
-      } catch (error) {
-        console.error('[Polling] Error checking for active models:', error);
-        await new Promise((resolve) => setTimeout(resolve, 2000));
+      if (!response.ok) {
+        throw new Error('Failed to fetch active models');
       }
-    }
 
-    console.log('[Polling] Max attempts reached without finding active models');
-    return false;
+      const data = await response.json();
+      console.log('[Polling] Active models response:', data);
+
+      if (data.success && Array.isArray(data.data) && data.data.length > 0) {
+        const activeModels: ActiveModel[] = data.data.map(
+          (model: { model: string; activeCount?: number }) => ({
+            model: model.model,
+            label: `${model.model} (${model.activeCount ?? 0} active)`, // ✅ Ensure `activeCount` is always a number
+            activeCount: model.activeCount ?? 0,
+          })
+        );
+
+        console.log('[Polling] Found active models:', activeModels);
+        setModels(activeModels);
+        onModelsUpdate(activeModels);
+      } else {
+        console.log('[Polling] No active aircraft found.');
+        onError('No active aircraft found for this manufacturer');
+      }
+    } catch (error) {
+      console.error('[Polling] Error:', error);
+      onError('Failed to fetch models.');
+    } finally {
+      setIsLoadingModels(false);
+    }
   };
 
   const handleManufacturerSelect = async (manufacturer: string | null) => {
     try {
       if (!manufacturer) {
+        console.log('[UnifiedSelector] 🔄 Resetting manufacturer selection');
         setSelectedManufacturer(null);
         setSelectedModel('');
         setModels([]);
@@ -107,20 +109,22 @@ export const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
         return;
       }
 
+      console.log(
+        '[UnifiedSelector] 🔍 Processing manufacturer selection:',
+        manufacturer
+      );
+      setSelectedManufacturer(manufacturer);
       setIsLoadingModels(true);
       setModels([]);
       setSelectedModel('');
 
-      console.log('[Manufacturer] Starting tracking for:', manufacturer);
+      console.log('[UnifiedSelector] 📡 Calling onManufacturerSelect');
       await onManufacturerSelect(manufacturer);
 
-      const success = await pollForActiveModels(manufacturer);
-      if (!success) {
-        console.log('[Manufacturer] No active models found after polling');
-        onError('No active aircraft found for this manufacturer');
-      }
+      console.log('[UnifiedSelector] 📡 Polling for active models');
+      await pollForActiveModels(manufacturer);
     } catch (error) {
-      console.error('[Manufacturer] Error:', error);
+      console.error('[UnifiedSelector] ❌ Error processing selection:', error);
       onError('Failed to process manufacturer selection');
       setSelectedManufacturer(null);
       setSelectedModel('');
@@ -130,7 +134,16 @@ export const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
     }
   };
 
-  // UnifiedSelector.tsx
+  const handleModelsUpdate = (models: Model[]) => {
+    const convertedModels: ActiveModel[] = models.map((m) => ({
+      model: m.model,
+      label: m.label,
+      activeCount: m.activeCount ?? 0, // ✅ Ensure `activeCount` is always a number
+    }));
+
+    onModelsUpdate(convertedModels); // ✅ Ensure correct type
+  };
+
   const fetchAircraftByNNumber = async (
     nNumber: string
   ): Promise<Aircraft | null> => {
@@ -145,7 +158,7 @@ export const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
 
       if (!response.ok) {
         if (response.status === 404) {
-          console.log(`[N-Number] Aircraft not found for N-Number: ${nNumber}`);
+          console.log(`[N-Number] Aircraft not found for: ${nNumber}`);
           return null;
         }
         throw new Error('Failed to fetch aircraft');
@@ -153,56 +166,29 @@ export const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
 
       const data = await response.json();
       if (data.positions && data.positions.length > 0) {
-        const aircraftData = data.positions[0];
-        console.log(`[N-Number] Found aircraft:`, aircraftData);
-
-        return {
-          icao24: aircraftData.icao24 || '',
-          'N-NUMBER': aircraftData.n_number || '',
-          manufacturer: aircraftData.manufacturer || '',
-          model: aircraftData.model || '',
-          operator: aircraftData.operator || '',
-          latitude: 0,
-          longitude: 0,
-          altitude: 0,
-          heading: 0,
-          velocity: 0,
-          on_ground: false,
-          last_contact: Math.floor(Date.now() / 1000),
-          lastSeen: Date.now(),
-          NAME: aircraftData.name || '',
-          CITY: aircraftData.city || '',
-          STATE: aircraftData.state || '',
-          OWNER_TYPE: aircraftData.owner_type || '',
-          TYPE_AIRCRAFT: aircraftData.type_aircraft || '',
-          isTracked: false,
-        };
+        return data.positions[0];
       }
+
       return null;
     } catch (error) {
-      console.error('[N-Number] Error fetching aircraft:', error);
+      console.error('[N-Number] Error:', error);
       onError('Failed to fetch aircraft by N-Number');
       return null;
     }
   };
-
-  const totalActiveCount = models.reduce((sum, m) => sum + m.activeCount, 0);
 
   return (
     <>
       {!isMinimized ? (
         <div className="bg-white rounded-lg shadow-lg p-4 w-[320px] absolute top-4 left-4 z-[3000]">
           <div className="flex justify-between items-center mb-2">
-            <div className="flex items-center">
-              <button
-                onClick={() => setIsMinimized(true)}
-                className="p-1 bg-gray-200 rounded-md mr-2 hover:bg-gray-300"
-                aria-label="Minimize"
-              >
-                <Minus size={16} />
-              </button>
-              <h2 className="text-gray-700 text-lg">Select Aircraft</h2>
-            </div>
+            <button
+              onClick={() => setIsMinimized(true)}
+              className="p-1 bg-gray-200 rounded-md mr-2 hover:bg-gray-300"
+            >
+              <Minus size={16} />
+            </button>
+            <h2 className="text-gray-700 text-lg">Select Aircraft</h2>
             <button
               onClick={onReset}
               className="px-3 py-1 bg-blue-500 text-white rounded-md hover:bg-blue-600"
@@ -214,21 +200,13 @@ export const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
           <div className="flex space-x-2 mb-4">
             <button
               onClick={() => setSearchMode('manufacturer')}
-              className={`flex-1 py-2 px-4 rounded-md ${
-                searchMode === 'manufacturer'
-                  ? 'bg-blue-500 text-white'
-                  : 'bg-gray-100 text-gray-700'
-              }`}
+              className={`flex-1 py-2 px-4 rounded-md ${searchMode === 'manufacturer' ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-700'}`}
             >
               By Manufacturer
             </button>
             <button
               onClick={() => setSearchMode('nNumber')}
-              className={`flex-1 py-2 px-4 rounded-md ${
-                searchMode === 'nNumber'
-                  ? 'bg-blue-500 text-white'
-                  : 'bg-gray-100 text-gray-700'
-              }`}
+              className={`flex-1 py-2 px-4 rounded-md ${searchMode === 'nNumber' ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-700'}`}
             >
               By N-Number
             </button>
@@ -237,10 +215,13 @@ export const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
           {searchMode === 'manufacturer' ? (
             <>
               <ManufacturerSelector
-                manufacturers={manufacturers.map((m) => m.label)}
+                manufacturers={manufacturers}
                 selectedManufacturer={selectedManufacturer}
                 setSelectedManufacturer={setSelectedManufacturer}
                 onSelect={handleManufacturerSelect}
+                onAircraftUpdate={onAircraftUpdate} // ✅ Fix: Pass this prop
+                onModelsUpdate={handleModelsUpdate} // ✅ Use correctly typed function
+                onError={onError}
               />
 
               {selectedManufacturer && (
@@ -260,21 +241,11 @@ export const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
                       id="model-select"
                       className="w-full p-2 border rounded-md bg-white shadow-sm"
                       value={selectedModel}
-                      onChange={(e) => {
-                        const selected = e.target.value;
-                        console.log(
-                          `[ModelSelector] Model selected:`,
-                          selected
-                        );
-                        setSelectedModel(selected);
-                        onModelSelect(selected);
-                      }}
+                      onChange={(e) => onModelSelect(e.target.value)}
                     >
-                      <option value="">
-                        All Models ({totalActiveCount} active)
-                      </option>
-                      {models.map((m, index) => (
-                        <option key={`${m.model}-${index}`} value={m.model}>
+                      <option value="">All Models</option>
+                      {models.map((m) => (
+                        <option key={m.model} value={m.model}>
                           {m.label}
                         </option>
                       ))}
@@ -299,7 +270,6 @@ export const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
         <button
           onClick={() => setIsMinimized(false)}
           className="absolute top-4 left-4 z-[3000] p-2 bg-white rounded-md shadow-lg hover:bg-gray-200"
-          aria-label="Expand"
         >
           <Plus size={16} />
         </button>
