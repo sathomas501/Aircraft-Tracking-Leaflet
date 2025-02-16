@@ -16,6 +16,7 @@ class BackendDatabaseManager {
     'tracking.db'
   );
   private isInitialized = false;
+  private initializingPromise: Promise<void> | null = null; // ✅ Prevents multiple inits
 
   private constructor() {
     if (typeof window !== 'undefined') {
@@ -31,40 +32,70 @@ class BackendDatabaseManager {
   }
 
   public async initialize(): Promise<void> {
-    if (this.isInitialized) return;
-
-    try {
-      console.log(
-        '[BackendDatabaseManager] 🔄 Initializing tracking database...'
-      );
-
-      // Initialize database connection
-      this.db = await this.connectToDatabase();
-
-      // Enable WAL mode for better concurrency
-      await this.executeQuery('PRAGMA journal_mode=WAL');
-      await this.executeQuery('PRAGMA foreign_keys=ON');
-
-      // Create tables if they don't exist
-      await this.ensureTablesExist();
-
-      this.isInitialized = true;
-      console.log(
-        '[BackendDatabaseManager] ✅ Tracking database initialized successfully'
-      );
-    } catch (error) {
-      console.error(
-        '[BackendDatabaseManager] ❌ Initialization failed:',
-        error
-      );
-      errorHandler.handleError(
-        ErrorType.CRITICAL,
-        error instanceof Error
-          ? error
-          : new Error('Database initialization failed')
-      );
-      throw error;
+    if (this.isInitialized) {
+      console.log('[BackendDatabaseManager] ✅ Database already initialized.');
+      return;
     }
+
+    // ✅ Prevent multiple inits by setting a lock
+    if (this.initializingPromise) {
+      console.log(
+        '[BackendDatabaseManager] 🔄 Waiting for existing initialization...'
+      );
+      await this.initializingPromise;
+      return;
+    }
+
+    this.initializingPromise = (async () => {
+      try {
+        console.log(
+          '[BackendDatabaseManager] 🔄 Initializing tracking database...'
+        );
+
+        this.db = await this.connectToDatabase();
+
+        if (!this.db) {
+          throw new Error(
+            '[BackendDatabaseManager] ❌ Database connection failed.'
+          );
+        }
+
+        // Enable WAL mode for better concurrency
+        await this.executeQuery('PRAGMA journal_mode=WAL');
+        await this.executeQuery('PRAGMA foreign_keys=ON');
+
+        // Create tables if they don't exist
+        await this.ensureTablesExist();
+
+        console.log(
+          '[BackendDatabaseManager] ✅ Tracking database initialized successfully.'
+        );
+
+        // ✅ Set `isInitialized = true` ONLY after full success
+        this.isInitialized = true;
+      } catch (error: unknown) {
+        const err = error as Error;
+        console.error(
+          '[BackendDatabaseManager] ❌ Initialization failed:',
+          err.message
+        );
+
+        // ✅ Reset only on fatal DB corruption issues
+        if (
+          err.message.includes('database disk image is malformed') ||
+          err.message.includes('unable to open database file')
+        ) {
+          this.isInitialized = false;
+          this.db = null;
+        }
+
+        throw err;
+      } finally {
+        this.initializingPromise = null; // ✅ Cleanup initialization lock
+      }
+    })();
+
+    return this.initializingPromise;
   }
 
   private async connectToDatabase(): Promise<Database> {
@@ -165,8 +196,12 @@ class BackendDatabaseManager {
   }
 
   async executeQuery<T = any>(sql: string, params: any[] = []): Promise<T> {
-    if (!this.db) {
-      throw new Error('Database not initialized');
+    if (!this.isInitialized) {
+      console.log(
+        '[BackendDatabaseManager] ⚠️ Database not initialized, skipping query:',
+        sql
+      );
+      throw new Error('Database is not initialized');
     }
 
     return new Promise((resolve, reject) => {
@@ -175,17 +210,28 @@ class BackendDatabaseManager {
         console.timeEnd(
           `[BackendDatabaseManager] ⏳ Query: ${sql.split('\n')[0]}`
         );
+
         if (err) {
           console.error('[BackendDatabaseManager] ❌ Query error:', err);
-          reject(err);
-        } else {
-          resolve(rows as T);
+
+          // ✅ Only reset `isInitialized` if the DB is truly corrupted
+          if (
+            err.message.includes('database disk image is malformed') ||
+            err.message.includes('unable to open database file')
+          ) {
+            this.isInitialized = false;
+            this.db = null;
+          }
+
+          return reject(err);
         }
+
+        resolve(rows as T);
       });
     });
   }
 
-  async close(): Promise<void> {
+  async close(shutdown: boolean = false): Promise<void> {
     if (this.db) {
       return new Promise((resolve, reject) => {
         this.db!.close((err) => {
@@ -198,7 +244,12 @@ class BackendDatabaseManager {
           } else {
             console.log('[BackendDatabaseManager] ✅ Database closed');
             this.db = null;
-            this.isInitialized = false;
+
+            // ✅ Only reset `isInitialized` if shutting down
+            if (shutdown) {
+              this.isInitialized = false;
+            }
+
             resolve();
           }
         });

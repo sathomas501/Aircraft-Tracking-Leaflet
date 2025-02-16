@@ -25,10 +25,9 @@ export default async function handler(
     const { method, query } = req;
 
     if (method !== 'GET') {
-      return res.status(405).json({
-        success: false,
-        message: 'Method not allowed',
-      });
+      return res
+        .status(405)
+        .json({ success: false, message: 'Method not allowed' });
     }
 
     const manufacturer = query.manufacturer as string;
@@ -47,7 +46,7 @@ export default async function handler(
       databaseManager.initializeDatabase(),
     ]);
 
-    // Fetch models from static database
+    // ✅ Step 1: Fetch models from the static database (`static.db`)
     const staticModelsQuery = `
       SELECT DISTINCT model FROM aircraft
       WHERE manufacturer = ?
@@ -59,65 +58,76 @@ export default async function handler(
       [manufacturer]
     );
 
-    // Ensure the result is a flat array
     const staticModels: StaticModel[] = Array.isArray(staticModelsResult)
       ? staticModelsResult
           .flat()
-          .filter(
-            (item) =>
-              item &&
-              typeof item === 'object' &&
-              'model' in item &&
-              typeof item.model === 'string'
-          )
+          .filter((item) => item && typeof item.model === 'string')
       : [];
 
     console.log(`[API] Found ${staticModels.length} models in static DB`);
 
-    // Fetch active aircraft models from tracking DB
-    const activeModelsQuery = `
-      SELECT 
-        model, 
-        COUNT(icao24) as activeCount
-      FROM active_tracking
-      WHERE manufacturer = ? AND model IS NOT NULL
-      GROUP BY model
-      HAVING model != ''
-      ORDER BY model;
-    `;
+    // ✅ Step 2: Check if any active aircraft exist before querying `tracking.db`
+    const activeAircraftQuery = `SELECT COUNT(*) as count FROM active_tracking WHERE manufacturer = ?`;
+    const activeAircraftResult = await trackingManager.executeQuery<
+      { count: number }[]
+    >(activeAircraftQuery, [manufacturer]);
 
-    let activeModelsResult = await trackingManager.executeQuery<ActiveModel[]>(
-      activeModelsQuery,
-      [manufacturer]
-    );
+    const activeCount =
+      activeAircraftResult.length > 0 ? activeAircraftResult[0].count : 0;
 
-    // Ensure active models are correctly typed
-    const activeModels: ActiveModel[] = Array.isArray(activeModelsResult)
-      ? activeModelsResult
-          .flat()
-          .filter(
-            (item) =>
-              item &&
-              typeof item === 'object' &&
-              'model' in item &&
-              typeof item.model === 'string' &&
-              'activeCount' in item &&
-              typeof item.activeCount === 'number'
-          )
-      : [];
+    console.log(`[API] Active aircraft count: ${activeCount}`);
 
-    console.log(`[API] Found ${activeModels.length} active models`);
-
-    // Merge static and active model data
-    const activeModelMap = new Map<string, number>(
-      activeModels.map((row) => [row.model, row.activeCount])
-    );
-
-    const modelsWithCounts: ModelWithCounts[] = staticModels.map((row) => ({
+    let modelsWithCounts = staticModels.map((row) => ({
       model: row.model,
-      activeCount: activeModelMap.get(row.model) || 0,
-      isActive: (activeModelMap.get(row.model) || 0) > 0,
+      activeCount: 0, // Default to 0
+      isActive: false,
     }));
+
+    // ✅ Step 3: Only query `tracking.db` for active models if active aircraft exist
+    if (activeCount > 0) {
+      console.log(`[API] Fetching active models from tracking DB...`);
+
+      const activeModelsQuery = `
+        SELECT model, COUNT(icao24) as activeCount
+        FROM active_tracking
+        WHERE manufacturer = ? AND model IS NOT NULL
+        GROUP BY model
+        HAVING model != ''
+        ORDER BY model;
+      `;
+
+      let activeModelsResult = await trackingManager.executeQuery<
+        ActiveModel[]
+      >(activeModelsQuery, [manufacturer]);
+
+      const activeModels: ActiveModel[] = Array.isArray(activeModelsResult)
+        ? activeModelsResult
+            .flat()
+            .filter(
+              (item) =>
+                item &&
+                typeof item.model === 'string' &&
+                typeof item.activeCount === 'number'
+            )
+        : [];
+
+      console.log(`[API] Found ${activeModels.length} active models`);
+
+      // ✅ Merge static models with active aircraft counts
+      const activeModelMap = new Map<string, number>(
+        activeModels.map((row) => [row.model, row.activeCount])
+      );
+
+      modelsWithCounts = modelsWithCounts.map((model) => ({
+        model: model.model,
+        activeCount: activeModelMap.get(model.model) || 0,
+        isActive: (activeModelMap.get(model.model) || 0) > 0,
+      }));
+    } else {
+      console.log(
+        `[API] No active aircraft found. Skipping tracking DB query.`
+      );
+    }
 
     return res.status(200).json({
       success: true,
@@ -125,7 +135,7 @@ export default async function handler(
       data: modelsWithCounts,
     });
   } catch (error) {
-    console.error('[API] Internal Server Error:', error);
+    console.error('[API] Internal Server Error:', (error as Error).message);
     return res.status(500).json({
       success: false,
       message: 'Internal server error',
