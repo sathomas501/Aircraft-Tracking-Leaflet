@@ -10,7 +10,7 @@ interface Model {
 interface ModelSelectorProps {
   selectedModel: string;
   setSelectedModel: (model: string) => void;
-  models: { model: string; label: string }[]; // ✅ Ensuring correct type
+  models: Model[];
   totalActive: number;
   onModelUpdate: (model: string) => void;
 }

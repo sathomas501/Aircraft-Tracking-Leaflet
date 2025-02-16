@@ -1,14 +1,22 @@
-// pages/api/aircraft/models.ts
 import { NextApiRequest, NextApiResponse } from 'next';
 import databaseManager from '../../../lib/db/databaseManager';
-import trackingDatabaseManager from '../../../lib/db/trackingDatabaseManager';
+import BackendDatabaseManager from '../../../lib/db/backendDatabaseManager';
+
+// Types for database results
+interface StaticModel {
+  model: string;
+}
 
 interface ActiveModel {
   model: string;
   activeCount: number;
 }
 
-// pages/api/aircraft/models.ts
+interface ModelWithCounts extends StaticModel {
+  activeCount: number;
+  isActive: boolean;
+}
+
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse
@@ -17,9 +25,10 @@ export default async function handler(
     const { method, query } = req;
 
     if (method !== 'GET') {
-      return res
-        .status(405)
-        .json({ success: false, message: 'Method not allowed' });
+      return res.status(405).json({
+        success: false,
+        message: 'Method not allowed',
+      });
     }
 
     const manufacturer = query.manufacturer as string;
@@ -30,59 +39,97 @@ export default async function handler(
       });
     }
 
-    console.log(
-      `[API] Fetching active models for manufacturer: ${manufacturer}`
+    console.log(`[API] Fetching models for manufacturer: ${manufacturer}`);
+
+    // Initialize database managers
+    const [trackingManager] = await Promise.all([
+      BackendDatabaseManager.getInstance(),
+      databaseManager.initializeDatabase(),
+    ]);
+
+    // Fetch models from static database
+    const staticModelsQuery = `
+      SELECT DISTINCT model FROM aircraft
+      WHERE manufacturer = ?
+      ORDER BY model;
+    `;
+
+    let staticModelsResult = await databaseManager.executeQuery<StaticModel[]>(
+      staticModelsQuery,
+      [manufacturer]
     );
 
-    await trackingDatabaseManager.initialize();
+    // Ensure the result is a flat array
+    const staticModels: StaticModel[] = Array.isArray(staticModelsResult)
+      ? staticModelsResult
+          .flat()
+          .filter(
+            (item) =>
+              item &&
+              typeof item === 'object' &&
+              'model' in item &&
+              typeof item.model === 'string'
+          )
+      : [];
 
-    // Query only from tracked_aircraft table
+    console.log(`[API] Found ${staticModels.length} models in static DB`);
+
+    // Fetch active aircraft models from tracking DB
     const activeModelsQuery = `
-  SELECT a.model, COUNT(a.icao24) as activeCount
-  FROM active_tracking a
-  WHERE a.manufacturer = ?
-  GROUP BY a.model
-  HAVING COUNT(a.icao24) > 0
-  ORDER BY activeCount DESC
-`;
+      SELECT 
+        model, 
+        COUNT(icao24) as activeCount
+      FROM active_tracking
+      WHERE manufacturer = ? AND model IS NOT NULL
+      GROUP BY model
+      HAVING model != ''
+      ORDER BY model;
+    `;
 
-    try {
-      console.time(`[API] Active Model Query Execution`);
+    let activeModelsResult = await trackingManager.executeQuery<ActiveModel[]>(
+      activeModelsQuery,
+      [manufacturer]
+    );
 
-      const activeModels = await trackingDatabaseManager.executeQuery(
-        activeModelsQuery,
-        []
-      );
+    // Ensure active models are correctly typed
+    const activeModels: ActiveModel[] = Array.isArray(activeModelsResult)
+      ? activeModelsResult
+          .flat()
+          .filter(
+            (item) =>
+              item &&
+              typeof item === 'object' &&
+              'model' in item &&
+              typeof item.model === 'string' &&
+              'activeCount' in item &&
+              typeof item.activeCount === 'number'
+          )
+      : [];
 
-      console.timeEnd(`[API] Active Model Query Execution`);
+    console.log(`[API] Found ${activeModels.length} active models`);
 
-      if (!activeModels.length) {
-        console.warn(
-          `[API] No active models found for manufacturer: ${manufacturer}`
-        );
-      } else {
-        console.log(`[API] Found ${activeModels.length} active models`);
-        console.log('[API] Active models:', activeModels);
-      }
+    // Merge static and active model data
+    const activeModelMap = new Map<string, number>(
+      activeModels.map((row) => [row.model, row.activeCount])
+    );
 
-      return res.status(200).json({
-        success: true,
-        message: `Found ${activeModels.length} active models for ${manufacturer}`,
-        data: activeModels,
-      });
-    } catch (error) {
-      console.error(`[API] Database error:`, error);
-      return res.status(500).json({
-        success: false,
-        message: 'Database query failed.',
-        error: error instanceof Error ? error.message : 'Unknown error',
-      });
-    }
+    const modelsWithCounts: ModelWithCounts[] = staticModels.map((row) => ({
+      model: row.model,
+      activeCount: activeModelMap.get(row.model) || 0,
+      isActive: (activeModelMap.get(row.model) || 0) > 0,
+    }));
+
+    return res.status(200).json({
+      success: true,
+      message: `Found ${modelsWithCounts.length} models for ${manufacturer}`,
+      data: modelsWithCounts,
+    });
   } catch (error) {
     console.error('[API] Internal Server Error:', error);
     return res.status(500).json({
       success: false,
       message: 'Internal server error',
+      error: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 }

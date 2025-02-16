@@ -1,162 +1,129 @@
-// services/icao-batch-service.ts
 import { API_CONFIG } from '@/config/api';
+import type { Aircraft, OpenSkyStateArray } from '@/types/base';
+import { OpenSkyTransforms } from '@/utils/aircraft-transform1';
+import { PollingRateLimiter } from '../services/rate-limiter';
+import { RATE_LIMITS } from '@/config/rate-limits';
 
 interface IcaoBatchResponse {
   success: boolean;
   data?: {
     states: any[];
     timestamp: number;
-    meta: {
-      total: number;
-      requestedIcaos: number;
-    };
+    meta: { total: number; requestedIcaos: number };
   };
   error?: string;
 }
 
 export class IcaoBatchService {
-  private static readonly BATCH_SIZE = 200;
+  private static readonly DEFAULT_BATCH_SIZE = 200; // Default batch size
   private readonly baseUrl: string;
+  private readonly rateLimiter: PollingRateLimiter;
 
   constructor() {
     this.baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+
+    this.rateLimiter = new PollingRateLimiter({
+      requestsPerMinute: RATE_LIMITS.AUTHENTICATED.REQUESTS_PER_10_MIN / 10,
+      requestsPerDay: RATE_LIMITS.AUTHENTICATED.REQUESTS_PER_DAY,
+      maxWaitTime: RATE_LIMITS.AUTHENTICATED.MAX_WAIT_TIME,
+      minPollingInterval: RATE_LIMITS.AUTHENTICATED.MIN_INTERVAL,
+      maxPollingInterval: RATE_LIMITS.AUTHENTICATED.MAX_CONCURRENT,
+      maxBatchSize: RATE_LIMITS.AUTHENTICATED.BATCH_SIZE,
+      retryLimit: API_CONFIG.API.MAX_RETRY_LIMIT,
+      requireAuthentication: true,
+      maxConcurrentRequests: 5,
+    });
   }
 
   private validateIcao24(icao: string): boolean {
-    return /^[0-9a-f]{6}$/.test(icao.toLowerCase().trim());
+    return /^[0-9a-f]{6}$/i.test(icao.trim());
   }
 
   private formatIcaos(icaos: string[]): string[] {
     return icaos
-      .map((code) => code.toLowerCase().trim())
+      .map((code) => code.trim().toLowerCase())
       .filter(this.validateIcao24);
   }
 
   private async fetchBatch(icaoBatch: string[]): Promise<IcaoBatchResponse> {
-    try {
-      const response = await fetch(`${this.baseUrl}/api/proxy/opensky`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ icao24s: icaoBatch }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(
-          errorData.error || `HTTP error! status: ${response.status}`
-        );
-      }
-
-      const data = await response.json();
-      return data;
-    } catch (error) {
-      console.error(`[IcaoBatchService] Batch fetch error:`, error);
-      throw error;
-    }
-  }
-
-  async processBatches(icao24List: string[]): Promise<IcaoBatchResponse[]> {
-    console.log(
-      `[IcaoBatchService] Processing ${icao24List.length} ICAO codes`
-    );
-
-    // Format and validate all ICAOs first
-    const validIcaos = this.formatIcaos(icao24List);
-    console.log(`[IcaoBatchService] Valid ICAO codes: ${validIcaos.length}`);
-
-    const batches: string[][] = [];
-    for (let i = 0; i < validIcaos.length; i += IcaoBatchService.BATCH_SIZE) {
-      batches.push(validIcaos.slice(i, i + IcaoBatchService.BATCH_SIZE));
-    }
-
-    console.log(`[IcaoBatchService] Split into ${batches.length} batches`);
-
-    const results: IcaoBatchResponse[] = [];
-
-    for (let i = 0; i < batches.length; i++) {
-      const batch = batches[i];
-      console.log(
-        `[IcaoBatchService] Processing batch ${i + 1}/${batches.length} (${batch.length} codes)`
-      );
-
+    return this.rateLimiter.schedule(async () => {
       try {
-        const batchResult = await this.fetchBatch(batch);
-        results.push(batchResult);
+        const response = await fetch(`${this.baseUrl}/api/proxy/opensky`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ icao24s: icaoBatch }),
+        });
 
-        // Add delay between batches to prevent rate limiting
-        if (i < batches.length - 1) {
-          await new Promise((resolve) => setTimeout(resolve, 1000));
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
         }
-      } catch (error) {
-        console.error(
-          `[IcaoBatchService] Error processing batch ${i + 1}:`,
-          error
-        );
 
-        // Add failed batch info to results
-        results.push({
+        return await response.json();
+      } catch (error) {
+        console.error(`[IcaoBatchService] ❌ Batch fetch error:`, error);
+        return {
           success: false,
-          error:
-            error instanceof Error
-              ? error.message
-              : 'Unknown error processing batch',
+          error: 'Network error during fetch',
           data: {
             states: [],
             timestamp: Date.now(),
-            meta: {
-              total: 0,
-              requestedIcaos: batch.length,
-            },
+            meta: { total: 0, requestedIcaos: icaoBatch.length },
           },
-        });
+        };
+      }
+    });
+  }
 
-        // Add longer delay after error
-        await new Promise((resolve) => setTimeout(resolve, 2000));
+  async processBatches(
+    icao24List: string[],
+    manufacturer: string
+  ): Promise<Aircraft[]> {
+    console.log(
+      `[IcaoBatchService] 🔍 Processing ${icao24List.length} ICAO codes`
+    );
+
+    const validIcaos = this.formatIcaos(icao24List);
+    console.log(`[IcaoBatchService] ✅ Valid ICAO codes: ${validIcaos.length}`);
+
+    const batchSize =
+      this.rateLimiter.maxAllowedBatchSize ||
+      IcaoBatchService.DEFAULT_BATCH_SIZE;
+
+    const batches: string[][] = [];
+    for (let i = 0; i < validIcaos.length; i += batchSize) {
+      batches.push(validIcaos.slice(i, i + batchSize));
+    }
+
+    console.log(`[IcaoBatchService] 📦 Split into ${batches.length} batches`);
+
+    let allAircraft: Aircraft[] = [];
+
+    for (let i = 0; i < batches.length; i++) {
+      console.log(
+        `[IcaoBatchService] 🚀 Fetching batch ${i + 1} / ${batches.length}`
+      );
+
+      try {
+        const batchResponse = await this.fetchBatch(batches[i]);
+
+        if (batchResponse.success && batchResponse.data?.states.length) {
+          const aircraftBatch = batchResponse.data.states.map(
+            (state: OpenSkyStateArray) =>
+              OpenSkyTransforms.toExtendedAircraft(state, manufacturer)
+          );
+          allAircraft.push(...aircraftBatch);
+          console.log(
+            `[IcaoBatchService] ✅ Batch ${i + 1} processed ${aircraftBatch.length} aircraft`
+          );
+        }
+      } catch (error) {
+        console.error(
+          `[IcaoBatchService] ❌ Error processing batch ${i + 1}`,
+          error
+        );
       }
     }
 
-    return results;
-  }
-
-  // Helper method to combine all batch responses into a single response
-  combineResponses(responses: IcaoBatchResponse[]): IcaoBatchResponse {
-    const successfulResponses = responses.filter((r) => r.success && r.data);
-
-    if (successfulResponses.length === 0) {
-      return {
-        success: false,
-        error: 'No successful batch responses',
-        data: {
-          states: [],
-          timestamp: Date.now(),
-          meta: {
-            total: 0,
-            requestedIcaos: 0,
-          },
-        },
-      };
-    }
-
-    const combinedStates = successfulResponses.reduce((acc, curr) => {
-      return acc.concat(curr.data?.states || []);
-    }, [] as any[]);
-
-    const totalRequested = responses.reduce((acc, curr) => {
-      return acc + (curr.data?.meta.requestedIcaos || 0);
-    }, 0);
-
-    return {
-      success: true,
-      data: {
-        states: combinedStates,
-        timestamp: Date.now(),
-        meta: {
-          total: combinedStates.length,
-          requestedIcaos: totalRequested,
-        },
-      },
-    };
+    return allAircraft;
   }
 }

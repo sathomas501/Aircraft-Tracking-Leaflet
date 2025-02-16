@@ -1,11 +1,11 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import UnifiedSelector from '../../selector/UnifiedSelector';
-import type { Aircraft, SelectOption, OpenSkyStateArray } from '@/types/base';
+import type { Aircraft, SelectOption } from '@/types/base';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 import type { DynamicMapProps, ExtendedAircraft } from '../Map/DynamicMap';
 import { clientTrackingService } from '@/lib/services/tracking-services/client-tracking-service';
-import { toast } from 'react-toastify';
+import { AircraftTrackingService } from '@/lib/services/tracking-services/aircraft-tracking-service';
 import 'react-toastify/dist/ReactToastify.css';
 
 const DynamicMap = dynamic<DynamicMapProps>(() => import('../Map/DynamicMap'), {
@@ -19,38 +19,11 @@ interface MapWrapperProps {
   onError: (errorMessage: string) => void;
 }
 
-interface OpenSkyStateValidation {
-  isValid: boolean;
-  errors: string[];
-}
-
-// Helper function to transform Aircraft to ExtendedAircraft
 function toExtendedAircraft(aircraft: Aircraft): ExtendedAircraft {
   return {
     ...aircraft,
     type: aircraft.OWNER_TYPE === '5' ? 'Government' : 'Non-Government',
     isGovernment: aircraft.OWNER_TYPE === '5',
-  };
-}
-
-function validateOpenSkyState(
-  state: OpenSkyStateArray
-): OpenSkyStateValidation {
-  const errors: string[] = [];
-
-  if (!Array.isArray(state)) {
-    return { isValid: false, errors: ['Invalid state format'] };
-  }
-
-  if (!state[0]) errors.push('Missing ICAO24');
-  if (state[6] === null || state[6] === undefined)
-    errors.push('Missing latitude');
-  if (state[5] === null || state[5] === undefined)
-    errors.push('Missing longitude');
-
-  return {
-    isValid: errors.length === 0,
-    errors,
   };
 }
 
@@ -62,29 +35,15 @@ const MapWrapper: React.FC<MapWrapperProps> = ({
   const [displayedAircraft, setDisplayedAircraft] = useState<
     ExtendedAircraft[]
   >(initialAircraft.map(toExtendedAircraft));
-
-  const [selectedType] = useState<string>('manufacturer');
+  const [selectedManufacturer, setSelectedManufacturer] = useState<string>('');
+  const [selectedModel, setSelectedModel] = useState<string>('');
   const [isMapReady, setIsMapReady] = useState(false);
   const [models, setModels] = useState<
     { model: string; label: string; activeCount?: number; count?: number }[]
   >([]);
-  const [selectedManufacturer, setSelectedManufacturer] = useState<string>('');
-  const [selectedModel, setSelectedModel] = useState<string>('');
+  let unsubscribe: (() => void) | null = null;
 
-  const handleModelsUpdate = (
-    models: {
-      model: string;
-      label: string;
-      activeCount?: number;
-      count?: number;
-    }[]
-  ) => {
-    setModels(models);
-  };
-
-  const handleError = (errorMessage: string) => {
-    console.error(`[ERROR] ${errorMessage}`);
-  };
+  const aircraftTrackingService = new AircraftTrackingService();
 
   const modelCounts = useMemo(() => {
     const counts = new Map<string, number>();
@@ -96,55 +55,112 @@ const MapWrapper: React.FC<MapWrapperProps> = ({
     return counts;
   }, [displayedAircraft]);
 
-  // Fix missing function definition
+  const handleModelsUpdate = useCallback(
+    (
+      models: {
+        model: string;
+        label: string;
+        activeCount?: number;
+        count?: number;
+      }[]
+    ) => {
+      setModels(models);
+    },
+    []
+  );
+
+  // Function to update displayed aircraft
   const handleAircraftUpdate = useCallback((aircraftList: Aircraft[]) => {
     setDisplayedAircraft(aircraftList.map(toExtendedAircraft));
   }, []);
 
+  // Handle model selection
   const handleModelSelect = useCallback((model: string) => {
     setSelectedModel(model);
   }, []);
 
-  // Fix the function and ensure it has a closing bracket
+  // Handle manufacturer selection & tracking updates
   const handleManufacturerSelect = useCallback(
     async (manufacturer: string | null) => {
-      setSelectedManufacturer(manufacturer || ''); // ✅ Ensure string value
-      setSelectedModel(''); // ✅ Reset model when changing manufacturer
+      setSelectedManufacturer(manufacturer || '');
+      setSelectedModel('');
+
+      if (unsubscribe) {
+        unsubscribe(); // ✅ Unsubscribe from previous updates
+        unsubscribe = null;
+      }
 
       if (manufacturer) {
         try {
           console.log(`[Tracking] Starting tracking for ${manufacturer}`);
-          await clientTrackingService.startTracking(manufacturer);
+
+          // ✅ Fetch and merge live & static data
+          const aircraftData =
+            await aircraftTrackingService.processManufacturer(manufacturer);
+          unsubscribe = aircraftTrackingService.subscribeToManufacturer(
+            manufacturer,
+            (updatedAircraft: Aircraft[]) => {
+              setDisplayedAircraft(updatedAircraft.map(toExtendedAircraft));
+            }
+          );
+
+          // ✅ Subscribe to real-time updates
+          unsubscribe = aircraftTrackingService.subscribeToManufacturer(
+            manufacturer,
+            (updatedAircraft: Aircraft[]) => {
+              console.log(
+                `[Tracking] 🔄 Live Update for ${manufacturer}`,
+                updatedAircraft
+              );
+              setDisplayedAircraft(updatedAircraft.map(toExtendedAircraft));
+            }
+          );
+
+          // ✅ Fetch only if no recent tracking data exists
+          const trackedAircraft =
+            await clientTrackingService.getTrackedAircraft();
+          if (trackedAircraft.length === 0) {
+            console.log(
+              `[Tracking] Manually forcing OpenSky fetch for ${manufacturer}`
+            );
+            await clientTrackingService.pollAircraftData();
+          } else {
+            console.log(
+              `[Tracking] ✅ Skipping manual fetch - tracking data already exists.`
+            );
+          }
         } catch (error) {
-          console.error('[Tracking] Error fetching aircraft:', error);
+          console.error('[Tracking] ❌ Error fetching aircraft:', error);
+          onError('Failed to fetch aircraft data.');
         }
       }
     },
-    [setSelectedManufacturer]
+    []
   );
-
-  const handleReset = useCallback(() => {
-    console.log('Reset triggered');
-    setSelectedManufacturer('');
-    setSelectedModel('');
-    setDisplayedAircraft(initialAircraft.map(toExtendedAircraft));
-  }, [initialAircraft]);
 
   useEffect(() => {
     setIsMapReady(true);
   }, []);
 
-  useEffect(() => {
-    if (isMapReady && displayedAircraft.length === 0) {
-      toast.info('No active aircraft found for the selected manufacturer.', {
-        position: 'top-center',
-        autoClose: 5000,
-        hideProgressBar: false,
-        closeOnClick: true,
-        pauseOnHover: true,
-        draggable: true,
-      });
+  // Reset selections and clear data
+  const handleReset = useCallback(() => {
+    console.log('Reset triggered');
+    setSelectedManufacturer('');
+    setSelectedModel('');
+    setDisplayedAircraft(initialAircraft.map(toExtendedAircraft));
+    if (unsubscribe) {
+      unsubscribe();
+      unsubscribe = null;
     }
+  }, [initialAircraft]);
+
+  // Ensure the map initializes correctly
+  useEffect(() => {
+    setIsMapReady(true);
+  }, []);
+
+  useEffect(() => {
+    console.log('[Debug] Updated Displayed Aircraft:', displayedAircraft);
   }, [displayedAircraft]);
 
   return (
@@ -155,17 +171,19 @@ const MapWrapper: React.FC<MapWrapperProps> = ({
           selectedModel={selectedModel}
           setSelectedManufacturer={(manufacturer) =>
             setSelectedManufacturer(manufacturer || '')
-          } // ✅ Fix: Convert `null` to an empty string
+          }
           setSelectedModel={setSelectedModel}
           onManufacturerSelect={handleManufacturerSelect}
-          onModelSelect={setSelectedModel}
-          modelCounts={modelCounts}
+          onModelSelect={handleModelSelect}
+          modelCounts={modelCounts} // ✅ Fix: Add missing prop
+          onModelsUpdate={handleModelsUpdate} // ✅ Fix: Add missing prop
           totalActive={displayedAircraft.length}
           manufacturers={manufacturers}
           onAircraftUpdate={handleAircraftUpdate}
-          onModelsUpdate={handleModelsUpdate}
-          onReset={handleReset}
-          onError={handleError}
+          onReset={() =>
+            setDisplayedAircraft(initialAircraft.map(toExtendedAircraft))
+          }
+          onError={onError}
         />
       </div>
 

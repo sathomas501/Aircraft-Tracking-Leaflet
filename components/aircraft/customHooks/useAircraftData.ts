@@ -1,15 +1,20 @@
 import { useState, useEffect, useCallback } from 'react';
-import { trackManufacturer } from '../selector/services/aircraftService';
+import { useFetchManufacturers } from './useFetchManufactures'; // ✅ Correct import
+import { trackManufacturer } from '../selector/services/aircraftService'; // ✅ Use correct API
 
 interface AircraftData {
   activeCount: number;
-  liveAircraft: string[]; // ✅ Includes the full list of ICAO24 codes
+  liveAircraft: string[];
   loading: boolean;
   error: Error | null;
-  reload: () => void; // ✅ Allows manual re-fetching
+  reload: () => void;
 }
 
-export const useAircraftData = (manufacturer: string): AircraftData => {
+export const useAircraftData = () => {
+  const { manufacturers } = useFetchManufacturers(); // ✅ Use manufacturers from hook
+  const [selectedManufacturer, setSelectedManufacturer] = useState<
+    string | null
+  >(null);
   const [activeCount, setActiveCount] = useState(0);
   const [liveAircraft, setLiveAircraft] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
@@ -17,32 +22,40 @@ export const useAircraftData = (manufacturer: string): AircraftData => {
   const [prevManufacturer, setPrevManufacturer] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
-    if (!manufacturer || manufacturer === prevManufacturer) return;
+    if (!selectedManufacturer || selectedManufacturer === prevManufacturer)
+      return;
 
-    const controller = new AbortController();
     setLoading(true);
     setError(null);
-    setPrevManufacturer(manufacturer);
+    setPrevManufacturer(selectedManufacturer);
 
     try {
-      console.log(`📡 Fetching ICAO24s for manufacturer: ${manufacturer}`);
-      const result = await trackManufacturer(manufacturer);
-      if (controller.signal.aborted) return;
+      console.log(
+        `📡 Fetching ICAO24s for manufacturer: ${selectedManufacturer}`
+      );
+      const result = await trackManufacturer(selectedManufacturer); // ✅ Correct function call
 
       setActiveCount(result.liveAircraft.length);
-      setLiveAircraft(result.icao24s);
+      setLiveAircraft(result.liveAircraft);
     } catch (err) {
-      if (controller.signal.aborted) return;
       setError(err instanceof Error ? err : new Error('Failed to fetch data'));
     } finally {
       setLoading(false);
     }
-  }, [manufacturer, prevManufacturer]);
+  }, [selectedManufacturer, prevManufacturer]);
 
   useEffect(() => {
     fetchData();
-    return () => console.log('🔄 Cleanup: Cancelling API request');
   }, [fetchData]);
 
-  return { activeCount, liveAircraft, loading, error, reload: fetchData };
+  return {
+    manufacturers, // ✅ Provide manufacturer list
+    selectedManufacturer,
+    setSelectedManufacturer, // ✅ Allow selection from UI
+    activeCount,
+    liveAircraft,
+    loading,
+    error,
+    reload: fetchData,
+  };
 };
