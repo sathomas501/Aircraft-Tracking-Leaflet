@@ -9,11 +9,8 @@ import type { Aircraft } from '@/types/base';
 async function handler(req: NextApiRequest, res: NextApiResponse) {
   const { action } = req.query;
 
-  if (!action) {
-    throw APIErrors.BadRequest('Missing action parameter');
-  }
-
-  if (action === 'fetchByManufacturer') {
+  // ✅ Default to fetching ICAOs by manufacturer if no action is provided
+  if (!action || action === 'fetchByManufacturer') {
     return await fetchByManufacturer(req, res);
   } else if (action === 'fetchByIcao') {
     return await fetchByIcao(req, res);
@@ -25,8 +22,13 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
 async function fetchByManufacturer(req: NextApiRequest, res: NextApiResponse) {
   const manufacturer =
     req.method === 'POST' ? req.body.manufacturer : req.query.manufacturer;
-  if (!manufacturer) {
-    throw APIErrors.BadRequest('Manufacturer parameter is required');
+
+  // ✅ Validate manufacturer parameter before proceeding
+  if (!manufacturer || typeof manufacturer !== 'string') {
+    return res.status(400).json({
+      success: false,
+      error: 'Manufacturer parameter is required',
+    });
   }
 
   if (!databaseManager.isReady) {
@@ -36,27 +38,38 @@ async function fetchByManufacturer(req: NextApiRequest, res: NextApiResponse) {
   console.log(`[ICAO API] 🔍 Fetching ICAOs for manufacturer: ${manufacturer}`);
 
   const query = `
-    SELECT DISTINCT icao24
-    FROM aircraft
-    WHERE manufacturer = ?
-    AND icao24 IS NOT NULL AND icao24 != ''
-    AND LENGTH(icao24) = 6
-    AND LOWER(icao24) GLOB '[0-9a-f]*'
-    ORDER BY icao24
-  `;
+        SELECT DISTINCT icao24
+        FROM aircraft
+        WHERE manufacturer = ?
+        AND icao24 IS NOT NULL AND icao24 != ''
+        AND LENGTH(icao24) = 6
+        AND LOWER(icao24) GLOB '[0-9a-f]*'
+        ORDER BY icao24
+    `;
 
-  const results = await databaseManager.executeQuery<{ icao24: string }>(
-    query,
-    [manufacturer]
-  );
+  try {
+    const results = await databaseManager.executeQuery<{ icao24: string }>(
+      query,
+      [manufacturer]
+    );
 
-  const icao24List = results.map((item) => item.icao24.toLowerCase());
+    const icao24List = results.map((item) => item.icao24.toLowerCase());
 
-  return res.status(200).json({
-    success: true,
-    data: { icao24List, meta: { total: icao24List.length, manufacturer } },
-    message: `Found ${icao24List.length} aircraft for ${manufacturer}`,
-  });
+    return res.status(200).json({
+      success: true,
+      data: { icao24List, meta: { total: icao24List.length, manufacturer } },
+      message: `Found ${icao24List.length} aircraft for ${manufacturer}`,
+    });
+  } catch (error: unknown) {
+    const err = error as Error;
+    console.error('[ICAO API] ❌ Error fetching ICAOs:', err.message);
+
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to fetch ICAOs',
+      details: err.message,
+    });
+  }
 }
 
 async function fetchByIcao(req: NextApiRequest, res: NextApiResponse) {

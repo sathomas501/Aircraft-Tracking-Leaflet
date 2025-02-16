@@ -1,7 +1,8 @@
 import { Aircraft } from '@/types/base';
 
 class TrackingDatabaseManager {
-  private baseUrl = '/api/tracking';
+  private baseUrl = '/api/tracking'; // ✅ Keep tracking-related routes here
+  private icao24sUrl = '/api/aircraft/icao24s'; // ✅ Use the correct endpoint for ICAO24s
 
   async upsertLiveAircraft(aircraftData: Aircraft[]) {
     try {
@@ -32,12 +33,16 @@ class TrackingDatabaseManager {
     }
   }
 
-  async getTrackedAircraftByICAOs(icao24s: string[]) {
+  async getTrackedAircraftByICAOs(icao24s: string[], manufacturer: string) {
+    if (!manufacturer) {
+      throw new Error('Manufacturer parameter is required'); // ✅ Early validation
+    }
+
     try {
-      const response = await fetch(`${this.baseUrl}/byIcao`, {
+      const response = await fetch(`/api/aircraft/icao24s`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ icao24s }),
+        body: JSON.stringify({ icao24s, manufacturer }), // ✅ Ensure manufacturer is included
       });
 
       const data = await response.json();

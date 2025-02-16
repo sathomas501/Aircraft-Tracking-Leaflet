@@ -114,7 +114,6 @@ export class DatabaseManager {
 
       // Test connection
       await this.db.get('SELECT 1');
-
       console.log('[DatabaseManager] ✅ Database connection established.');
 
       // Check tables
@@ -127,18 +126,23 @@ export class DatabaseManager {
       );
 
       // Verify aircraft table
-      const [{ count }] = await this.db.all(
+      const result = await this.db.all(
         'SELECT COUNT(*) AS count FROM aircraft'
       );
+      const count = result?.[0]?.count ?? 0;
       console.log(`[DatabaseManager] ✈️ Aircraft Count: ${count}`);
 
       this._isInitialized = true;
       console.log('[DatabaseManager] ✅ Database successfully initialized.');
-    } catch (error) {
+    } catch (error: unknown) {
+      // ✅ Ensure `error` is explicitly typed
+      const err = error as Error; // ✅ Type assertion to `Error`
+
       this._isInitialized = false;
       this.db = null;
-      console.error('[DatabaseManager] ❌ Initialization failed:', error);
-      throw error;
+      console.error('[DatabaseManager] ❌ Initialization failed:', err.message);
+
+      throw err; // ✅ Re-throw correctly typed error
     }
   }
 
@@ -173,11 +177,11 @@ export class DatabaseManager {
         await this.db.run('PRAGMA optimize');
         await this.db.close();
         this.db = null;
-        this._isInitialized = false;
+
+        // ✅ Don't reset _isInitialized unless explicitly shutting down
         console.log('[DatabaseManager] ✅ Database connection closed');
       } catch (error) {
         console.error('[DatabaseManager] ❌ Error closing database:', error);
-        throw error;
       }
     }
   }
