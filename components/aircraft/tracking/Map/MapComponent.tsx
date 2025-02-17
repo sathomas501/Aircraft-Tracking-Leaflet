@@ -3,8 +3,7 @@ import ManufacturerSelector from '../../selector/ManufacturerSelector';
 import ModelSelector from '../../selector/ModelSelector';
 import NNumberSelector from '../../selector/nNumberSelector';
 import DynamicMap from '../Map/DynamicMap';
-import { Aircraft, SelectOption } from '@/types/base';
-import { Model } from '../../selector/services/aircraftService';
+import { Aircraft, SelectOption, Model, StaticModel } from '@/types/base';
 
 interface ExtendedAircraft extends Aircraft {
   type: string;
@@ -68,13 +67,15 @@ const MapComponent: React.FC<MapComponentProps> = ({
   ): ExtendedAircraft[] => {
     return aircraft.map((plane) => ({
       ...plane,
-      type: plane.OWNER_TYPE === '5' ? 'Government' : 'Non-Government',
-      isGovernment: plane.OWNER_TYPE === '5',
+      type: plane.TYPE_AIRCRAFT || 'Unknown', // Ensure 'type' is set
+      isGovernment: plane.OWNER_TYPE?.toLowerCase() === 'government' || false, // Ensure 'isGovernment' is boolean
     }));
   };
 
   // Fetch aircraft when manufacturer is selected
-  const handleManufacturerSelect = async (manufacturer: string | null) => {
+  const handleManufacturerSelect = async (
+    manufacturer: string | null
+  ): Promise<ExtendedAircraft[]> => {
     stopPolling(); // Stop existing polling
     setSelectedManufacturer(manufacturer);
     setSelectedModel('');
@@ -82,34 +83,47 @@ const MapComponent: React.FC<MapComponentProps> = ({
 
     if (!manufacturer) {
       setDisplayedAircraft([]);
-      return;
+      return []; // Return empty array when no manufacturer is selected
     }
 
     try {
-      // Initial fetch
+      // Fetch active aircraft using getTrackedAircraft action
       const response = await fetch('/api/aircraft/tracking', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          action: 'fetchAndStoreActiveAircraft',
+          action: 'getTrackedAircraft',
           manufacturer,
         }),
       });
 
-      if (!response.ok) throw new Error(`Error: ${response.statusText}`);
+      if (!response.ok) {
+        throw new Error(`Error: ${response.statusText}`);
+      }
 
       const data = await response.json();
+      let aircraftList: Aircraft[] = [];
+
       if (data.aircraft) {
-        setDisplayedAircraft(transformToExtendedAircraft(data.aircraft));
+        // Filter aircraft by manufacturer if needed
+        aircraftList = data.aircraft.filter(
+          (ac: Aircraft) =>
+            ac.manufacturer?.toLowerCase() === manufacturer.toLowerCase()
+        );
       }
+
+      // Convert to ExtendedAircraft[]
+      const extendedAircraftList = transformToExtendedAircraft(aircraftList);
+      setDisplayedAircraft(extendedAircraftList);
 
       // Fetch active models
       const modelsResponse = await fetch(
-        `/api/aircraft/models?manufacturer=${manufacturer}`
+        `/api/aircraft/models?manufacturer=${encodeURIComponent(manufacturer)}`
       );
 
-      if (!modelsResponse.ok)
+      if (!modelsResponse.ok) {
         throw new Error(`Error: ${modelsResponse.statusText}`);
+      }
 
       const modelsData = await modelsResponse.json();
       if (modelsData.data) {
@@ -126,14 +140,18 @@ const MapComponent: React.FC<MapComponentProps> = ({
 
       // Start polling after successful initial fetch
       startPolling();
+
+      return extendedAircraftList;
     } catch (error) {
-      console.error('Error:', error);
+      console.error('[ManufacturerSelect] ❌ Error:', error);
       if (error instanceof Error) {
         alert(`Failed to load data: ${error.message}`);
       }
+      stopPolling(); // Ensure polling is stopped on error
+      setDisplayedAircraft([]); // Clear displayed aircraft on error
+      return [];
     }
   };
-
   // Filter aircraft by model
   const handleModelSelect = (model: string) => {
     setSelectedModel(model);
@@ -216,6 +234,15 @@ const MapComponent: React.FC<MapComponentProps> = ({
     setIsPolling(false);
   };
 
+  const formatModelsForSelector = (inputModels: Model[]): StaticModel[] => {
+    return inputModels.map((model) => ({
+      model: model.model,
+      manufacturer: model.manufacturer || '',
+      label: model.label || `${model.model} (${model.activeCount || 0} active)`,
+      count: model.activeCount || 0, // Ensure count is always a number
+    }));
+  };
+
   return (
     <div className="relative w-full h-screen">
       {/* Debug Info */}
@@ -244,9 +271,9 @@ const MapComponent: React.FC<MapComponentProps> = ({
           <ModelSelector
             selectedModel={selectedModel}
             setSelectedModel={setSelectedModel}
-            models={models}
+            models={formatModelsForSelector(models)}
             totalActive={totalActive}
-            onModelUpdate={handleModelSelect} // Pass the single model handler
+            onModelSelect={handleModelSelect}
           />
         </div>
       )}

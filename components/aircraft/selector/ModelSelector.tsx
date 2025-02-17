@@ -1,39 +1,21 @@
-import React, { useEffect } from 'react';
-
-interface Model {
-  model: string;
-  label: string;
-  activeCount?: number;
-  count?: number;
-}
+import React from 'react';
+import { StaticModel } from '@/types/base';
 
 interface ModelSelectorProps {
   selectedModel: string;
   setSelectedModel: (model: string) => void;
-  models: Model[];
-  totalActive: number;
-  onModelUpdate: (model: string) => void;
+  models: StaticModel[];
+  totalActive?: number;
+  onModelSelect: (model: string) => void;
 }
 
 const ModelSelector: React.FC<ModelSelectorProps> = ({
   selectedModel,
   setSelectedModel,
   models,
-  totalActive,
-  onModelUpdate,
+  totalActive = 0,
+  onModelSelect,
 }) => {
-  // 🔍 Debugging logs to verify component updates
-  useEffect(() => {
-    console.log(`[ModelSelector] Component mounted. Available models:`, models);
-  }, []);
-
-  useEffect(() => {
-    console.log(
-      `[ModelSelector] State updated - selectedModel:`,
-      selectedModel
-    );
-  }, [selectedModel]);
-
   return (
     <div className="mt-2">
       <label
@@ -48,19 +30,15 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
         value={selectedModel}
         onChange={(e) => {
           const selected = e.target.value;
-          console.log(`[ModelSelector] Model selected:`, selected);
-
+          console.log(`[ModelSelector] Selected model: ${selected}`);
           setSelectedModel(selected);
-          onModelUpdate(selected);
+          onModelSelect(selected);
         }}
       >
-        {/* Default Option */}
-        <option value="">All Models ({totalActive} active)</option>
-
-        {/* List Models */}
-        {models.map((m, index) => (
-          <option key={index} value={m.model}>
-            {m.label} ({m.model})
+        <option value="">All Models ({totalActive} total)</option>
+        {models.map((model) => (
+          <option key={model.model} value={model.model}>
+            {model.label || `${model.model} (${model.count} aircraft)`}
           </option>
         ))}
       </select>
@@ -68,4 +46,4 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
   );
 };
 
-export default React.memo(ModelSelector);
+export default ModelSelector;

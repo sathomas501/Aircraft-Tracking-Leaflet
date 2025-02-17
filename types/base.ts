@@ -254,6 +254,14 @@ export interface ManufacturerData {
   activeCount?: number;
 }
 
+export interface Model {
+  model: string;
+  manufacturer: string;
+  activeCount?: number;
+  label?: string;
+  count?: number;
+}
+
 // src/types/utils.ts
 /**
  * Helper type to extract position data from Aircraft
@@ -267,4 +275,30 @@ export interface SubscriptionManager {
   subscribe: (key: string, callback: (data: Aircraft[]) => void) => () => void;
   unsubscribe: (key: string, callback: (data: Aircraft[]) => void) => void;
   notifySubscribers: (key: string, data: Aircraft[]) => void;
+}
+
+// Base model interface with common properties
+export interface BaseModel {
+  model: string;
+  manufacturer: string;
+  label: string;
+}
+
+// Static model extends base with count
+export interface StaticModel extends BaseModel {
+  count: number;
+}
+
+// Active model extends base with activeCount
+export interface ActiveModel extends BaseModel {
+  activeCount: number;
+}
+
+// Props interface for ModelSelector component
+export interface ModelSelectorProps {
+  selectedModel: string;
+  setSelectedModel: (model: string) => void;
+  models: StaticModel[];
+  totalActive?: number;
+  onModelSelect: (model: string) => void;
 }
