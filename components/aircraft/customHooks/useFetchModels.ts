@@ -1,73 +1,51 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useFetchManufacturers } from './useFetchManufactures'; // ✅ Import manufacturer tracking
-
-interface Model {
-  model: string;
-  activeCount: number;
-  isActive: boolean;
-}
+import { useAircraftData } from './useAircraftData';
+import { fetchModels } from '../selector/services/aircraftService';
+import { Model } from '@/types/base';
 
 export const useFetchModels = () => {
-  const { manufacturers, loading: manufacturersLoading } =
-    useFetchManufacturers();
-  const [selectedManufacturer, setSelectedManufacturer] = useState<
-    string | null
-  >(null);
+  const { selectedManufacturer } = useAircraftData();
   const [models, setModels] = useState<Model[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<Error | null>(null);
-  const [prevManufacturer, setPrevManufacturer] = useState<string | null>(null);
 
-  // Function to fetch models from API
   const loadModels = useCallback(async () => {
-    if (!selectedManufacturer || selectedManufacturer === prevManufacturer)
+    if (!selectedManufacturer) {
+      console.log('[useFetchModels] No manufacturer selected, clearing models');
+      setModels([]);
       return;
+    }
 
     setLoading(true);
     setError(null);
-    setPrevManufacturer(selectedManufacturer);
 
     try {
       console.log(
-        `📡 Fetching models for manufacturer: ${selectedManufacturer}`
+        `[useFetchModels] 🔄 Fetching models for: ${selectedManufacturer}`
+      );
+      const fetchedModels = await fetchModels(selectedManufacturer);
+      console.log(
+        `[useFetchModels] ✅ Received ${fetchedModels.length} models:`,
+        fetchedModels
       );
 
-      const response = await fetch(
-        `/api/models?manufacturer=${encodeURIComponent(selectedManufacturer)}`
-      );
-      if (!response.ok) {
-        throw new Error(`Failed to fetch models: ${response.statusText}`);
-      }
-
-      const result = await response.json();
-      if (result.success && Array.isArray(result.data)) {
-        setModels(result.data);
-      } else {
-        console.warn(`⚠️ Unexpected API response:`, result);
-        setModels([]);
-      }
+      setModels(fetchedModels);
     } catch (err) {
-      console.error('❌ Error fetching models:', err);
-      setError(
-        err instanceof Error ? err : new Error('Failed to load models.')
-      );
+      console.error('[useFetchModels] ❌ Error:', err);
+      setError(err instanceof Error ? err : new Error('Failed to load models'));
+      setModels([]);
     } finally {
       setLoading(false);
     }
-  }, [selectedManufacturer, prevManufacturer]);
+  }, [selectedManufacturer]);
 
-  // Fetch models when manufacturer changes
   useEffect(() => {
+    console.log(
+      '[useFetchModels] 🔄 Effect triggered with manufacturer:',
+      selectedManufacturer
+    );
     loadModels();
   }, [loadModels]);
 
-  return {
-    manufacturers,
-    selectedManufacturer,
-    setSelectedManufacturer, // ✅ Allows UI to update selected manufacturer
-    models,
-    loading: loading || manufacturersLoading, // ✅ Merges loading states
-    error,
-    reload: loadModels,
-  };
+  return { models, loading, error };
 };

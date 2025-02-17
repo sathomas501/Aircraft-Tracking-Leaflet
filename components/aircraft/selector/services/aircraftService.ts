@@ -1,5 +1,5 @@
 // components/aircraft/selector/services/aircraftService.ts
-import { SelectOption } from '@/types/base';
+import { SelectOption, Aircraft, Model } from '@/types/base';
 import {
   errorHandler,
   ErrorType,
@@ -12,13 +12,6 @@ const REQUEST_CONSTANTS = {
   MIN_RETRY_DELAY: 1000, // 1 second
   MAX_RETRY_DELAY: 5000, // 5 seconds
 } as const;
-
-export interface Model {
-  model: string;
-  label: string;
-  activeCount?: number;
-  count?: number;
-}
 
 const manufacturersRateLimiter = new PollingRateLimiter({
   requestsPerMinute: 30,
@@ -91,6 +84,33 @@ async function handleFetchWithRetry(
   }
 }
 
+export async function fetchAircraftByManufacturer(
+  manufacturer: string | null
+): Promise<Aircraft[]> {
+  if (!manufacturer) {
+    console.warn('⚠️ No manufacturer selected, returning empty aircraft list.');
+    return []; // ✅ Prevents errors when manufacturer is null
+  }
+
+  try {
+    const response = await fetch(
+      `/api/aircraft/icao24s?manufacturer=${encodeURIComponent(manufacturer)}`
+    );
+    const data = await response.json();
+
+    if (!data.success) {
+      throw new Error(data.error || 'Failed to fetch aircraft');
+    }
+
+    return data.data.icao24List.map(
+      (icao24: string) => ({ icao24 }) as Aircraft
+    ); // ✅ Ensure correct Aircraft type
+  } catch (error) {
+    console.error('❌ Error fetching aircraft:', error);
+    throw error;
+  }
+}
+
 export async function fetchManufacturers(): Promise<SelectOption[]> {
   try {
     console.log('[Aircraft Service] 🔄 Starting manufacturers fetch');
@@ -131,6 +151,41 @@ export async function fetchManufacturers(): Promise<SelectOption[]> {
         ? error
         : new Error('Failed to fetch manufacturers')
     );
+    return [];
+  }
+}
+
+export async function fetchModels(manufacturer: string): Promise<Model[]> {
+  try {
+    if (!manufacturer) {
+      console.warn('[Aircraft Service] ⚠️ No manufacturer provided');
+      return [];
+    }
+
+    console.log('[Aircraft Service] 🔄 Fetching models for:', manufacturer);
+    const encodedManufacturer = encodeURIComponent(manufacturer.trim());
+    const url = `/api/aircraft/models?manufacturer=${encodedManufacturer}`;
+
+    console.log('[Aircraft Service] 📡 Making request to:', url);
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    const data = await response.json();
+    console.log('[Aircraft Service] 📦 Raw response:', data);
+
+    if (!data.success || !Array.isArray(data.data)) {
+      console.warn('[Aircraft Service] ⚠️ Invalid response format:', data);
+      return [];
+    }
+
+    const formattedModels = data.data;
+    console.log('[Aircraft Service] ✅ Returning models:', formattedModels);
+
+    return formattedModels;
+  } catch (error) {
+    console.error('[Aircraft Service] ❌ Error fetching models:', error);
     return [];
   }
 }

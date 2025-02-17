@@ -197,8 +197,10 @@ export class AircraftTrackingService {
         );
 
         // Get tracked aircraft
-        const trackedAircraft =
-          await trackingManager.getTrackedAircraftByICAOs(batch);
+        const trackedAircraft = await trackingManager.getTrackedAircraftByICAOs(
+          batch,
+          manufacturer
+        );
         const trackedIcaos = new Set(
           trackedAircraft.map((a: Aircraft) => a.icao24.toLowerCase())
         );

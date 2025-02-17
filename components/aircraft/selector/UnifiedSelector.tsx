@@ -1,18 +1,20 @@
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import { Plus, Minus } from 'lucide-react';
 import ManufacturerSelector from './ManufacturerSelector';
+import ModelSelector from './ModelSelector';
 import NNumberSelector from './nNumberSelector';
-import { Aircraft, SelectOption } from '@/types/base';
+import {
+  Aircraft,
+  SelectOption,
+  BaseModel,
+  StaticModel,
+  ActiveModel,
+  Model,
+} from '@/types/base';
 
-interface ActiveModel {
-  model: string;
-  label: string;
-  activeCount: number;
-}
-
-interface Model {
-  model: string;
-  label: string;
+// Local interface for model data
+interface ModelData extends BaseModel {
+  count: number;
   activeCount?: number;
 }
 
@@ -24,11 +26,11 @@ interface UnifiedSelectorProps {
   modelCounts: Map<string, number>;
   totalActive: number;
   manufacturers: SelectOption[];
-  onAircraftUpdate: (aircraft: Aircraft[]) => void; // ✅ Add missing prop
+  onAircraftUpdate: (aircraft: Aircraft[]) => void;
   onManufacturerSelect: (manufacturer: string) => Promise<void>;
   onModelSelect: (model: string) => void;
   onReset: () => void;
-  onModelsUpdate: (models: ActiveModel[]) => void;
+  onModelsUpdate: (models: StaticModel[]) => void; // Changed from ActiveModel[] to StaticModel[]
   onError: (message: string) => void;
 }
 
@@ -45,59 +47,77 @@ export const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
   onModelsUpdate,
   onError,
   onManufacturerSelect,
-  onAircraftUpdate, // ✅ Fix: Include this prop
+  onAircraftUpdate,
 }) => {
   const [searchMode, setSearchMode] = useState<'manufacturer' | 'nNumber'>(
     'manufacturer'
   );
   const [nNumber, setNNumber] = useState('');
   const [isMinimized, setIsMinimized] = useState(false);
-  const [models, setModels] = useState<ActiveModel[]>([]);
+  const [models, setModels] = useState<ModelData[]>([]);
   const [isLoadingModels, setIsLoadingModels] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [liveAircraft, setLiveAircraft] = useState<Aircraft[]>([]); // Added missing state
+
+  const convertToStaticModel = (models: ModelData[]): StaticModel[] => {
+    return models.map((model) => ({
+      model: model.model,
+      manufacturer: model.manufacturer,
+      label: model.label || `${model.model} (${model.count} aircraft)`,
+      count: model.count,
+    }));
+  };
 
   const pollForActiveModels = async (manufacturer: string) => {
     setIsLoadingModels(true);
+    setError(null);
 
     try {
       console.log(
-        `[Polling] Fetching models for manufacturer: ${manufacturer}`
+        `[UnifiedSelector] 🔄 Fetching models for manufacturer: ${manufacturer}`
       );
       const response = await fetch(
-        `/api/aircraft/models?manufacturer=${manufacturer}`
+        `/api/aircraft/models?manufacturer=${encodeURIComponent(manufacturer)}`
       );
 
       if (!response.ok) {
-        throw new Error('Failed to fetch active models');
+        throw new Error(`Failed to fetch models: ${response.statusText}`);
       }
 
       const data = await response.json();
-      console.log('[Polling] Active models response:', data);
+      console.log('[UnifiedSelector] 📦 Models response:', data);
 
-      if (data.success && Array.isArray(data.data) && data.data.length > 0) {
-        const activeModels: ActiveModel[] = data.data.map(
-          (model: { model: string; activeCount?: number }) => ({
-            model: model.model,
-            label: `${model.model} (${model.activeCount ?? 0} active)`, // ✅ Ensure `activeCount` is always a number
-            activeCount: model.activeCount ?? 0,
-          })
-        );
+      if (data.success && Array.isArray(data.data)) {
+        const processedModels: ModelData[] = data.data.map((model: any) => ({
+          model: model.model,
+          manufacturer: model.manufacturer,
+          label: model.label || model.model,
+          count: model.count || 0,
+          activeCount: model.activeCount || 0,
+        }));
 
-        console.log('[Polling] Found active models:', activeModels);
-        setModels(activeModels);
-        onModelsUpdate(activeModels);
+        console.log('[UnifiedSelector] ✅ Processed models:', processedModels);
+        setModels(processedModels);
+        onModelsUpdate(convertToStaticModel(processedModels));
       } else {
-        console.log('[Polling] No active aircraft found.');
-        onError('No active aircraft found for this manufacturer');
+        console.log('[UnifiedSelector] ⚠️ No models in response:', data);
+        setModels([]);
+        onModelsUpdate([]);
       }
     } catch (error) {
-      console.error('[Polling] Error:', error);
-      onError('Failed to fetch models.');
+      console.error('[UnifiedSelector] ❌ Error:', error);
+      setError(
+        error instanceof Error ? error.message : 'Failed to fetch models'
+      );
+      onError('Failed to fetch models');
     } finally {
       setIsLoadingModels(false);
     }
   };
 
-  const handleManufacturerSelect = async (manufacturer: string | null) => {
+  const handleManufacturerSelect = async (
+    manufacturer: string | null
+  ): Promise<Aircraft[]> => {
     try {
       if (!manufacturer) {
         console.log('[UnifiedSelector] 🔄 Resetting manufacturer selection');
@@ -106,7 +126,7 @@ export const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
         setModels([]);
         onModelsUpdate([]);
         onReset();
-        return;
+        return [];
       }
 
       console.log(
@@ -118,30 +138,53 @@ export const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
       setModels([]);
       setSelectedModel('');
 
-      console.log('[UnifiedSelector] 📡 Calling onManufacturerSelect');
-      await onManufacturerSelect(manufacturer);
+      // First get active aircraft for the manufacturer
+      const response = await fetch('/api/aircraft/tracking', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'getTrackedAircraft',
+          manufacturer,
+        }),
+      });
 
+      if (!response.ok) {
+        throw new Error(`Failed to fetch aircraft: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      const aircraft: Aircraft[] = data.aircraft || [];
+
+      // Now get the models
       console.log('[UnifiedSelector] 📡 Polling for active models');
       await pollForActiveModels(manufacturer);
+
+      // Update the UI
+      onAircraftUpdate(aircraft);
+
+      return aircraft;
     } catch (error) {
       console.error('[UnifiedSelector] ❌ Error processing selection:', error);
       onError('Failed to process manufacturer selection');
       setSelectedManufacturer(null);
       setSelectedModel('');
       setModels([]);
+      return [];
     } finally {
       setIsLoadingModels(false);
     }
   };
 
-  const handleModelsUpdate = (models: Model[]) => {
-    const convertedModels: ActiveModel[] = models.map((m) => ({
+  const handleModelsUpdate = (inputModels: Model[]) => {
+    const processedModels: ModelData[] = inputModels.map((m) => ({
       model: m.model,
-      label: m.label,
-      activeCount: m.activeCount ?? 0, // ✅ Ensure `activeCount` is always a number
+      manufacturer: m.manufacturer || '',
+      label: m.label || m.model,
+      count: m.activeCount || 0,
+      activeCount: m.activeCount || 0,
     }));
 
-    onModelsUpdate(convertedModels); // ✅ Ensure correct type
+    onModelsUpdate(convertToStaticModel(processedModels));
   };
 
   const fetchAircraftByNNumber = async (
@@ -181,6 +224,7 @@ export const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
     <>
       {!isMinimized ? (
         <div className="bg-white rounded-lg shadow-lg p-4 w-[320px] absolute top-4 left-4 z-[3000]">
+          {/* Header with minimize and reset buttons */}
           <div className="flex justify-between items-center mb-2">
             <button
               onClick={() => setIsMinimized(true)}
@@ -197,21 +241,31 @@ export const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
             </button>
           </div>
 
+          {/* Search mode toggle buttons */}
           <div className="flex space-x-2 mb-4">
             <button
               onClick={() => setSearchMode('manufacturer')}
-              className={`flex-1 py-2 px-4 rounded-md ${searchMode === 'manufacturer' ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-700'}`}
+              className={`flex-1 py-2 px-4 rounded-md ${
+                searchMode === 'manufacturer'
+                  ? 'bg-blue-500 text-white'
+                  : 'bg-gray-100 text-gray-700'
+              }`}
             >
               By Manufacturer
             </button>
             <button
               onClick={() => setSearchMode('nNumber')}
-              className={`flex-1 py-2 px-4 rounded-md ${searchMode === 'nNumber' ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-700'}`}
+              className={`flex-1 py-2 px-4 rounded-md ${
+                searchMode === 'nNumber'
+                  ? 'bg-blue-500 text-white'
+                  : 'bg-gray-100 text-gray-700'
+              }`}
             >
               By N-Number
             </button>
           </div>
 
+          {/* Manufacturer search section */}
           {searchMode === 'manufacturer' ? (
             <>
               <ManufacturerSelector
@@ -219,54 +273,52 @@ export const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
                 selectedManufacturer={selectedManufacturer}
                 setSelectedManufacturer={setSelectedManufacturer}
                 onSelect={handleManufacturerSelect}
-                onAircraftUpdate={onAircraftUpdate} // ✅ Fix: Pass this prop
-                onModelsUpdate={handleModelsUpdate} // ✅ Use correctly typed function
-                onError={onError}
+                onAircraftUpdate={onAircraftUpdate}
+                onError={(message) =>
+                  console.error('[UnifiedSelector] ❌', message)
+                }
               />
 
+              {/* Model selector section */}
               {selectedManufacturer && (
                 <div className="mt-2">
-                  <label
-                    htmlFor="model-select"
-                    className="block text-gray-700 text-sm font-bold mb-2"
-                  >
-                    Model
-                  </label>
                   {isLoadingModels ? (
                     <div className="w-full p-2 text-center text-gray-500">
-                      Loading active models...
+                      Loading models...
                     </div>
-                  ) : models.length > 0 ? (
-                    <select
-                      id="model-select"
-                      className="w-full p-2 border rounded-md bg-white shadow-sm"
-                      value={selectedModel}
-                      onChange={(e) => onModelSelect(e.target.value)}
-                    >
-                      <option value="">All Models</option>
-                      {models.map((m) => (
-                        <option key={m.model} value={m.model}>
-                          {m.label}
-                        </option>
-                      ))}
-                    </select>
                   ) : (
-                    <div className="w-full p-2 text-center text-gray-500">
-                      No active models found
-                    </div>
+                    <ModelSelector
+                      selectedModel={selectedModel}
+                      setSelectedModel={setSelectedModel}
+                      models={convertToStaticModel(models)}
+                      totalActive={totalActive}
+                      onModelSelect={onModelSelect}
+                    />
+                  )}
+                  {error && (
+                    <div className="text-red-500 text-sm mt-1">{error}</div>
                   )}
                 </div>
               )}
             </>
           ) : (
+            /* N-Number search section */
             <NNumberSelector
               nNumber={nNumber}
               setNNumber={setNNumber}
               onSearch={fetchAircraftByNNumber}
             />
           )}
+
+          {/* Status or error messages */}
+          {error && (
+            <div className="mt-2 p-2 bg-red-100 text-red-600 rounded">
+              {error}
+            </div>
+          )}
         </div>
       ) : (
+        /* Minimized state */
         <button
           onClick={() => setIsMinimized(false)}
           className="absolute top-4 left-4 z-[3000] p-2 bg-white rounded-md shadow-lg hover:bg-gray-200"

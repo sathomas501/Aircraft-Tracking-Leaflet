@@ -1,141 +1,96 @@
-import { NextApiRequest, NextApiResponse } from 'next';
-import databaseManager from '../../../lib/db/databaseManager';
-import BackendDatabaseManager from '../../../lib/db/backendDatabaseManager';
+// pages/api/aircraft/models.ts
+import type { NextApiRequest, NextApiResponse } from 'next';
+import databaseManager from '@/lib/db/databaseManager';
+import { withErrorHandler } from '@/lib/middleware/error-handler';
 
-// Types for database results
 interface StaticModel {
   model: string;
+  manufacturer: string;
+  count: number;
 }
 
-interface ActiveModel {
-  model: string;
-  activeCount: number;
-}
+async function handler(req: NextApiRequest, res: NextApiResponse) {
+  const start = Date.now();
+  console.log(`[Models API] 📩 Request received:`, {
+    method: req.method,
+    query: req.query,
+    timestamp: new Date().toISOString(),
+  });
 
-interface ModelWithCounts extends StaticModel {
-  activeCount: number;
-  isActive: boolean;
-}
+  const { method, query } = req;
+  const manufacturer = query.manufacturer as string;
 
-export default async function handler(
-  req: NextApiRequest,
-  res: NextApiResponse
-) {
+  if (method !== 'GET') {
+    console.log(`[Models API] ⚠️ Invalid method: ${method}`);
+    return res
+      .status(405)
+      .json({ success: false, message: 'Method not allowed' });
+  }
+
+  if (!manufacturer) {
+    console.log('[Models API] ⚠️ No manufacturer provided');
+    return res.status(400).json({
+      success: false,
+      message: 'Manufacturer parameter is required',
+    });
+  }
+
   try {
-    const { method, query } = req;
-
-    if (method !== 'GET') {
-      return res
-        .status(405)
-        .json({ success: false, message: 'Method not allowed' });
+    // Ensure database is initialized
+    if (!databaseManager.isReady) {
+      console.log('[Models API] 🔄 Initializing database');
+      await databaseManager.initializeDatabase();
     }
 
-    const manufacturer = query.manufacturer as string;
-    if (!manufacturer) {
-      return res.status(400).json({
-        success: false,
-        message: 'Manufacturer query parameter is required.',
-      });
-    }
-
-    console.log(`[API] Fetching models for manufacturer: ${manufacturer}`);
-
-    // Initialize database managers
-    const [trackingManager] = await Promise.all([
-      BackendDatabaseManager.getInstance(),
-      databaseManager.initializeDatabase(),
-    ]);
-
-    // ✅ Step 1: Fetch models from the static database (`static.db`)
-    const staticModelsQuery = `
-      SELECT DISTINCT model FROM aircraft
+    const modelsQuery = `
+      SELECT model, manufacturer, COUNT(*) as count
+      FROM aircraft
       WHERE manufacturer = ?
-      ORDER BY model;
+        AND model IS NOT NULL 
+        AND model != ''
+      GROUP BY model, manufacturer
+      ORDER BY count DESC, model ASC;
     `;
 
-    let staticModelsResult = await databaseManager.executeQuery<StaticModel[]>(
-      staticModelsQuery,
+    console.log(
+      `[Models API] 📊 Executing query for manufacturer: ${manufacturer}`
+    );
+    const results = await databaseManager.executeQuery<StaticModel>(
+      modelsQuery,
       [manufacturer]
     );
 
-    const staticModels: StaticModel[] = Array.isArray(staticModelsResult)
-      ? staticModelsResult
-          .flat()
-          .filter((item) => item && typeof item.model === 'string')
-      : [];
+    // Ensure results is an array
+    const models = Array.isArray(results) ? results : [results];
+    console.log(
+      `[Models API] 📋 Found ${models.length} models for ${manufacturer}`
+    );
 
-    console.log(`[API] Found ${staticModels.length} models in static DB`);
-
-    // ✅ Step 2: Check if any active aircraft exist before querying `tracking.db`
-    const activeAircraftQuery = `SELECT COUNT(*) as count FROM active_tracking WHERE manufacturer = ?`;
-    const activeAircraftResult = await trackingManager.executeQuery<
-      { count: number }[]
-    >(activeAircraftQuery, [manufacturer]);
-
-    const activeCount =
-      activeAircraftResult.length > 0 ? activeAircraftResult[0].count : 0;
-
-    console.log(`[API] Active aircraft count: ${activeCount}`);
-
-    let modelsWithCounts = staticModels.map((row) => ({
-      model: row.model,
-      activeCount: 0, // Default to 0
-      isActive: false,
-    }));
-
-    // ✅ Step 3: Only query `tracking.db` for active models if active aircraft exist
-    if (activeCount > 0) {
-      console.log(`[API] Fetching active models from tracking DB...`);
-
-      const activeModelsQuery = `
-        SELECT model, COUNT(icao24) as activeCount
-        FROM active_tracking
-        WHERE manufacturer = ? AND model IS NOT NULL
-        GROUP BY model
-        HAVING model != ''
-        ORDER BY model;
-      `;
-
-      let activeModelsResult = await trackingManager.executeQuery<
-        ActiveModel[]
-      >(activeModelsQuery, [manufacturer]);
-
-      const activeModels: ActiveModel[] = Array.isArray(activeModelsResult)
-        ? activeModelsResult
-            .flat()
-            .filter(
-              (item) =>
-                item &&
-                typeof item.model === 'string' &&
-                typeof item.activeCount === 'number'
-            )
-        : [];
-
-      console.log(`[API] Found ${activeModels.length} active models`);
-
-      // ✅ Merge static models with active aircraft counts
-      const activeModelMap = new Map<string, number>(
-        activeModels.map((row) => [row.model, row.activeCount])
-      );
-
-      modelsWithCounts = modelsWithCounts.map((model) => ({
+    const formattedModels = models
+      .filter((item) => item && item.model)
+      .map((model) => ({
         model: model.model,
-        activeCount: activeModelMap.get(model.model) || 0,
-        isActive: (activeModelMap.get(model.model) || 0) > 0,
+        manufacturer: model.manufacturer,
+        count: model.count,
+        label: `${model.model} (${model.count} aircraft)`,
       }));
-    } else {
-      console.log(
-        `[API] No active aircraft found. Skipping tracking DB query.`
-      );
-    }
+
+    const responseTime = Date.now() - start;
+    console.log(
+      `[Models API] ✅ Request completed in ${responseTime}ms, returning ${formattedModels.length} models`
+    );
 
     return res.status(200).json({
       success: true,
-      message: `Found ${modelsWithCounts.length} models for ${manufacturer}`,
-      data: modelsWithCounts,
+      data: formattedModels,
+      meta: {
+        count: formattedModels.length,
+        manufacturer,
+        responseTime,
+      },
     });
   } catch (error) {
-    console.error('[API] Internal Server Error:', (error as Error).message);
+    console.error('[Models API] ❌ Error processing request:', error);
     return res.status(500).json({
       success: false,
       message: 'Internal server error',
@@ -143,3 +98,5 @@ export default async function handler(
     });
   }
 }
+
+export default withErrorHandler(handler);

@@ -1,19 +1,15 @@
 import { SelectOption, Aircraft } from '@/types/base';
 import { useState, useMemo, useRef, useEffect } from 'react';
-
-interface Model {
-  model: string;
-  label: string;
-  activeCount?: number; // `activeCount` is optional (number | undefined)
-}
+import { useAircraftData } from '../customHooks/useAircraftData';
+import { Model } from '../../../types/base';
 
 interface ManufacturerSelectorProps {
   manufacturers: SelectOption[];
   selectedManufacturer: string | null;
   setSelectedManufacturer: (manufacturer: string | null) => void;
-  onSelect: (manufacturer: string | null) => Promise<void>;
+  onSelect: (manufacturer: string | null) => Promise<Aircraft[]>;
   onAircraftUpdate: (aircraft: Aircraft[]) => void;
-  onModelsUpdate: (models: Model[]) => void;
+  onModelsUpdate?: (models: Model[]) => void; // ✅ Add this property
   onError: (message: string) => void;
 }
 
@@ -22,6 +18,8 @@ const ManufacturerSelector: React.FC<ManufacturerSelectorProps> = ({
   selectedManufacturer,
   setSelectedManufacturer,
   onSelect,
+  onAircraftUpdate, // ✅ Ensure this prop is destructured
+  onError, // ✅ Ensure this prop is destructured
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [isOpen, setIsOpen] = useState(false);
@@ -57,6 +55,7 @@ const ManufacturerSelector: React.FC<ManufacturerSelectorProps> = ({
   const handleSelect = async (manufacturer: string | null) => {
     console.log('[ManufacturerSelector] 🔍 Selection initiated:', manufacturer);
     setIsOpen(false);
+
     if (manufacturer) {
       const selectedLabel =
         manufacturers.find((m) => m.value === manufacturer)?.label || '';
@@ -66,12 +65,30 @@ const ManufacturerSelector: React.FC<ManufacturerSelectorProps> = ({
       );
       setSearchTerm(selectedLabel);
       setSelectedManufacturer(manufacturer);
+
+      try {
+        const aircraftData = await onSelect(manufacturer); // ✅ Fetch aircraft safely
+        console.log('[ManufacturerSelector] ✈️ Static aircraft:', aircraftData);
+
+        if (aircraftData.length > 0) {
+          onAircraftUpdate(aircraftData); // ✅ Update UI with aircraft data
+        } else {
+          console.warn('[ManufacturerSelector] ⚠️ No active aircraft found.');
+          onAircraftUpdate([]); // ✅ Prevent undefined errors
+        }
+      } catch (error) {
+        console.error(
+          '[ManufacturerSelector] ❌ Error fetching aircraft:',
+          error
+        );
+        onError?.('Failed to fetch aircraft data.');
+      }
     } else {
       console.log('[ManufacturerSelector] 🔄 Resetting selection');
       setSearchTerm('');
       setSelectedManufacturer(null);
+      onAircraftUpdate([]); // ✅ Clear aircraft data when resetting
     }
-    await onSelect(manufacturer);
   };
 
   return (
