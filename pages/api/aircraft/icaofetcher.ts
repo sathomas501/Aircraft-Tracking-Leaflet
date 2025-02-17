@@ -1,73 +1,72 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import CacheManager from '@/lib/services/managers/cache-manager';
+import { processBatchedRequests } from '../../../utils/batchprocessor';
 
-const cache = new CacheManager<string[]>(5 * 60); // 5-minute ICAO24 cache
+const cache = new CacheManager<string[]>(2 * 60);
+const BATCH_SIZE = 200;
 
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
-  console.log('[Aircraft Positions] Received Request:', req.method, req.query);
+  console.log('[ICAOFetcher] 📡 Received Request:', req.method);
 
-  if (req.method !== 'GET') {
+  if (req.method !== 'POST') {
     return res
       .status(405)
-      .json({ error: 'Method Not Allowed. Use GET instead.' });
+      .json({ error: 'Method Not Allowed. Use POST instead.' });
   }
 
-  let { icao24List, manufacturer } = req.query;
+  const { icao24List } = req.body;
 
-  if (!icao24List && !manufacturer) {
-    return res.status(400).json({
-      error: 'Either icao24List or manufacturer parameter is required',
-    });
+  if (!icao24List || !Array.isArray(icao24List) || icao24List.length === 0) {
+    console.error('[ICAOFetcher] ❌ Invalid or missing ICAO24 list');
+    return res.status(400).json({ error: 'Invalid ICAO24 list' });
   }
 
-  let icao24String: string;
-
-  if (manufacturer) {
-    const cachedIcao24s = cache.get(manufacturer as string);
-
-    if (cachedIcao24s) {
-      console.log(
-        `[Aircraft Positions] ✅ Using cached ICAO24s for ${manufacturer}`
-      );
-      icao24String = cachedIcao24s.join(',');
-    } else {
-      return res.status(400).json({
-        error: `ICAO24s for manufacturer ${manufacturer} not found in cache.`,
-      });
-    }
-  } else {
-    icao24String = Array.isArray(icao24List)
-      ? icao24List.join(',')
-      : (icao24List as string);
-  }
-
-  // Use the proxy instead of direct OpenSky requests
-  const proxyUrl = `http://localhost:3001/api/proxy/opensky?icao24=${icao24String}`;
-  console.log(`[Aircraft Positions] Forwarding request to Proxy: ${proxyUrl}`);
+  console.log(
+    `[ICAOFetcher] 🔄 Processing ${icao24List.length} ICAO24s before sending to proxy`
+  );
 
   try {
-    const response = await fetch(proxyUrl, { method: 'GET' });
-
-    if (!response.ok) {
-      console.error(
-        '[Aircraft Positions] Proxy Response Error:',
-        response.status,
-        response.statusText
+    const batchProcessor = async (batch: string[]) => {
+      console.log(
+        `[ICAOFetcher] 🚀 Sending batch of ${batch.length} ICAO24s to OpenSky Proxy`
       );
-      return res
-        .status(response.status)
-        .json({ error: 'Proxy request failed' });
-    }
 
-    const data = await response.json();
-    return res.status(200).json(data);
+      // Convert batch to URL query parameters for GET request
+      const icao24Param = batch.join(',');
+      const proxyUrl = `http://localhost:3001/api/proxy/opensky?icao24=${encodeURIComponent(icao24Param)}`;
+
+      const response = await fetch(proxyUrl, {
+        method: 'GET', // Use GET for OpenSky
+        headers: {
+          Accept: 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`Proxy Request Failed: ${response.statusText}`);
+      }
+
+      return await response.json();
+    };
+
+    const results = await processBatchedRequests(
+      icao24List,
+      batchProcessor,
+      BATCH_SIZE
+    );
+
+    console.log(
+      `[ICAOFetcher] ✅ Successfully processed ${icao24List.length} ICAO24s in batches`
+    );
+
+    return res.status(200).json({ success: true, data: results });
   } catch (error) {
-    console.error('[Aircraft Positions] Error:', error);
+    console.error('[ICAOFetcher] ❌ Error processing ICAO24s:', error);
     return res
       .status(500)
-      .json({ error: 'Failed to fetch aircraft positions from proxy' });
+      .json({ error: 'Failed to fetch aircraft positions from OpenSky' });
   }
 }

@@ -1,29 +1,8 @@
+// pages/api/aircraft/tracking.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { Aircraft } from '@/types/base';
-import CacheManager from '@/lib/services/managers/cache-manager';
 import BackendDatabaseManager from '@/lib/db/backendDatabaseManager';
 import { APIErrors } from '@/lib/services/error-handler/api-error';
-import {
-  errorHandler,
-  ErrorType,
-} from '@/lib/services/error-handler/error-handler';
-
-// Initialize CacheManager with a 5-minute TTL
-const icaoCache = new CacheManager<string[]>(5 * 60);
-
-export interface TrackingUpdateRequest {
-  action:
-    | 'updatePositions'
-    | 'getTrackedAircraft'
-    | 'removeAircraft'
-    | 'fetchAndStoreActiveAircraft'
-    | 'upsertActiveAircraftBatch';
-  manufacturer?: string;
-  positions?: Aircraft[];
-  aircraft?: Aircraft[];
-  icao24s?: string[];
-  icao24?: string;
-}
 
 export default async function handler(
   req: NextApiRequest,
@@ -31,17 +10,34 @@ export default async function handler(
 ) {
   console.log('[Tracking API] 📩 Received payload:', req.body);
 
-  try {
-    const db = await BackendDatabaseManager.getInstance();
+  const dbManager = BackendDatabaseManager.getInstance();
+  let attempts = 0;
+  const maxAttempts = 3;
 
+  while (!dbManager.isReady && attempts < maxAttempts) {
+    console.warn(
+      `[Tracking API] 🔄 Database not ready. Retrying... (${attempts + 1}/${maxAttempts})`
+    );
+    await new Promise((resolve) => setTimeout(resolve, 2000)); // Wait 2 sec
+    attempts++;
+  }
+
+  if (!dbManager.isReady) {
+    console.error('[Tracking API] ❌ Database initialization failed.');
+    return res
+      .status(500)
+      .json({ success: false, error: 'Database is not ready' });
+  }
+
+  try {
     if (req.method === 'GET') {
       const query = `
-        SELECT * FROM tracked_aircraft 
-        WHERE last_contact > ? 
-        ORDER BY last_contact DESC
-      `;
-      const staleThreshold = Math.floor(Date.now() / 1000) - 2 * 60 * 60; // 2 hours
-      const trackedAircraft = await db.executeQuery<Aircraft>(query, [
+                SELECT * FROM tracked_aircraft 
+                WHERE last_contact > ? 
+                ORDER BY last_contact DESC
+            `;
+      const staleThreshold = Math.floor(Date.now() / 1000) - 2 * 60 * 60;
+      const trackedAircraft = await dbManager.executeQuery<Aircraft>(query, [
         staleThreshold,
       ]);
       return res.status(200).json({ success: true, aircraft: trackedAircraft });
@@ -52,63 +48,45 @@ export default async function handler(
     }
 
     const { action, aircraft, positions } = req.body;
-    console.log(`[Tracking API] Received action: ${action}`);
-
     if (!action) {
       throw APIErrors.BadRequest('Missing action in request');
     }
 
-    switch (action) {
-      case 'getTrackedAircraft': {
-        const query = `
-          SELECT * FROM tracked_aircraft 
-          WHERE last_contact > ? 
-          ORDER BY last_contact DESC
-        `;
-        const staleThreshold = Math.floor(Date.now() / 1000) - 2 * 60 * 60;
-        const trackedAircraft = await db.executeQuery<Aircraft>(query, [
-          staleThreshold,
-        ]);
-        return res.status(200).json({
-          success: true,
-          aircraft: trackedAircraft,
-        });
-      }
+    console.log(`[Tracking API] Processing action: ${action}`);
 
+    switch (action) {
       case 'upsertActiveAircraftBatch': {
-        const aircraftData = aircraft || positions;
-        if (!aircraftData || !Array.isArray(aircraftData)) {
+        if (!aircraft || !Array.isArray(aircraft)) {
           throw APIErrors.BadRequest('Invalid aircraft data format');
         }
 
-        console.log(`[Tracking API] Processing aircraft batch upsert...`);
+        console.log(`[Tracking API] 🛠️ Upserting ${aircraft.length} aircraft`);
 
-        // Begin transaction
-        await db.executeQuery('BEGIN TRANSACTION');
+        await dbManager.executeQuery('BEGIN TRANSACTION');
 
         try {
-          for (const ac of aircraftData) {
+          for (const ac of aircraft) {
             const query = `
-              INSERT INTO active_tracking (
-                icao24, manufacturer, model, marker, latitude, longitude,
-                altitude, velocity, heading, on_ground, last_contact,
-                last_seen, TYPE_AIRCRAFT, "N-NUMBER", OWNER_TYPE, updated_at
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-              ON CONFLICT(icao24) DO UPDATE SET
-                manufacturer = COALESCE(excluded.manufacturer, active_tracking.manufacturer),
-                model = COALESCE(NULLIF(excluded.model, ''), active_tracking.model),
-                latitude = excluded.latitude,
-                longitude = excluded.longitude,
-                altitude = excluded.altitude,
-                velocity = excluded.velocity,
-                heading = excluded.heading,
-                on_ground = excluded.on_ground,
-                last_contact = excluded.last_contact,
-                last_seen = excluded.last_seen,
-                updated_at = excluded.updated_at
-            `;
+                            INSERT INTO active_tracking (
+                                icao24, manufacturer, model, marker, latitude, longitude,
+                                altitude, velocity, heading, on_ground, last_contact,
+                                last_seen, TYPE_AIRCRAFT, "N-NUMBER", OWNER_TYPE, updated_at
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            ON CONFLICT(icao24) DO UPDATE SET
+                                manufacturer = COALESCE(excluded.manufacturer, active_tracking.manufacturer),
+                                model = COALESCE(NULLIF(excluded.model, ''), active_tracking.model),
+                                latitude = excluded.latitude,
+                                longitude = excluded.longitude,
+                                altitude = excluded.altitude,
+                                velocity = excluded.velocity,
+                                heading = excluded.heading,
+                                on_ground = excluded.on_ground,
+                                last_contact = excluded.last_contact,
+                                last_seen = excluded.last_seen,
+                                updated_at = excluded.updated_at
+                        `;
 
-            await db.executeQuery(query, [
+            await dbManager.executeQuery(query, [
               ac.icao24,
               ac.manufacturer || '',
               ac.model || '',
@@ -128,14 +106,17 @@ export default async function handler(
             ]);
           }
 
-          await db.executeQuery('COMMIT');
+          await dbManager.executeQuery('COMMIT');
+          console.log(`[Tracking API] ✅ Upserted ${aircraft.length} aircraft`);
 
           return res.status(200).json({
             success: true,
-            message: 'Aircraft batch upserted successfully',
+            message: `Aircraft batch upserted successfully`,
+            count: aircraft.length,
           });
         } catch (error) {
-          await db.executeQuery('ROLLBACK');
+          console.error('[Tracking API] ❌ Upsert failed:', error);
+          await dbManager.executeQuery('ROLLBACK');
           throw error;
         }
       }
@@ -145,20 +126,8 @@ export default async function handler(
     }
   } catch (error) {
     console.error(`[Tracking API] ❌ Error:`, error);
-
-    if (error instanceof Error) {
-      errorHandler.handleError(ErrorType.OPENSKY_SERVICE, error);
-    } else {
-      errorHandler.handleError(
-        ErrorType.OPENSKY_SERVICE,
-        new Error('Unknown error occurred')
-      );
-    }
-
-    return res.status(error instanceof APIErrors.BadRequest ? 400 : 500).json({
+    return res.status(500).json({
       success: false,
-      message:
-        error instanceof Error ? error.message : 'An unknown error occurred',
       error: error instanceof Error ? error.message : 'Unknown error',
     });
   }

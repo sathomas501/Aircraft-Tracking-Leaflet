@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
+import { debounce } from 'lodash';
 import { Plus, Minus } from 'lucide-react';
 import ManufacturerSelector from './ManufacturerSelector';
+import { TrackingUpdateRequest } from '../../../types/tracking';
 import ModelSelector from './ModelSelector';
 import NNumberSelector from './nNumberSelector';
 import {
@@ -10,6 +12,8 @@ import {
   StaticModel,
   ActiveModel,
   Model,
+  OpenSkyState,
+  OpenSkyStateArray,
 } from '@/types/base';
 
 // Local interface for model data
@@ -68,14 +72,12 @@ export const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
     }));
   };
 
-  const pollForActiveModels = async (manufacturer: string) => {
+  const pollForActiveModels = debounce(async (manufacturer: string) => {
     setIsLoadingModels(true);
     setError(null);
 
     try {
-      console.log(
-        `[UnifiedSelector] 🔄 Fetching models for manufacturer: ${manufacturer}`
-      );
+      console.log(`[UnifiedSelector] 🔄 Fetching models for: ${manufacturer}`);
       const response = await fetch(
         `/api/aircraft/models?manufacturer=${encodeURIComponent(manufacturer)}`
       );
@@ -100,12 +102,12 @@ export const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
         setModels(processedModels);
         onModelsUpdate(convertToStaticModel(processedModels));
       } else {
-        console.log('[UnifiedSelector] ⚠️ No models in response:', data);
+        console.log('[UnifiedSelector] ⚠️ No models found:', data);
         setModels([]);
         onModelsUpdate([]);
       }
     } catch (error) {
-      console.error('[UnifiedSelector] ❌ Error:', error);
+      console.error('[UnifiedSelector] ❌ Error fetching models:', error);
       setError(
         error instanceof Error ? error.message : 'Failed to fetch models'
       );
@@ -113,7 +115,7 @@ export const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
     } finally {
       setIsLoadingModels(false);
     }
-  };
+  }, 300); // 🔥 Debounce: Delay execution by 300ms
 
   const handleManufacturerSelect = async (
     manufacturer: string | null
@@ -129,43 +131,94 @@ export const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
         return [];
       }
 
-      console.log(
-        '[UnifiedSelector] 🔍 Processing manufacturer selection:',
-        manufacturer
-      );
+      console.log('[UnifiedSelector] 🔍 Selected manufacturer:', manufacturer);
       setSelectedManufacturer(manufacturer);
       setIsLoadingModels(true);
       setModels([]);
       setSelectedModel('');
 
-      // First get active aircraft for the manufacturer
-      const response = await fetch('/api/aircraft/tracking', {
+      // ✅ Step 1: Fetch ICAO24 codes
+      console.log('[UnifiedSelector] 📡 Fetching ICAO24s for', manufacturer);
+      const icaoResponse = await fetch('/api/aircraft/icao24s', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ manufacturer }),
+      });
+
+      if (!icaoResponse.ok) {
+        throw new Error(`Failed to fetch ICAO24s: ${icaoResponse.statusText}`);
+      }
+
+      const icaoData = await icaoResponse.json();
+      if (!icaoData.success || !Array.isArray(icaoData.data?.states)) {
+        throw new Error('Invalid response format from ICAO API');
+      }
+
+      const states = icaoData.data.states;
+      console.log(
+        `[UnifiedSelector] ✅ Retrieved ${states.length} aircraft states`
+      );
+
+      if (states.length === 0) {
+        console.warn(
+          `[UnifiedSelector] ⚠️ No aircraft found for ${manufacturer}. Skipping further processing.`
+        );
+        setIsLoadingModels(false);
+        return [];
+      }
+
+      // ✅ Step 2: Upsert aircraft states to tracking database
+      console.log('[UnifiedSelector] 📡 Upserting aircraft states to tracking');
+      const trackingResponse = await fetch('/api/aircraft/tracking', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'upsertActiveAircraftBatch',
+          positions: states.map((state: OpenSkyStateArray) => ({
+            ...state,
+            manufacturer,
+            isTracked: true,
+          })),
+        }),
+      });
+
+      if (!trackingResponse.ok) {
+        throw new Error(
+          `Failed to upsert tracking data: ${trackingResponse.statusText}`
+        );
+      }
+
+      // ✅ Step 3: Fetch models after aircraft retrieval
+      console.log(`[UnifiedSelector] 📡 Fetching models for ${manufacturer}`);
+      await pollForActiveModels(manufacturer);
+
+      // ✅ Step 4: Get tracked aircraft
+      const trackedResponse = await fetch('/api/aircraft/tracking', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'getTrackedAircraft',
-          manufacturer,
         }),
       });
 
-      if (!response.ok) {
-        throw new Error(`Failed to fetch aircraft: ${response.statusText}`);
+      if (!trackedResponse.ok) {
+        throw new Error(
+          `Failed to fetch tracked aircraft: ${trackedResponse.statusText}`
+        );
       }
 
-      const data = await response.json();
-      const aircraft: Aircraft[] = data.aircraft || [];
+      const trackedData = await trackedResponse.json();
+      const aircraft: Aircraft[] = trackedData.aircraft || [];
+      console.log(
+        `[UnifiedSelector] ✅ Retrieved ${aircraft.length} tracked aircraft`
+      );
 
-      // Now get the models
-      console.log('[UnifiedSelector] 📡 Polling for active models');
-      await pollForActiveModels(manufacturer);
-
-      // Update the UI
+      // ✅ Step 5: Update UI
       onAircraftUpdate(aircraft);
-
       return aircraft;
     } catch (error) {
-      console.error('[UnifiedSelector] ❌ Error processing selection:', error);
-      onError('Failed to process manufacturer selection');
+      console.error('[UnifiedSelector] ❌ Error:', error);
+      onError('Failed to process aircraft data');
       setSelectedManufacturer(null);
       setSelectedModel('');
       setModels([]);
@@ -174,7 +227,6 @@ export const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
       setIsLoadingModels(false);
     }
   };
-
   const handleModelsUpdate = (inputModels: Model[]) => {
     const processedModels: ModelData[] = inputModels.map((m) => ({
       model: m.model,
@@ -220,14 +272,18 @@ export const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
     }
   };
 
+  const [forceRender, setForceRender] = useState(false);
+
   return (
     <>
       {!isMinimized ? (
         <div className="bg-white rounded-lg shadow-lg p-4 w-[320px] absolute top-4 left-4 z-[3000]">
-          {/* Header with minimize and reset buttons */}
           <div className="flex justify-between items-center mb-2">
             <button
-              onClick={() => setIsMinimized(true)}
+              onClick={() => {
+                setIsMinimized(true);
+                setForceRender((prev) => !prev); // 🔥 Force Re-render
+              }}
               className="p-1 bg-gray-200 rounded-md mr-2 hover:bg-gray-300"
             >
               <Minus size={16} />

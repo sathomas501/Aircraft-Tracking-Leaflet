@@ -1,10 +1,17 @@
-import sqlite3 from 'sqlite3';
-import { Database } from 'sqlite3';
+import { Database, open } from 'sqlite';
 import path from 'path';
-import {
-  errorHandler,
-  ErrorType,
-} from '@/lib/services/error-handler/error-handler';
+
+let sqlite3: typeof import('sqlite3') | null = null;
+
+if (typeof window === 'undefined') {
+  try {
+    sqlite3 = require('sqlite3').verbose();
+    console.log('[BackendDatabaseManager] ✅ Loaded sqlite3 successfully');
+  } catch (error) {
+    console.error('[BackendDatabaseManager] ❌ Failed to load sqlite3:', error);
+    throw error;
+  }
+}
 
 class BackendDatabaseManager {
   private static instance: BackendDatabaseManager | null = null;
@@ -15,13 +22,18 @@ class BackendDatabaseManager {
     'db',
     'tracking.db'
   );
-  private isInitialized = false;
-  private initializingPromise: Promise<void> | null = null; // ✅ Prevents multiple inits
+  private _isInitialized = false;
+  private initializationPromise: Promise<void> | null = null;
+  private initLock = false;
 
   private constructor() {
     if (typeof window !== 'undefined') {
       throw new Error('Cannot initialize database manager on client side');
     }
+  }
+
+  public get isReady(): boolean {
+    return this._isInitialized;
   }
 
   public static getInstance(): BackendDatabaseManager {
@@ -31,229 +43,256 @@ class BackendDatabaseManager {
     return BackendDatabaseManager.instance;
   }
 
-  public async initialize(): Promise<void> {
-    if (this.isInitialized) {
+  private async waitForInitialization(): Promise<void> {
+    if (this.initializationPromise) {
+      await this.initializationPromise;
+    }
+  }
+
+  public async getDatabaseState(): Promise<{
+    isReady: boolean;
+    tables: string[];
+  }> {
+    await this.waitForInitialization();
+
+    try {
+      if (!this.isReady) {
+        return { isReady: false, tables: [] };
+      }
+
+      const query = "SELECT name FROM sqlite_master WHERE type='table'";
+      const tables = await this.executeQuery<{ name: string }>(query);
+
+      return {
+        isReady: true,
+        tables: tables.map((t) => t.name),
+      };
+    } catch (error) {
+      console.error(
+        '[DatabaseManager] ❌ Error getting database state:',
+        error
+      );
+      return {
+        isReady: false,
+        tables: [],
+      };
+    }
+  }
+
+  public async initializeDatabase(): Promise<void> {
+    if (this._isInitialized) {
       console.log('[BackendDatabaseManager] ✅ Database already initialized.');
       return;
     }
 
-    // ✅ Prevent multiple inits by setting a lock
-    if (this.initializingPromise) {
+    if (this.initializationPromise) {
       console.log(
         '[BackendDatabaseManager] 🔄 Waiting for existing initialization...'
       );
-      await this.initializingPromise;
+      return this.initializationPromise;
+    }
+
+    this.initializationPromise = this.performInitialization();
+
+    try {
+      await this.initializationPromise;
+    } finally {
+      this.initializationPromise = null;
+    }
+  }
+
+  private async performInitialization(): Promise<void> {
+    if (this.initLock) {
+      console.log(
+        '[BackendDatabaseManager] 🔒 Waiting for existing initialization...'
+      );
+      await new Promise((resolve) => setTimeout(resolve, 500));
       return;
     }
 
-    this.initializingPromise = (async () => {
-      try {
+    this.initLock = true;
+    let retries = 3;
+
+    try {
+      // Verify directory exists
+      const dbDir = path.dirname(this.TRACKING_DB_PATH);
+      if (!require('fs').existsSync(dbDir)) {
         console.log(
-          '[BackendDatabaseManager] 🔄 Initializing tracking database...'
+          `[BackendDatabaseManager] 📁 Creating database directory: ${dbDir}`
         );
-
-        this.db = await this.connectToDatabase();
-
-        if (!this.db) {
-          throw new Error(
-            '[BackendDatabaseManager] ❌ Database connection failed.'
-          );
-        }
-
-        // Enable WAL mode for better concurrency
-        await this.executeQuery('PRAGMA journal_mode=WAL');
-        await this.executeQuery('PRAGMA foreign_keys=ON');
-
-        // Create tables if they don't exist
-        await this.ensureTablesExist();
-
-        console.log(
-          '[BackendDatabaseManager] ✅ Tracking database initialized successfully.'
-        );
-
-        // ✅ Set `isInitialized = true` ONLY after full success
-        this.isInitialized = true;
-      } catch (error: unknown) {
-        const err = error as Error;
-        console.error(
-          '[BackendDatabaseManager] ❌ Initialization failed:',
-          err.message
-        );
-
-        // ✅ Reset only on fatal DB corruption issues
-        if (
-          err.message.includes('database disk image is malformed') ||
-          err.message.includes('unable to open database file')
-        ) {
-          this.isInitialized = false;
-          this.db = null;
-        }
-
-        throw err;
-      } finally {
-        this.initializingPromise = null; // ✅ Cleanup initialization lock
+        require('fs').mkdirSync(dbDir, { recursive: true });
       }
-    })();
 
-    return this.initializingPromise;
-  }
+      // Check directory permissions
+      try {
+        require('fs').accessSync(dbDir, require('fs').constants.W_OK);
+        console.log('[BackendDatabaseManager] ✅ Directory is writable');
+      } catch (err) {
+        console.error(
+          '[BackendDatabaseManager] ❌ Directory is not writable:',
+          err
+        );
+        throw err;
+      }
 
-  private async connectToDatabase(): Promise<Database> {
-    return new Promise((resolve, reject) => {
-      const db = new sqlite3.Database(this.TRACKING_DB_PATH, (err) => {
-        if (err) {
-          console.error('[BackendDatabaseManager] ❌ Connection failed:', err);
-          reject(err);
-        } else {
+      while (retries > 0) {
+        try {
+          if (!sqlite3) {
+            throw new Error(
+              '[BackendDatabaseManager] ❌ sqlite3 not available'
+            );
+          }
+
+          if (retries < 3) {
+            console.log(
+              `[BackendDatabaseManager] 🔄 Retrying initialization (attempts remaining: ${retries})`
+            );
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+          }
+
+          this.db = await open({
+            filename: this.TRACKING_DB_PATH,
+            driver: sqlite3.Database,
+          });
+
+          await this.db.get('SELECT 1');
           console.log(
-            `[BackendDatabaseManager] ✅ Connected to tracking database at ${this.TRACKING_DB_PATH}`
+            '[BackendDatabaseManager] ✅ Database connection established.'
           );
-          resolve(db);
+
+          const tables = await this.db.all<{ name: string }[]>(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+          );
+          console.log(
+            '[BackendDatabaseManager] 📊 Existing tables:',
+            tables.map((t) => t.name)
+          );
+
+          await this.ensureTablesExist(tables);
+
+          this._isInitialized = true;
+          console.log(
+            '[BackendDatabaseManager] ✅ Tracking database successfully initialized.'
+          );
+          return;
+        } catch (error) {
+          retries--;
+          if (retries === 0) {
+            throw error;
+          }
+          console.error(
+            `[BackendDatabaseManager] ⚠️ Initialization attempt failed, retrying...`,
+            error
+          );
         }
-      });
-    });
+      }
+    } catch (error: unknown) {
+      const err = error as Error;
+      this._isInitialized = false;
+      this.db = null;
+      console.error(
+        '[BackendDatabaseManager] ❌ All initialization attempts failed:',
+        err.message
+      );
+      throw err;
+    } finally {
+      this.initLock = false;
+    }
   }
 
-  private async ensureTablesExist(): Promise<void> {
+  private async ensureTablesExist(tables: { name: string }[]): Promise<void> {
     console.log(
       '[BackendDatabaseManager] 🔍 Checking and creating tracking tables...'
     );
 
-    const tables = await this.executeQuery<{ name: string }[]>(
-      "SELECT name FROM sqlite_master WHERE type='table';"
-    );
-    console.log(
-      '[BackendDatabaseManager] 📋 Existing tables:',
-      tables.map((t) => t.name)
-    );
+    const createTableQueries = [
+      `CREATE TABLE IF NOT EXISTS tracked_aircraft (
+        icao24 TEXT PRIMARY KEY,
+        latitude REAL,
+        longitude REAL,
+        altitude REAL,
+        velocity REAL,
+        heading REAL,
+        on_ground INTEGER,
+        last_contact INTEGER,
+        updated_at INTEGER DEFAULT (strftime('%s', 'now'))
+      )`,
+      `CREATE TABLE IF NOT EXISTS active_tracking (
+        icao24 TEXT PRIMARY KEY,
+        manufacturer TEXT NOT NULL,
+        model TEXT,
+        marker TEXT,
+        latitude REAL,
+        longitude REAL,
+        altitude REAL,
+        velocity REAL,
+        heading REAL,
+        on_ground BOOLEAN,
+        last_contact TIMESTAMP,
+        last_seen TIMESTAMP,
+        TYPE_AIRCRAFT TEXT DEFAULT 'default',
+        N_NUMBER TEXT,
+        OWNER_TYPE TEXT,
+        updated_at INTEGER,
+        created_at INTEGER
+      )`,
+      `CREATE TABLE IF NOT EXISTS aircraft_history (
+        icao24 TEXT PRIMARY KEY,
+        latitude REAL,
+        longitude REAL,
+        altitude REAL,
+        velocity REAL,
+        heading REAL,
+        last_contact INTEGER,
+        updated_at INTEGER DEFAULT (strftime('%s', 'now'))
+      )`,
+    ];
 
-    // Create tracked_aircraft table if it doesn't exist
-    if (!tables.some((t) => t.name === 'tracked_aircraft')) {
-      console.log(
-        '[BackendDatabaseManager] 🛠️ Creating tracked_aircraft table...'
-      );
-      await this.executeQuery(`
-        CREATE TABLE IF NOT EXISTS tracked_aircraft (
-          icao24 TEXT PRIMARY KEY,
-          latitude REAL,
-          longitude REAL,
-          altitude REAL,
-          velocity REAL,
-          heading REAL,
-          on_ground INTEGER,
-          last_contact INTEGER,
-          updated_at INTEGER DEFAULT (strftime('%s', 'now'))
-        );
-        CREATE INDEX IF NOT EXISTS idx_tracked_aircraft_last_contact 
-          ON tracked_aircraft(last_contact);
-      `);
+    for (const query of createTableQueries) {
+      await this.executeQuery(query);
     }
-
-    // Create active_tracking table if it doesn't exist
-    if (!tables.some((t) => t.name === 'active_tracking')) {
-      console.log(
-        '[BackendDatabaseManager] 🛠️ Creating active_tracking table...'
-      );
-      await this.executeQuery(`
-        CREATE TABLE IF NOT EXISTS active_tracking (
-          icao24 TEXT PRIMARY KEY,
-          manufacturer TEXT,
-          model TEXT,
-          marker TEXT,
-          latitude REAL NOT NULL DEFAULT 0,
-          longitude REAL NOT NULL DEFAULT 0,
-          altitude REAL DEFAULT 0,
-          velocity REAL DEFAULT 0,
-          heading REAL DEFAULT 0,
-          on_ground INTEGER DEFAULT 0,
-          last_contact INTEGER,
-          last_seen INTEGER,
-          TYPE_AIRCRAFT TEXT,
-          "N-NUMBER" TEXT,
-          OWNER_TYPE TEXT,
-          created_at INTEGER DEFAULT (strftime('%s', 'now')),
-          updated_at INTEGER DEFAULT (strftime('%s', 'now')),
-          CONSTRAINT valid_coordinates CHECK (
-            latitude BETWEEN -90 AND 90 AND 
-            longitude BETWEEN -180 AND 180
-          ),
-          CONSTRAINT valid_heading CHECK (
-            heading BETWEEN 0 AND 360 OR heading IS NULL
-          )
-        );
-        CREATE INDEX IF NOT EXISTS idx_active_tracking_manufacturer 
-          ON active_tracking(manufacturer);
-        CREATE INDEX IF NOT EXISTS idx_active_tracking_last_seen 
-          ON active_tracking(last_seen);
-        CREATE INDEX IF NOT EXISTS idx_active_tracking_coords 
-          ON active_tracking(latitude, longitude);
-      `);
-    }
-
-    console.log(
-      '[BackendDatabaseManager] ✅ Tracking tables verified and created if needed'
-    );
   }
 
-  async executeQuery<T = any>(sql: string, params: any[] = []): Promise<T> {
-    if (!this.isInitialized) {
-      console.log(
-        '[BackendDatabaseManager] ⚠️ Database not initialized, skipping query:',
-        sql
+  async executeQuery<T = any>(sql: string, params: any[] = []): Promise<T[]> {
+    if (!this._isInitialized) {
+      console.warn(
+        '[BackendDatabaseManager] ⚠️ Database not initialized. Attempting to initialize...'
       );
-      throw new Error('Database is not initialized');
+      try {
+        await this.initializeDatabase();
+      } catch (err) {
+        console.error(
+          '[BackendDatabaseManager] ❌ Failed to initialize database:',
+          err
+        );
+        throw new Error('Database is not initialized');
+      }
     }
 
-    return new Promise((resolve, reject) => {
-      console.time(`[BackendDatabaseManager] ⏳ Query: ${sql.split('\n')[0]}`);
-      this.db!.all(sql, params, (err, rows) => {
-        console.timeEnd(
-          `[BackendDatabaseManager] ⏳ Query: ${sql.split('\n')[0]}`
-        );
-
+    return new Promise<T[]>((resolve, reject) => {
+      this.db!.all(sql, params, (err: Error | null, rows: T[]) => {
         if (err) {
           console.error('[BackendDatabaseManager] ❌ Query error:', err);
-
-          // ✅ Only reset `isInitialized` if the DB is truly corrupted
-          if (
-            err.message.includes('database disk image is malformed') ||
-            err.message.includes('unable to open database file')
-          ) {
-            this.isInitialized = false;
-            this.db = null;
-          }
-
           return reject(err);
         }
-
-        resolve(rows as T);
+        resolve(rows);
       });
     });
   }
 
-  async close(shutdown: boolean = false): Promise<void> {
+  public async close(): Promise<void> {
     if (this.db) {
-      return new Promise((resolve, reject) => {
-        this.db!.close((err) => {
-          if (err) {
-            console.error(
-              '[BackendDatabaseManager] ❌ Error closing database:',
-              err
-            );
-            reject(err);
-          } else {
-            console.log('[BackendDatabaseManager] ✅ Database closed');
-            this.db = null;
-
-            // ✅ Only reset `isInitialized` if shutting down
-            if (shutdown) {
-              this.isInitialized = false;
-            }
-
-            resolve();
-          }
-        });
-      });
+      try {
+        await this.db.run('PRAGMA optimize');
+        await this.db.close();
+        this.db = null;
+        console.log('[BackendDatabaseManager] ✅ Database connection closed');
+      } catch (error) {
+        console.error(
+          '[BackendDatabaseManager] ❌ Error closing database:',
+          error
+        );
+      }
     }
   }
 }
