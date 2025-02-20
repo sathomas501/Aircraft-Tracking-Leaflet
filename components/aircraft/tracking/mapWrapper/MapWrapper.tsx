@@ -1,7 +1,7 @@
 import React, {
   useState,
-  useMemo,
   useEffect,
+  useMemo,
   useCallback,
   useRef,
 } from 'react';
@@ -11,9 +11,9 @@ import type { Aircraft, SelectOption } from '@/types/base';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 import type { DynamicMapProps, ExtendedAircraft } from '../Map/DynamicMap';
 import { clientTrackingService } from '@/lib/services/tracking-services/client-tracking-service';
-import { AircraftTrackingService } from '@/lib/services/tracking-services/aircraft-tracking-service';
 import 'react-toastify/dist/ReactToastify.css';
 
+// Dynamically import Map to avoid SSR issues
 const DynamicMap = dynamic<DynamicMapProps>(() => import('../Map/DynamicMap'), {
   ssr: false,
   loading: () => <LoadingSpinner message="Loading map..." />,
@@ -25,6 +25,15 @@ interface MapWrapperProps {
   onError: (errorMessage: string) => void;
 }
 
+// Type for model updates
+interface ModelUpdate {
+  model: string;
+  label: string;
+  activeCount?: number;
+  count?: number;
+}
+
+// Transform Aircraft object
 function toExtendedAircraft(aircraft: Aircraft): ExtendedAircraft {
   return {
     ...aircraft,
@@ -44,12 +53,31 @@ const MapWrapper: React.FC<MapWrapperProps> = ({
   const [selectedManufacturer, setSelectedManufacturer] = useState<string>('');
   const [selectedModel, setSelectedModel] = useState<string>('');
   const [isMapReady, setIsMapReady] = useState(false);
-  const [models, setModels] = useState<
-    { model: string; label: string; activeCount?: number; count?: number }[]
-  >([]);
+  const [models, setModels] = useState<ModelUpdate[]>([]);
   const unsubscribeRef = useRef<(() => void) | null>(null);
+  const [aircraftTrackingService, setAircraftTrackingService] =
+    useState<any>(null);
 
-  const aircraftTrackingService = new AircraftTrackingService();
+  // ✅ Safely import AircraftTrackingService **ONLY on the server**
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      import('@/lib/services/tracking-services/aircraft-tracking-service')
+        .then((mod) =>
+          setAircraftTrackingService(new mod.AircraftTrackingService())
+        )
+        .catch((error) => {
+          console.error(
+            '[Tracking] ❌ Failed to load tracking service:',
+            error
+          );
+          onError('Failed to load tracking service.');
+        });
+    }
+  }, []);
+
+  // ✅ Ensure aircraftTrackingService is loaded before usage
+  if (!aircraftTrackingService)
+    return <LoadingSpinner message="Initializing tracking..." />;
 
   const modelCounts = useMemo(() => {
     const counts = new Map<string, number>();
@@ -61,23 +89,14 @@ const MapWrapper: React.FC<MapWrapperProps> = ({
     return counts;
   }, [displayedAircraft]);
 
-  const handleModelsUpdate = useCallback(
-    (
-      models: {
-        model: string;
-        label: string;
-        activeCount?: number;
-        count?: number;
-      }[]
-    ) => {
-      setModels(models);
-    },
-    []
-  );
+  // ✅ Explicit type for models
+  const handleModelsUpdate = useCallback((models: ModelUpdate[]) => {
+    setModels(models);
+  }, []);
 
-  // Function to update displayed aircraft
-  const handleAircraftUpdate = useCallback((aircraftList: Aircraft[]) => {
-    setDisplayedAircraft(aircraftList.map(toExtendedAircraft));
+  // ✅ Explicit type for updated aircraft
+  const handleAircraftUpdate = useCallback((updatedAircraft: Aircraft[]) => {
+    setDisplayedAircraft(updatedAircraft.map(toExtendedAircraft));
   }, []);
 
   // Handle model selection
@@ -106,6 +125,7 @@ const MapWrapper: React.FC<MapWrapperProps> = ({
           const subscription = aircraftTrackingService.subscribeToManufacturer(
             manufacturer,
             (updatedAircraft: Aircraft[]) => {
+              // ✅ Explicitly defining type
               console.log(
                 `[Tracking] 🔄 Live Update for ${manufacturer}`,
                 updatedAircraft
@@ -130,7 +150,7 @@ const MapWrapper: React.FC<MapWrapperProps> = ({
         }
       }
     },
-    [onError, setDisplayedAircraft]
+    [onError, setDisplayedAircraft, aircraftTrackingService]
   );
 
   useEffect(() => {
@@ -149,11 +169,6 @@ const MapWrapper: React.FC<MapWrapperProps> = ({
     }
   }, [initialAircraft]);
 
-  // Ensure the map initializes correctly
-  useEffect(() => {
-    setIsMapReady(true);
-  }, []);
-
   useEffect(() => {
     console.log('[Debug] Updated Displayed Aircraft:', displayedAircraft);
   }, [displayedAircraft]);
@@ -170,8 +185,8 @@ const MapWrapper: React.FC<MapWrapperProps> = ({
           setSelectedModel={setSelectedModel}
           onManufacturerSelect={handleManufacturerSelect}
           onModelSelect={handleModelSelect}
-          modelCounts={modelCounts} // ✅ Fix: Add missing prop
-          onModelsUpdate={handleModelsUpdate} // ✅ Fix: Add missing prop
+          modelCounts={modelCounts}
+          onModelsUpdate={handleModelsUpdate}
           totalActive={displayedAircraft.length}
           manufacturers={manufacturers}
           onAircraftUpdate={handleAircraftUpdate}
