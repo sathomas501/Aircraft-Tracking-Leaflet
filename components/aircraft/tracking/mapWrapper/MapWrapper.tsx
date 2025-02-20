@@ -1,4 +1,10 @@
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, {
+  useState,
+  useMemo,
+  useEffect,
+  useCallback,
+  useRef,
+} from 'react';
 import dynamic from 'next/dynamic';
 import UnifiedSelector from '../../selector/UnifiedSelector';
 import type { Aircraft, SelectOption } from '@/types/base';
@@ -41,7 +47,7 @@ const MapWrapper: React.FC<MapWrapperProps> = ({
   const [models, setModels] = useState<
     { model: string; label: string; activeCount?: number; count?: number }[]
   >([]);
-  let unsubscribe: (() => void) | null = null;
+  const unsubscribeRef = useRef<(() => void) | null>(null);
 
   const aircraftTrackingService = new AircraftTrackingService();
 
@@ -85,27 +91,19 @@ const MapWrapper: React.FC<MapWrapperProps> = ({
       setSelectedManufacturer(manufacturer || '');
       setSelectedModel('');
 
-      if (unsubscribe) {
-        unsubscribe(); // ✅ Unsubscribe from previous updates
-        unsubscribe = null;
+      if (unsubscribeRef.current) {
+        unsubscribeRef.current();
+        unsubscribeRef.current = null;
       }
 
       if (manufacturer) {
         try {
           console.log(`[Tracking] Starting tracking for ${manufacturer}`);
 
-          // ✅ Fetch and merge live & static data
           const aircraftData =
             await aircraftTrackingService.processManufacturer(manufacturer);
-          unsubscribe = aircraftTrackingService.subscribeToManufacturer(
-            manufacturer,
-            (updatedAircraft: Aircraft[]) => {
-              setDisplayedAircraft(updatedAircraft.map(toExtendedAircraft));
-            }
-          );
 
-          // ✅ Subscribe to real-time updates
-          unsubscribe = aircraftTrackingService.subscribeToManufacturer(
+          const subscription = aircraftTrackingService.subscribeToManufacturer(
             manufacturer,
             (updatedAircraft: Aircraft[]) => {
               console.log(
@@ -116,7 +114,8 @@ const MapWrapper: React.FC<MapWrapperProps> = ({
             }
           );
 
-          // ✅ Fetch only if no recent tracking data exists
+          unsubscribeRef.current = () => subscription.unsubscribe();
+
           const trackedAircraft =
             await clientTrackingService.getTrackedAircraft();
           if (trackedAircraft.length === 0) {
@@ -124,10 +123,6 @@ const MapWrapper: React.FC<MapWrapperProps> = ({
               `[Tracking] Manually forcing OpenSky fetch for ${manufacturer}`
             );
             await clientTrackingService.pollAircraftData();
-          } else {
-            console.log(
-              `[Tracking] ✅ Skipping manual fetch - tracking data already exists.`
-            );
           }
         } catch (error) {
           console.error('[Tracking] ❌ Error fetching aircraft:', error);
@@ -135,7 +130,7 @@ const MapWrapper: React.FC<MapWrapperProps> = ({
         }
       }
     },
-    []
+    [onError, setDisplayedAircraft]
   );
 
   useEffect(() => {
@@ -148,9 +143,9 @@ const MapWrapper: React.FC<MapWrapperProps> = ({
     setSelectedManufacturer('');
     setSelectedModel('');
     setDisplayedAircraft(initialAircraft.map(toExtendedAircraft));
-    if (unsubscribe) {
-      unsubscribe();
-      unsubscribe = null;
+    if (unsubscribeRef.current) {
+      unsubscribeRef.current();
+      unsubscribeRef.current = null;
     }
   }, [initialAircraft]);
 

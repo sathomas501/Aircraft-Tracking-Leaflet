@@ -27,6 +27,8 @@ export class OpenSkySyncService {
       requestsPerDay: 1000,
       minPollingInterval: 5000,
       maxPollingInterval: 30000,
+      interval: 60000, // Add appropriate interval value
+      retryAfter: 1000, // Add appropriate retryAfter value
     });
 
     if (typeof window === 'undefined') {

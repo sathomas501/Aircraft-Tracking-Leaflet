@@ -42,6 +42,8 @@ export class AircraftPositionService extends BaseTrackingService {
       maxPollingInterval: RATE_LIMITS.AUTHENTICATED.MAX_CONCURRENT,
       retryLimit: RATE_LIMITS.AUTHENTICATED.MAX_RETRY_LIMIT,
       requireAuthentication: true,
+      interval: 60000, // Add appropriate interval value
+      retryAfter: 1000, // Add appropriate retryAfter value
     };
 
     super(rateLimiterOptions);

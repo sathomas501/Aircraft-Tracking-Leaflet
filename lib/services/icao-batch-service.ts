@@ -32,6 +32,8 @@ export class IcaoBatchService {
       retryLimit: API_CONFIG.API.MAX_RETRY_LIMIT,
       requireAuthentication: true,
       maxConcurrentRequests: 5,
+      interval: 60000, // Add appropriate interval value
+      retryAfter: 1000, // Add appropriate retryAfter value
     });
   }
 

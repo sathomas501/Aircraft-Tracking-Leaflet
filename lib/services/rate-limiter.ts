@@ -9,6 +9,8 @@ import { RATE_LIMITS } from '@/config/rate-limits';
 import { API_CONFIG } from '@/config/api';
 
 export interface RateLimiterOptions {
+  interval: number;
+  retryAfter: number;
   requestsPerMinute: number;
   requestsPerDay: number;
   maxWaitTime?: number;
@@ -38,6 +40,7 @@ export class PollingRateLimiter {
   private consecutiveFailures: number = 0;
   private backoffTime: number = 3000;
   private cleanupInterval: NodeJS.Timeout;
+  private requestCount: number = 0; // Add this to the class definition
 
   constructor(options: RateLimiterOptions) {
     this.requireAuthentication = options.requireAuthentication ?? true;
@@ -78,6 +81,17 @@ export class PollingRateLimiter {
     if (this.cleanupInterval) {
       clearInterval(this.cleanupInterval);
     }
+  }
+
+  public stop(): void {
+    // Clear any internal timers or state
+    this.resetState();
+  }
+
+  private resetState(): void {
+    // Reset internal counters and timers
+    this.requestCount = 0;
+    this.lastRequestTime = 0;
   }
 
   private validateConfiguration(): void {

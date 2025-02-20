@@ -1,28 +1,40 @@
-// File: pages/api/tracking/db.ts
-import sqlite3 from 'sqlite3';
-import { Database } from 'sqlite3';
 import path from 'path';
 
+// ✅ Ensure sqlite3 is only loaded on the server
+let sqlite3: typeof import('sqlite3');
+if (typeof window === 'undefined') {
+  sqlite3 = require('sqlite3');
+}
+
+// ✅ Explicitly define the Database type
+type SQLiteDatabase = import('sqlite3').Database;
+
 class DatabaseConnection {
-  private static instance: Database | null = null;
+  private static instance: SQLiteDatabase | null = null;
   private static DB_PATH = path.join(process.cwd(), 'lib', 'db', 'tracking.db');
 
-  static async getInstance(): Promise<Database> {
+  // ✅ Safe database initialization
+  static async getInstance(): Promise<SQLiteDatabase> {
     if (!DatabaseConnection.instance) {
-      DatabaseConnection.instance = await new Promise<Database>(
+      DatabaseConnection.instance = await new Promise<SQLiteDatabase>(
         (resolve, reject) => {
-          const db = new sqlite3.Database(DatabaseConnection.DB_PATH, (err) => {
-            if (err) {
-              console.error('Failed to connect to database:', err);
-              reject(err);
-            } else {
-              if (!db) {
-                reject(new Error('Failed to create database instance'));
-              } else {
-                resolve(db);
+          try {
+            const db = new sqlite3.Database(
+              DatabaseConnection.DB_PATH,
+              (err) => {
+                if (err) {
+                  console.error('[Database] ❌ Failed to connect:', err);
+                  reject(err);
+                } else {
+                  console.log('[Database] ✅ Connected successfully');
+                  resolve(db);
+                }
               }
-            }
-          });
+            );
+          } catch (error) {
+            console.error('[Database] ❌ Unexpected error:', error);
+            reject(error);
+          }
         }
       );
     }
@@ -34,19 +46,29 @@ class DatabaseConnection {
     return DatabaseConnection.instance;
   }
 
-  static async executeQuery(sql: string, params: any[] = []): Promise<any> {
+  // ✅ Safe query execution with error handling
+  static async executeQuery<T = any>(
+    sql: string,
+    params: any[] = []
+  ): Promise<T[]> {
     const db = await DatabaseConnection.getInstance();
-    return new Promise((resolve, reject) => {
-      db.all(sql, params, (err, rows) => {
-        if (err) reject(err);
-        else resolve(rows);
+    return new Promise<T[]>((resolve, reject) => {
+      db.all(sql, params, (err, rows: T[]) => {
+        if (err) {
+          console.error('[Database] ❌ Query failed:', sql, err);
+          reject(err);
+        } else {
+          resolve(rows);
+        }
       });
     });
   }
 }
 
-// Utility functions for database operations
-async function initializeTables(db: Database) {
+// ✅ Utility function for table initialization
+async function initializeTables(): Promise<void> {
+  const db = await DatabaseConnection.getInstance();
+
   const trackedAircraftTable = `
     CREATE TABLE IF NOT EXISTS tracked_aircraft (
       icao24 TEXT PRIMARY KEY,
@@ -97,8 +119,14 @@ async function initializeTables(db: Database) {
       ON active_tracking(latitude, longitude);
   `;
 
-  await db.exec(trackedAircraftTable);
-  await db.exec(activeTrackingTable);
+  try {
+    await db.exec(trackedAircraftTable);
+    await db.exec(activeTrackingTable);
+    console.log('[Database] ✅ Tables initialized successfully');
+  } catch (error) {
+    console.error('[Database] ❌ Error initializing tables:', error);
+    throw error;
+  }
 }
 
 export { DatabaseConnection, initializeTables };

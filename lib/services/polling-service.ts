@@ -51,6 +51,8 @@ export class PollingService {
       maxPollingInterval: API_CONFIG.API.MAX_POLLING_INTERVAL,
       maxWaitTime: API_CONFIG.API.TIMEOUT_MS,
       retryLimit: API_CONFIG.API.DEFAULT_RETRY_LIMIT,
+      interval: 60000, // Add appropriate interval value
+      retryAfter: 1000, // Add appropriate retryAfter value
     });
   }
 

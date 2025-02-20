@@ -1,6 +1,6 @@
-// File: /pages/api/tracking/maintenance.ts
+// pages/api/tracking/maintenance.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
-import BackendDatabaseManager from '@/lib/db/backendDatabaseManager';
+import { TrackingDatabaseManager } from '@/lib/db/managers/trackingDatabaseManager';
 import { withErrorHandler } from '@/lib/middleware/error-handler';
 import { APIErrors } from '@/lib/services/error-handler/api-error';
 
@@ -9,22 +9,25 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
     throw APIErrors.BadRequest('Method not allowed');
   }
 
-  const db = await BackendDatabaseManager.getInstance();
-  const staleThreshold = Math.floor(Date.now() / 1000) - 2 * 60 * 60;
+  const db = TrackingDatabaseManager.getInstance();
+  await db.initializeDatabase();
 
-  // Clean stale records
-  await db.executeQuery('DELETE FROM tracked_aircraft WHERE last_contact < ?', [
-    staleThreshold,
-  ]);
+  try {
+    const results = await db.performMaintenance(); // 2 hours stale threshold
 
-  // Optimize database
-  await db.executeQuery('VACUUM');
-  await db.executeQuery('ANALYZE');
-
-  return res.status(200).json({
-    success: true,
-    message: 'Maintenance completed successfully',
-  });
+    return res.status(200).json({
+      success: true,
+      message: 'Maintenance completed successfully',
+      details: {
+        ...results,
+        timestamp: Date.now(),
+      },
+    });
+  } catch (error) {
+    throw APIErrors.Internal(
+      error instanceof Error ? error : new Error('Maintenance operation failed')
+    );
+  }
 }
 
 export default withErrorHandler(handler);

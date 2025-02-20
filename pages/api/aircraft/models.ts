@@ -1,6 +1,6 @@
 // pages/api/aircraft/models.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
-import databaseManager from '@/lib/db/databaseManager';
+import databaseManager from '@/lib/db/managers/staticDatabaseManager';
 import { withErrorHandler } from '@/lib/middleware/error-handler';
 
 interface StaticModel {
@@ -17,54 +17,31 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
     timestamp: new Date().toISOString(),
   });
 
-  const { method, query } = req;
-  const manufacturer = query.manufacturer as string;
-
-  if (method !== 'GET') {
-    console.log(`[Models API] ⚠️ Invalid method: ${method}`);
+  if (req.method !== 'GET') {
+    console.log(`[Models API] ⚠️ Invalid method: ${req.method}`);
     return res
       .status(405)
       .json({ success: false, message: 'Method not allowed' });
   }
 
+  const manufacturer = req.query.manufacturer as string;
   if (!manufacturer) {
     console.log('[Models API] ⚠️ No manufacturer provided');
-    return res.status(400).json({
-      success: false,
-      message: 'Manufacturer parameter is required',
-    });
+    return res
+      .status(400)
+      .json({ success: false, message: 'Manufacturer parameter is required' });
   }
 
   try {
-    // Ensure database is initialized
     if (!databaseManager.isReady) {
       console.log('[Models API] 🔄 Initializing database');
       await databaseManager.initializeDatabase();
     }
 
-    const modelsQuery = `
-      SELECT model, manufacturer, COUNT(*) as count
-      FROM aircraft
-      WHERE manufacturer = ?
-        AND model IS NOT NULL 
-        AND model != ''
-      GROUP BY model, manufacturer
-      ORDER BY count DESC, model ASC;
-    `;
-
     console.log(
-      `[Models API] 📊 Executing query for manufacturer: ${manufacturer}`
+      `[Models API] 📊 Fetching models for manufacturer: ${manufacturer}`
     );
-    const results = await databaseManager.executeQuery<StaticModel>(
-      modelsQuery,
-      [manufacturer]
-    );
-
-    // Ensure results is an array
-    const models = Array.isArray(results) ? results : [results];
-    console.log(
-      `[Models API] 📋 Found ${models.length} models for ${manufacturer}`
-    );
+    const models = await databaseManager.getModelsByManufacturer(manufacturer);
 
     const formattedModels = models
       .filter((item) => item && item.model)
@@ -83,11 +60,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
     return res.status(200).json({
       success: true,
       data: formattedModels,
-      meta: {
-        count: formattedModels.length,
-        manufacturer,
-        responseTime,
-      },
+      meta: { count: formattedModels.length, manufacturer, responseTime },
     });
   } catch (error) {
     console.error('[Models API] ❌ Error processing request:', error);

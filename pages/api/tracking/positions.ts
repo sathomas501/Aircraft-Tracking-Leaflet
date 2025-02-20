@@ -1,6 +1,6 @@
-// File: /pages/api/tracking/position.ts
+// pages/api/tracking/positions.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
-import BackendDatabaseManager from '@/lib/db/backendDatabaseManager';
+import { TrackingDatabaseManager } from '@/lib/db/managers/trackingDatabaseManager';
 import { withErrorHandler } from '@/lib/middleware/error-handler';
 import { APIErrors } from '@/lib/services/error-handler/api-error';
 
@@ -10,6 +10,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
   }
 
   const { icao24, latitude, longitude, heading } = req.body;
+
   if (
     !icao24 ||
     typeof latitude !== 'number' ||
@@ -18,18 +19,21 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
     throw APIErrors.BadRequest('Missing required fields');
   }
 
-  const db = await BackendDatabaseManager.getInstance();
-  await db.executeQuery(
-    `UPDATE tracked_aircraft 
-     SET latitude = ?, longitude = ?, heading = ?, updated_at = ?
-     WHERE icao24 = ?`,
-    [latitude, longitude, heading, Math.floor(Date.now() / 1000), icao24]
-  );
+  const db = TrackingDatabaseManager.getInstance();
+  await db.initializeDatabase();
 
-  return res.status(200).json({
-    success: true,
-    message: 'Position updated successfully',
-  });
+  try {
+    await db.updatePosition(icao24, latitude, longitude, heading);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Position updated successfully',
+    });
+  } catch (error) {
+    throw APIErrors.Internal(
+      error instanceof Error ? error : new Error('Failed to update position')
+    );
+  }
 }
 
 export default withErrorHandler(handler);

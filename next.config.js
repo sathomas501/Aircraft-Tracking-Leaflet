@@ -18,7 +18,9 @@ const nextConfig = {
         ...config.resolve.fallback,
         fs: false,
         net: false,
+        path: false,
         tls: false,
+        sqlite3: false,
       };
     }
     return config;

@@ -23,6 +23,8 @@ const manufacturersRateLimiter = new PollingRateLimiter({
   retryLimit: REQUEST_CONSTANTS.MAX_RETRIES,
   requireAuthentication: false,
   maxConcurrentRequests: 3,
+  interval: 60000, // Add appropriate interval value
+  retryAfter: 1000, // Add appropriate retryAfter value
 });
 
 async function fetchWithTimeout(

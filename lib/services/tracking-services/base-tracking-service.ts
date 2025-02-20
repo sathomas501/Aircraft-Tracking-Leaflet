@@ -1,4 +1,4 @@
-import trackingDatabaseManager from '../../db/trackingDatabaseManager';
+import trackingDatabaseManager from '../../db/managers/trackingDatabaseManager';
 import { PollingRateLimiter, RateLimiterOptions } from '../rate-limiter';
 import UnifiedCacheService from '../../services/managers/unified-cache-system';
 import { Aircraft } from '../../../types/base';
@@ -30,7 +30,7 @@ export abstract class BaseTrackingService {
 
       // ✅ Store only live data in tracking database
       for (const a of aircraft) {
-        await trackingDatabaseManager.updateAircraftPosition(
+        await trackingDatabaseManager.updatePosition(
           a.icao24,
           a.latitude,
           a.longitude,
