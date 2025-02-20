@@ -29,6 +29,18 @@ try {
   sqlite = null;
 }
 
+if (!sqlite3Instance || !sqlite) {
+  try {
+    sqlite3Instance = require('sqlite3').verbose();
+    sqlite = require('sqlite');
+    console.log('[DatabaseManager] ✅ Loaded sqlite and sqlite3 successfully');
+  } catch (error) {
+    console.error('[DatabaseManager] ❌ Failed to load sqlite modules:', error);
+  }
+}
+
+export { sqlite, sqlite3Instance };
+
 export abstract class BaseDatabaseManager {
   // ✅ Use `sqlite3.Database` as a type alias
   protected db: SQLiteDatabaseDriver<sqlite3.Database> | null = null;
