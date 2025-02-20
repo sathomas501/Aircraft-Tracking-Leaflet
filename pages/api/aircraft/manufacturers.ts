@@ -1,6 +1,6 @@
 // pages/api/aircraft/manufacturers.ts
 import { NextApiRequest, NextApiResponse } from 'next';
-import databaseManager from '@/lib/db/databaseManager';
+import { StaticDatabaseManager } from '@/lib/db/managers/staticDatabaseManager';
 import {
   errorHandler,
   ErrorType,
@@ -16,12 +16,12 @@ interface ManufacturersResponse {
   debug?: unknown;
 }
 
+const QUERY_TIMEOUT = 5000; // 5 seconds timeout
+
 async function manufacturersHandler(
   req: NextApiRequest,
   res: NextApiResponse<ManufacturersResponse>
 ) {
-  const QUERY_TIMEOUT = 5000; // 5 seconds timeout
-
   if (req.method !== 'GET') {
     return res.status(405).json({
       success: false,
@@ -31,63 +31,36 @@ async function manufacturersHandler(
     });
   }
 
+  const db = StaticDatabaseManager.getInstance();
+
   try {
-    // First check database status
-    console.log('[Manufacturers API] 🔍 Checking database status...');
-    if (!databaseManager.isReady) {
-      console.log('[Manufacturers API] 🔄 Initializing database...');
-      await databaseManager.initializeDatabase();
-    }
+    console.log('[Manufacturers API] 🔍 Initializing database...');
+    await db.initializeDatabase();
 
     // Verify database connection
     console.log('[Manufacturers API] 🔍 Verifying database connection...');
-    const testQuery = 'SELECT 1';
-    await databaseManager.executeQuery(testQuery);
+    await db.executeQuery('SELECT 1');
     console.log('[Manufacturers API] ✅ Database connection verified');
 
     // Set query timeout
     console.log('[Manufacturers API] 🔍 Fetching manufacturers...');
-    const timeoutPromise = new Promise((_, reject) =>
+    const timeoutPromise = new Promise<never>((_, reject) =>
       setTimeout(() => reject(new Error('Query timeout')), QUERY_TIMEOUT)
     );
 
-    // Execute the actual query
-    const queryPromise = databaseManager.executeQuery<{
-      name: string;
-      count: number;
-    }>(
-      `SELECT name, count FROM (
-        SELECT
-          TRIM(manufacturer) AS name,
-          COUNT(*) AS count
-        FROM aircraft
-        WHERE manufacturer IS NOT NULL
-        AND TRIM(manufacturer) != ''
-        GROUP BY TRIM(manufacturer)
-        HAVING count > 0
-        ORDER BY count DESC
-        LIMIT 50
-      ) AS TopManufacturers
-      ORDER BY name ASC`
-    );
-
-    // Race between query and timeout
-    const result = await Promise.race([queryPromise, timeoutPromise]);
-
-    // Check results
-    if (!Array.isArray(result)) {
-      throw new Error('Invalid query result format');
-    }
+    // Execute the actual query with timeout
+    const result = await Promise.race([
+      db.getManufacturersWithCount(50),
+      timeoutPromise,
+    ]);
 
     console.log(`[Manufacturers API] ✅ Found ${result.length} manufacturers`);
 
-    // Transform and validate manufacturers
-    const manufacturers = result
-      .filter((m) => m && m.name && m.count)
-      .map((manufacturer) => ({
-        value: manufacturer.name,
-        label: `${manufacturer.name} (${manufacturer.count} aircraft)`,
-      }));
+    // Transform manufacturers into select options
+    const manufacturers = result.map((manufacturer) => ({
+      value: manufacturer.name,
+      label: `${manufacturer.name} (${manufacturer.count} aircraft)`,
+    }));
 
     return res.status(200).json({
       success: true,
@@ -95,13 +68,16 @@ async function manufacturersHandler(
       message: `Successfully fetched ${manufacturers.length} manufacturers`,
     });
   } catch (error) {
-    // Handle specific error types
     console.error('[Manufacturers API] ❌ Error:', error);
 
     // Get database state for debugging
     let debugInfo = {};
     try {
-      debugInfo = await databaseManager.getDatabaseState();
+      const dbState = await db.getDatabaseState();
+      debugInfo = {
+        ...dbState,
+        timestamp: Date.now(),
+      };
       console.log('[Manufacturers API] 📊 Database state:', debugInfo);
     } catch (dbError) {
       console.error(
@@ -110,6 +86,7 @@ async function manufacturersHandler(
       );
     }
 
+    // Log error to error handler
     errorHandler.handleError(
       ErrorType.OPENSKY_SERVICE,
       error instanceof Error
@@ -118,6 +95,7 @@ async function manufacturersHandler(
       { debugInfo }
     );
 
+    // Handle timeout specifically
     if (error instanceof Error && error.message.includes('Query timeout')) {
       return res.status(504).json({
         success: false,
@@ -128,6 +106,7 @@ async function manufacturersHandler(
       });
     }
 
+    // Handle other errors
     return res.status(500).json({
       success: false,
       manufacturers: [],

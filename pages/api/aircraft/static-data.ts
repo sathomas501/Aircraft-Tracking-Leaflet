@@ -6,7 +6,7 @@ import {
   errorHandler,
   ErrorType,
 } from '@/lib/services/error-handler/error-handler';
-import databaseManager from '@/lib/db/databaseManager';
+import databaseManager from '@/lib/db/managers/staticDatabaseManager';
 import { Aircraft } from '@/types/base';
 
 async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -21,36 +21,10 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
   }
 
   try {
-    // Ensure database is initialized
-    await databaseManager.initializeDatabase();
-
-    // Build query with proper parameter placeholders
-    const placeholders = icao24s.map(() => '?').join(',');
-    const query = `
-      SELECT 
-        icao24,
-        "N-NUMBER",
-        manufacturer,
-        model,
-        NAME,
-        CITY,
-        STATE,
-        TYPE_AIRCRAFT,
-        OWNER_TYPE
-      FROM aircraft
-      WHERE icao24 IN (${placeholders})
-    `;
-
     console.log(
       `[Static Data API] 🔍 Fetching data for ${icao24s.length} aircraft`
     );
-
-    const aircraft = await databaseManager.executeQuery<Aircraft>(
-      query,
-      icao24s
-    );
-
-    console.log(`[Static Data API] ✅ Found ${aircraft.length} aircraft`);
+    const aircraft = await databaseManager.getAircraftByIcao24s(icao24s);
 
     return res.status(200).json({
       success: true,

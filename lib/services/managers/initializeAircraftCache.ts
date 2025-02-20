@@ -1,4 +1,4 @@
-import databaseManager from '../../db/databaseManager';
+import databaseManager from '../../db/managers/staticDatabaseManager';
 
 interface ManufacturerRow {
   manufacturer: string;

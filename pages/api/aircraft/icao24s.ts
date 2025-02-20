@@ -1,46 +1,106 @@
-// pages/api/aircraft/icao24s.ts
-import type { NextApiRequest, NextApiResponse } from 'next';
-import StaticDatabaseManager from '@/lib/db/databaseManager';
-import { OpenSkyState, OpenSkyStateArray } from '@/types/base';
+// lib/db/staticDatabaseManager.ts
+import { BaseDatabaseManager } from '../../../lib/db/managers/baseDatabaseManager';
+import CacheManager from '@/lib/services/managers/cache-manager';
 
-interface BatchResponse {
-  data?: {
-    states?: OpenSkyState[];
-    timestamp?: number;
-    meta?: {
-      total: number;
-      requestedIcaos: number;
-    };
-  };
-  success: boolean;
-}
+// Cache manufacturer validation results for 1 hour
+const manufacturerCache = new CacheManager<Set<string>>(60 * 60);
+const MANUFACTURER_CACHE_KEY = 'valid-manufacturers';
 
-async function handler(req: NextApiRequest, res: NextApiResponse) {
-  console.log(`[ICAO24 API] 📡 Received Request: ${req.method}`);
+class StaticDatabaseManager extends BaseDatabaseManager {
+  private static instance: StaticDatabaseManager | null = null;
+  private readonly icaoCache = new CacheManager<string[]>(5 * 60);
 
-  if (req.method !== 'POST') {
-    return res
-      .status(405)
-      .json({ success: false, error: 'Method Not Allowed. Use POST.' });
+  private constructor() {
+    super('static.db');
   }
 
-  const { manufacturer } = req.body;
-
-  if (!manufacturer || typeof manufacturer !== 'string') {
-    return res.status(400).json({
-      success: false,
-      error: 'Manufacturer parameter is required',
-    });
+  public static getInstance(): StaticDatabaseManager {
+    if (!StaticDatabaseManager.instance) {
+      StaticDatabaseManager.instance = new StaticDatabaseManager();
+    }
+    return StaticDatabaseManager.instance;
   }
 
-  console.log(
-    `[ICAO24 API] 🔄 Fetching ICAO24s from STATIC database for manufacturer: ${manufacturer}`
-  );
+  // Implement the abstract createTables method
+  protected async createTables(): Promise<void> {
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
 
-  try {
-    if (!StaticDatabaseManager.isReady) {
-      console.log('[ICAO24 API] 🔄 Initializing Static Database...');
-      await StaticDatabaseManager.initializeDatabase();
+    await this.db.exec(`
+      CREATE TABLE IF NOT EXISTS aircraft (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        icao24 TEXT UNIQUE,
+        registration TEXT,
+        manufacturer TEXT,
+        model TEXT,
+        owner TEXT,
+        created_at INTEGER DEFAULT (strftime('%s', 'now')),
+        updated_at INTEGER DEFAULT (strftime('%s', 'now'))
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_aircraft_icao24 ON aircraft(icao24);
+      CREATE INDEX IF NOT EXISTS idx_aircraft_manufacturer ON aircraft(manufacturer);
+    `);
+
+    console.log('[StaticDB] Tables and indices created');
+  }
+
+  private async getValidManufacturers(): Promise<Set<string>> {
+    const cached = await manufacturerCache.get(MANUFACTURER_CACHE_KEY);
+    if (cached) {
+      console.log('[StaticDB] Using cached manufacturer list');
+      return cached;
+    }
+
+    console.log('[StaticDB] Fetching manufacturer list from database');
+    const query = `
+      SELECT DISTINCT manufacturer 
+      FROM aircraft 
+      WHERE manufacturer IS NOT NULL 
+      AND manufacturer != ''
+    `;
+
+    const results = await this.executeQuery<{ manufacturer: string }>(query);
+    const manufacturers = new Set(
+      results.map((r) => r.manufacturer.trim().toUpperCase())
+    );
+
+    await manufacturerCache.set(MANUFACTURER_CACHE_KEY, manufacturers);
+    console.log(`[StaticDB] Cached ${manufacturers.size} manufacturers`);
+
+    return manufacturers;
+  }
+
+  public async validateManufacturer(manufacturer: string): Promise<boolean> {
+    await this.ensureInitialized();
+
+    try {
+      const validManufacturers = await this.getValidManufacturers();
+      return validManufacturers.has(manufacturer.trim().toUpperCase());
+    } catch (error) {
+      console.error('[StaticDB] Failed to validate manufacturer:', error);
+      const query = `
+        SELECT COUNT(*) as count
+        FROM aircraft
+        WHERE UPPER(manufacturer) = UPPER(?)
+      `;
+      const result = await this.executeQuery<{ count: number }>(query, [
+        manufacturer,
+      ]);
+      return (result[0]?.count || 0) > 0;
+    }
+  }
+
+  public async getManufacturerIcao24s(manufacturer: string): Promise<string[]> {
+    await this.ensureInitialized();
+
+    const cacheKey = `icao24s-${manufacturer.toUpperCase()}`;
+
+    const cached = await this.icaoCache.get(cacheKey);
+    if (cached) {
+      console.log(`[StaticDB] Using cached ICAO24s for ${manufacturer}`);
+      return cached;
     }
 
     const query = `
@@ -53,91 +113,42 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
       ORDER BY icao24
     `;
 
-    const results = await StaticDatabaseManager.executeQuery<{
-      icao24: string;
-    }>(query, [manufacturer]);
+    try {
+      const results = await this.executeQuery<{ icao24: string }>(query, [
+        manufacturer,
+      ]);
 
-    const icao24List = results
-      .map((item) => item.icao24.toLowerCase())
-      .filter((icao24) => /^[0-9a-f]{6}$/.test(icao24));
+      const icao24List = results
+        .map((item) => item.icao24.toLowerCase())
+        .filter((icao24) => /^[0-9a-f]{6}$/.test(icao24));
 
-    if (icao24List.length === 0) {
-      return res.status(200).json({
-        success: true,
-        data: {
-          icao24List: [],
-          states: [],
-          timestamp: Date.now(),
-          meta: {
-            total: 0,
-            requestedIcaos: 0,
-          },
-        },
-      });
+      await this.icaoCache.set(cacheKey, icao24List);
+      console.log(
+        `[StaticDB] Cached ${icao24List.length} ICAO24s for ${manufacturer}`
+      );
+
+      return icao24List;
+    } catch (error) {
+      console.error('[StaticDB] Failed to fetch ICAO24s:', error);
+      throw new Error(
+        error instanceof Error
+          ? `Failed to fetch ICAO24s: ${error.message}`
+          : 'Failed to fetch ICAO24s'
+      );
     }
+  }
 
-    console.log(
-      `[ICAO24 API] ✅ Retrieved ${icao24List.length} ICAO24s. Forwarding to ICAOFetcher...`
-    );
-
-    // Forward to ICAOFetcher
-    const fetcherResponse = await fetch(
-      'http://localhost:3001/api/aircraft/icaofetcher',
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ icao24List }),
-      }
-    );
-
-    if (!fetcherResponse.ok) {
-      throw new Error(`ICAOFetcher failed: ${fetcherResponse.statusText}`);
-    }
-
-    const fetcherData = await fetcherResponse.json();
-
-    // Consolidate the batch responses
-    const consolidatedStates: OpenSkyState[] = [];
-    let latestTimestamp = 0;
-    let totalAircraft = 0;
-
-    if (Array.isArray(fetcherData.data)) {
-      fetcherData.data.forEach((batch: BatchResponse) => {
-        if (batch.data?.states) {
-          consolidatedStates.push(...batch.data.states);
-          latestTimestamp = Math.max(
-            latestTimestamp,
-            batch.data.timestamp || 0
-          );
-          totalAircraft += batch.data.meta?.total || 0;
-        }
-      });
-    }
-
-    console.log(
-      `[ICAO24 API] ✅ Consolidated ${consolidatedStates.length} states from ${fetcherData.data?.length || 0} batches`
-    );
-
-    return res.status(200).json({
-      success: true,
-      data: {
-        icao24List,
-        states: consolidatedStates,
-        timestamp: latestTimestamp || Date.now(),
-        meta: {
-          total: totalAircraft,
-          requestedIcaos: icao24List.length,
-        },
-      },
-    });
-  } catch (error) {
-    console.error('[ICAO24 API] ❌ Error processing ICAO24s:', error);
-    return res.status(500).json({
-      success: false,
-      error: 'Failed to fetch ICAO24s',
-      details: error instanceof Error ? error.message : 'Unknown error',
-    });
+  // Method to invalidate caches if needed
+  public async invalidateCaches(): Promise<void> {
+    await Promise.all([
+      manufacturerCache.delete(MANUFACTURER_CACHE_KEY),
+      // Delete all ICAO caches individually since we don't have a clear method
+      this.icaoCache.delete('*'),
+    ]);
+    console.log('[StaticDB] Caches invalidated');
   }
 }
 
-export default handler;
+const staticDatabaseManager = StaticDatabaseManager.getInstance();
+export { StaticDatabaseManager };
+export default staticDatabaseManager;

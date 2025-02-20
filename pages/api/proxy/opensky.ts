@@ -19,6 +19,8 @@ const rateLimiter = new PollingRateLimiter({
   maxWaitTime: API_CONFIG.API.TIMEOUT_MS,
   retryLimit: API_CONFIG.API.DEFAULT_RETRY_LIMIT,
   requireAuthentication: true,
+  interval: 60000, // Add appropriate interval value
+  retryAfter: 1000, // Add appropriate retryAfter value
 });
 
 export default async function handler(

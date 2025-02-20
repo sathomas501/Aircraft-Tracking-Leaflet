@@ -1,57 +1,55 @@
+// pages/api/health.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
-import BackendDatabaseManager from '@/lib/db/backendDatabaseManager';
-import {
-  errorHandler,
-  ErrorType,
-} from '@/lib/services/error-handler/error-handler';
+import { TrackingDatabaseManager } from '@/lib/db/managers/trackingDatabaseManager';
+import { withErrorHandler } from '@/lib/middleware/error-handler';
+import { APIErrors } from '@/lib/services/error-handler/api-error';
 
 interface HealthResponse {
-  status: 'healthy' | 'unhealthy';
-  message: string;
-  timestamp: string;
-  error?: unknown;
+  status: string;
+  uptime: number;
+  databases: {
+    tracking: {
+      status: string;
+      tables?: string[];
+      cacheStatus?: {
+        manufacturersAge: number | null;
+        icaosAge: number | null;
+      };
+    };
+  };
+  timestamp: number;
 }
 
-export default async function handler(
+async function handler(
   req: NextApiRequest,
   res: NextApiResponse<HealthResponse>
 ) {
-  console.log('[Health] 🏥 Health check accessed');
-
   try {
-    const db = await BackendDatabaseManager.getInstance();
-
-    // Run a simple query to verify the database connection
-    await db.executeQuery('SELECT 1');
+    // Get tracking database status
+    const trackingDb = TrackingDatabaseManager.getInstance();
+    await trackingDb.initializeDatabase();
+    const trackingDbState = await trackingDb.getDatabaseState();
 
     const response: HealthResponse = {
       status: 'healthy',
-      message: 'Database connection successful',
-      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+      databases: {
+        tracking: {
+          status: trackingDbState.isReady ? 'connected' : 'disconnected',
+          tables: trackingDbState.tables,
+          cacheStatus: trackingDbState.cacheStatus,
+        },
+      },
+      timestamp: Date.now(),
     };
 
-    console.log('[Health] ✅ Health check passed');
     res.status(200).json(response);
   } catch (error) {
-    console.error('[Health] ❌ Health check failed:', error);
-
-    // Log the error with the error handler
-    if (error instanceof Error) {
-      errorHandler.handleError(ErrorType.CRITICAL, error);
-    } else {
-      errorHandler.handleError(
-        ErrorType.CRITICAL,
-        new Error('Database health check failed')
-      );
-    }
-
-    const response: HealthResponse = {
-      status: 'unhealthy',
-      message: 'Database connection failed',
-      timestamp: new Date().toISOString(),
-      error: process.env.NODE_ENV === 'development' ? error : undefined,
-    };
-
-    res.status(503).json(response);
+    console.error('Health check failed:', error);
+    throw APIErrors.Internal(
+      new Error(error instanceof Error ? error.message : 'Health check failed')
+    );
   }
 }
+
+export default withErrorHandler(handler);

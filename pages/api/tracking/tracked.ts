@@ -1,11 +1,10 @@
-// File: /pages/api/tracking/tracked.ts
+// pages/api/tracking/tracked.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
-import BackendDatabaseManager from '@/lib/db/backendDatabaseManager';
+import { TrackingDatabaseManager } from '@/lib/db/managers/trackingDatabaseManager';
 import { withErrorHandler } from '@/lib/middleware/error-handler';
 import { Aircraft } from '@/types/base';
 import CacheManager from '@/lib/services/managers/cache-manager';
 
-// Cache static data for 5 minutes
 const staticDataCache = new CacheManager<Map<string, Aircraft>>(5 * 60);
 const CACHE_KEY = 'static-aircraft-data';
 
@@ -14,7 +13,6 @@ async function fetchStaticData(
 ): Promise<Map<string, Aircraft>> {
   const cacheKey = `${CACHE_KEY}-${icao24List.sort().join(',')}`;
 
-  // Try to get from cache first
   const cachedData = await staticDataCache.get(cacheKey);
   if (cachedData) {
     console.log(
@@ -58,29 +56,20 @@ async function fetchStaticData(
     ])
   );
 
-  // Cache the results
   await staticDataCache.set(cacheKey, staticDataMap);
 
   return staticDataMap;
 }
 
 async function handler(req: NextApiRequest, res: NextApiResponse) {
-  // Initialize tracking database
-  const trackingDb = BackendDatabaseManager.getInstance();
+  const trackingDb = TrackingDatabaseManager.getInstance();
   await trackingDb.initializeDatabase();
 
   const staleThreshold = Math.floor(Date.now() / 1000) - 2 * 60 * 60; // 2 hours
 
-  // Get tracked positions
-  const trackedAircraft: Aircraft[] = (
-    await trackingDb.executeQuery<Aircraft[]>(
-      'SELECT * FROM tracked_aircraft WHERE last_contact > ? ORDER BY last_contact DESC',
-      [staleThreshold]
-    )
-  ).flat(); // Flatten in case it's a nested array
-
-  const aircraftIcao24s = trackedAircraft.map(
-    (aircraft: Aircraft) => aircraft.icao24
+  const trackedAircraft = await trackingDb.executeQuery<Aircraft>(
+    'SELECT * FROM tracked_aircraft WHERE last_contact > ? ORDER BY last_contact DESC',
+    [staleThreshold]
   );
 
   if (trackedAircraft.length === 0) {
@@ -95,18 +84,13 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
     });
   }
 
-  // Fetch static data with caching
   const icao24List = trackedAircraft.map((aircraft) => aircraft.icao24);
   const staticDataMap = await fetchStaticData(icao24List);
 
-  // Merge tracking and static data with model priority
-  const mergedAircraft = trackedAircraft.map((aircraft) => {
+  const mergedAircraft = trackedAircraft.map((aircraft: Aircraft) => {
     const staticInfo = staticDataMap.get(aircraft.icao24.toLowerCase());
     return {
-      // First spread tracking data as base
       ...aircraft,
-
-      // Then override with static data where available
       ...(staticInfo && {
         model: staticInfo.model,
         manufacturer: staticInfo.manufacturer,
@@ -117,10 +101,8 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
         STATE: staticInfo.STATE,
         OWNER_TYPE: staticInfo.OWNER_TYPE,
       }),
-
-      // Always set these fields
       isTracked: true,
-      lastSeen: aircraft.last_contact * 1000, // Convert to milliseconds
+      lastSeen: aircraft.last_contact * 1000,
     };
   });
 
@@ -128,7 +110,6 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
     `[Tracked API] ✅ Merged ${mergedAircraft.length} aircraft with static data`
   );
 
-  // Check if data was from cache
   const cacheKey = `${CACHE_KEY}-${icao24List.sort().join(',')}`;
   const isCached = Boolean(await staticDataCache.get(cacheKey));
 

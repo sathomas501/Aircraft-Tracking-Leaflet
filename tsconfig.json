@@ -1,7 +1,11 @@
 {
   "compilerOptions": {
     "target": "ESNext",
-    "lib": ["dom", "dom.iterable", "esnext"],
+    "lib": [
+      "dom",
+      "dom.iterable",
+      "esnext"
+    ],
     "allowJs": true,
     "skipLibCheck": true,
     "strict": true,
@@ -14,22 +18,47 @@
     "isolatedModules": true,
     "jsx": "preserve",
     "incremental": true,
-    "types": ["react", "react-dom", "express"],
+    "types": [
+      "react",
+      "react-dom",
+      "express"
+    ],
     "baseUrl": ".",
-    "typeRoots": ["./node_modules/@types"],
+    "typeRoots": [
+      "./node_modules/@types"
+    ],
     "paths": {
-      "@/*": ["./*"],
-      "@/components/*": ["components/*"],
-      "@/types/*": ["types/*"],
-      "@/lib/*": ["lib/*"],
-      "@/utils/*": ["utils/*"],
-      "@/hooks/*": ["hooks/*"],
-      "@/constants/*": ["constants/*"]
+      "@/*": [
+        "./*"
+      ],
+      "@/components/*": [
+        "components/*"
+      ],
+      "@/types/*": [
+        "types/*"
+      ],
+      "@/lib/*": [
+        "lib/*"
+      ],
+      "@/utils/*": [
+        "utils/*"
+      ],
+      "@/hooks/*": [
+        "hooks/*"
+      ],
+      "@/constants/*": [
+        "constants/*"
+      ]
     },
-    "allowSyntheticDefaultImports": true  // Add this"allowSyntheticDefaultImports": true  // Add this
+    "allowSyntheticDefaultImports": true // Add this"allowSyntheticDefaultImports": true  // Add this
   },
-  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx"],
-  "exclude": ["node_modules", "server"],
-
-
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx"
+  ],
+  "exclude": [
+    "node_modules",
+    "server"
+  ],
 }

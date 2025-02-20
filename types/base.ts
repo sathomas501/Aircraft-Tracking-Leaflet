@@ -103,6 +103,22 @@ export interface Aircraft {
   marker?: string;
 }
 
+// lib/types/aircraft.ts
+
+export interface AircraftRecord {
+  id: number;
+  n_number: string;
+  icao24: string;
+  manufacturer: string;
+  model: string;
+  operator: string | null;
+  name: string | null;
+  city: string | null;
+  state: string | null;
+  created_at: string; // or Date if you're parsing timestamps
+  type_aircraft: string | null;
+}
+
 /**
  * Position data from OpenSky API
  */
