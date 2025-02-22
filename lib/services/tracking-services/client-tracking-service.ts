@@ -236,25 +236,23 @@ export class ClientTrackingService {
    */
   public async getTrackedAircraft(): Promise<Aircraft[]> {
     try {
-      const response = await fetch('/api/aircraft/tracking', {
-        method: 'POST', // ✅ Ensure POST method
+      const response = await fetch('/api/tracking/positions', {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'getTrackedAircraft', // ✅ Ensure 'action' is included
-        }),
+        body: JSON.stringify({ action: 'getTrackedAircraft' }),
       });
 
-      if (!response.ok) {
-        throw new Error(`Failed to fetch aircraft data: ${response.status}`);
+      const { success, data } = await response.json();
+
+      if (!success || !Array.isArray(data)) {
+        console.error('[TrackingDB] ❌ Failed to fetch active aircraft');
+        return [];
       }
 
-      const data = await response.json();
-      return data.aircraft || [];
+      console.log(`[TrackingDB] ✅ Found ${data.length} active aircraft.`);
+      return data;
     } catch (error) {
-      console.error(
-        '[TrackingService] ❌ Error fetching tracked aircraft:',
-        error
-      );
+      console.error('[TrackingDB] ❌ Error fetching tracked aircraft:', error);
       return [];
     }
   }

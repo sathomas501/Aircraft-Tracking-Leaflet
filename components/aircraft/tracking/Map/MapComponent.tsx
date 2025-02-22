@@ -3,7 +3,13 @@ import ManufacturerSelector from '../../selector/ManufacturerSelector';
 import ModelSelector from '../../selector/ModelSelector';
 import NNumberSelector from '../../selector/nNumberSelector';
 import DynamicMap from '../Map/DynamicMap';
-import { Aircraft, SelectOption, Model, StaticModel } from '@/types/base';
+import {
+  Aircraft,
+  SelectOption,
+  Model,
+  StaticModel,
+  ActiveModel,
+} from '@/types/base';
 
 interface ExtendedAircraft extends Aircraft {
   type: string;
@@ -48,8 +54,15 @@ const MapComponent: React.FC<MapComponentProps> = ({
 
   // Function to update model list when a manufacturer is selected
   const handleModelsUpdate = (models: Model[]) => {
-    setModels(models);
-    setTotalActive(models.reduce((sum, m) => sum + (m.activeCount || 0), 0));
+    const convertedModels: ActiveModel[] = models.map((model) => ({
+      ...model,
+      totalCount: model.activeCount ?? 0, // ✅ Ensure totalCount is included
+    }));
+
+    setModels(convertedModels);
+    setTotalActive(
+      convertedModels.reduce((sum, m) => sum + (m.activeCount ?? 0), 0)
+    );
   };
 
   const handleError = (message: string) => {
@@ -75,20 +88,20 @@ const MapComponent: React.FC<MapComponentProps> = ({
   // Fetch aircraft when manufacturer is selected
   const handleManufacturerSelect = async (
     manufacturer: string | null
-  ): Promise<ExtendedAircraft[]> => {
-    stopPolling(); // Stop existing polling
+  ): Promise<void> => {
+    stopPolling();
     setSelectedManufacturer(manufacturer);
     setSelectedModel('');
     setModels([]);
 
     if (!manufacturer) {
       setDisplayedAircraft([]);
-      return []; // Return empty array when no manufacturer is selected
+      return;
     }
 
     try {
-      // Fetch active aircraft using getTrackedAircraft action
-      const response = await fetch('/api/aircraft/tracking', {
+      // Update endpoint to positions
+      const response = await fetch('/api/tracking/positions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -105,7 +118,6 @@ const MapComponent: React.FC<MapComponentProps> = ({
       let aircraftList: Aircraft[] = [];
 
       if (data.aircraft) {
-        // Filter aircraft by manufacturer if needed
         aircraftList = data.aircraft.filter(
           (ac: Aircraft) =>
             ac.manufacturer?.toLowerCase() === manufacturer.toLowerCase()
@@ -141,7 +153,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
       // Start polling after successful initial fetch
       startPolling();
 
-      return extendedAircraftList;
+      return;
     } catch (error) {
       console.error('[ManufacturerSelect] ❌ Error:', error);
       if (error instanceof Error) {
@@ -197,22 +209,28 @@ const MapComponent: React.FC<MapComponentProps> = ({
   };
 
   // Function to poll tracking database
-  const pollTrackingDatabase = async () => {
+  const pollTrackingDatabase = async (): Promise<void> => {
     try {
-      const response = await fetch('/api/aircraft/tracking', {
+      const response = await fetch('/api/tracking/positions', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'getTrackedAircraft',
         }),
       });
+
+      if (!response.ok) {
+        throw new Error(
+          `Failed to poll tracking database: ${response.statusText}`
+        );
+      }
+
       const data = await response.json();
-      return data.aircraft;
+      if (data.aircraft) {
+        setDisplayedAircraft(transformToExtendedAircraft(data.aircraft));
+      }
     } catch (error) {
       console.error('[Tracking] ❌ Failed to poll tracking database:', error);
-      return [];
     }
   };
 
@@ -234,44 +252,35 @@ const MapComponent: React.FC<MapComponentProps> = ({
     setIsPolling(false);
   };
 
-  const formatModelsForSelector = (inputModels: Model[]): StaticModel[] => {
+  const formatModelsForSelector = (inputModels: Model[]): ActiveModel[] => {
     return inputModels.map((model) => ({
       model: model.model,
       manufacturer: model.manufacturer || '',
-      label: model.label || `${model.model} (${model.activeCount || 0} active)`,
-      count: model.activeCount || 0, // Ensure count is always a number
+      label: model.label || `${model.model} (${model.activeCount ?? 0} active)`,
+      activeCount: model.activeCount ?? 0, // ✅ Fix: Ensure activeCount is always a number
+      totalCount: model.activeCount ?? 0, // ✅ Fix: Ensure totalCount is included
     }));
   };
 
+  const formattedModels = formatModelsForSelector(models);
+
   return (
-    <div className="relative w-full h-screen">
-      {/* Debug Info */}
-      <div className="absolute top-0 right-0 z-50 bg-white p-2 text-xs">
-        Aircraft: {displayedAircraft.length} | Selected Mfr:{' '}
-        {selectedManufacturer || 'none'} | Model: {selectedModel || 'none'} |
-        Polling: {isPolling ? 'yes' : 'no'} | Active: {totalActive}
-      </div>
+    <div>
+      <ManufacturerSelector
+        onSelect={handleManufacturerSelect}
+        selectedManufacturer={selectedManufacturer}
+        manufacturers={manufacturers}
+        onAircraftUpdate={handleAircraftUpdate}
+        onModelsUpdate={handleModelsUpdate}
+        onError={handleError}
+      />
 
-      {/* Manufacturer Selector */}
-      <div className="absolute top-4 left-4 z-10 max-w-sm">
-        <ManufacturerSelector
-          onSelect={handleManufacturerSelect}
-          selectedManufacturer={selectedManufacturer}
-          setSelectedManufacturer={setSelectedManufacturer}
-          manufacturers={manufacturers} // This should already be SelectOption[]
-          onAircraftUpdate={handleAircraftUpdate}
-          onModelsUpdate={handleModelsUpdate}
-          onError={handleError}
-        />
-      </div>
-
-      {/* Model Selector */}
       {selectedManufacturer && (
         <div className="absolute top-20 left-4 z-10 max-w-sm">
           <ModelSelector
             selectedModel={selectedModel}
             setSelectedModel={setSelectedModel}
-            models={formatModelsForSelector(models)}
+            models={models} // TypeScript will now understand this conversion
             totalActive={totalActive}
             onModelSelect={handleModelSelect}
           />

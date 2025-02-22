@@ -17,15 +17,15 @@ export default async function handler(
       .json({ error: 'Method Not Allowed. Use POST instead.' });
   }
 
-  const { icao24List } = req.body;
+  const { icao24s } = req.body;
 
-  if (!icao24List || !Array.isArray(icao24List) || icao24List.length === 0) {
+  if (!icao24s || !Array.isArray(icao24s) || icao24s.length === 0) {
     console.error('[ICAOFetcher] ❌ Invalid or missing ICAO24 list');
     return res.status(400).json({ error: 'Invalid ICAO24 list' });
   }
 
   console.log(
-    `[ICAOFetcher] 🔄 Processing ${icao24List.length} ICAO24s before sending to proxy`
+    `[ICAOFetcher] 🔄 Processing ${icao24s.length} ICAO24s before sending to proxy`
   );
 
   try {
@@ -53,13 +53,13 @@ export default async function handler(
     };
 
     const results = await processBatchedRequests(
-      icao24List,
+      icao24s,
       batchProcessor,
       BATCH_SIZE
     );
 
     console.log(
-      `[ICAOFetcher] ✅ Successfully processed ${icao24List.length} ICAO24s in batches`
+      `[ICAOFetcher] ✅ Successfully processed ${icao24s.length} ICAO24s in batches`
     );
 
     return res.status(200).json({ success: true, data: results });

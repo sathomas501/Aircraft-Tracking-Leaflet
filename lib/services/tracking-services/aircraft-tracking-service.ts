@@ -12,24 +12,33 @@ import type {
   OpenSkyStateArray,
   CachedAircraftData,
 } from '@/types/base';
-let trackingDatabaseManager: any;
 
-if (typeof window === 'undefined') {
-  trackingDatabaseManager =
-    require('@/lib/db/managers/trackingDatabaseManager').default;
+// At the top of your aircraft-tracking-service.ts file
+
+interface StateResponse {
+  success: boolean;
+  data: {
+    states: OpenSkyStateArray[];
+    timestamp: number;
+    meta: {
+      total: number;
+      requestedIcaos: number;
+    };
+  };
 }
 
-interface ManufacturerSubscription {
-  manufacturer: string;
-  callback: (data: Aircraft[]) => void;
-  unsubscribe: () => void;
-}
+// Singleton instance holder
+let instance: AircraftTrackingService | null = null;
 
 export class AircraftTrackingService extends BaseTrackingService {
+  private readonly DEBUG = true;
   private static readonly BATCH_SIZE = 200;
   private trackedICAOs: Set<string> = new Set();
   private readonly unifiedCache: UnifiedCacheService;
   private readonly baseUrl: string;
+  private readonly isServer: boolean;
+  private trackingDatabaseManager: any = null;
+
   private manufacturerSubscriptions: Map<
     string,
     Set<(data: Aircraft[]) => void>
@@ -43,7 +52,7 @@ export class AircraftTrackingService extends BaseTrackingService {
     }
   > = new Map();
 
-  constructor() {
+  private constructor() {
     const rateLimiterOptions: RateLimiterOptions = {
       interval: 60 * 1000,
       retryAfter: 5000,
@@ -52,224 +61,44 @@ export class AircraftTrackingService extends BaseTrackingService {
     };
     super(rateLimiterOptions);
 
+    if (this.DEBUG) {
+      console.log('[AircraftTracking] Service initialized with options:', {
+        batchSize: AircraftTrackingService.BATCH_SIZE,
+        rateLimiter: rateLimiterOptions,
+      });
+    }
+
+    this.isServer = typeof window === 'undefined';
     this.unifiedCache = UnifiedCacheService.getInstance();
     this.baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
-    this.unifiedCache = UnifiedCacheService.getInstance();
-    this.baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-  }
-
-  private normalizeKey(manufacturer: string): string {
-    return manufacturer.toLowerCase().replace(/\s+/g, '_');
-  }
-
-  public setLiveData(manufacturer: string, aircraft: Aircraft[]): void {
-    const key = this.normalizeKey(manufacturer);
-    const cachedData: CachedAircraftData[] = aircraft.map(
-      CacheTransforms.toCache
-    );
-
-    const entry = this.cache.get(key) || {
-      data: [],
-      timestamp: Date.now(),
-      subscriptions: new Set<(data: CachedAircraftData[]) => void>(),
-    };
-
-    entry.data = cachedData;
-    entry.timestamp = Date.now();
-    this.cache.set(key, entry);
-
-    entry.subscriptions.forEach((callback) => callback(cachedData));
-  }
-
-  public subscribeToManufacturer(
-    manufacturer: string,
-    callback: (data: Aircraft[]) => void
-  ): ManufacturerSubscription {
-    if (!this.manufacturerSubscriptions.has(manufacturer)) {
-      this.manufacturerSubscriptions.set(manufacturer, new Set());
-    }
-
-    const subscribers = this.manufacturerSubscriptions.get(manufacturer)!;
-    subscribers.add(callback);
-
-    this.startTrackingManufacturer(manufacturer);
-
-    return {
-      manufacturer,
-      callback,
-      unsubscribe: () => {
-        const subs = this.manufacturerSubscriptions.get(manufacturer);
-        if (subs) {
-          subs.delete(callback);
-          if (subs.size === 0) {
-            this.manufacturerSubscriptions.delete(manufacturer);
-            this.stopTrackingManufacturer(manufacturer);
-          }
-        }
-      },
-    };
-  }
-
-  private async addICAOsToTracking(icaos: string[]): Promise<void> {
-    if (!icaos.length) return;
-
-    try {
-      const response = await fetch('/api/tracking/positions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'addICAOs',
-          icaos,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! Status: ${response.status}`);
-      }
-
-      const data = await response.json();
-      if (!data.success) {
-        throw new Error('Failed to add ICAOs to tracking');
-      }
-
-      console.log(
-        `[Tracking] ✅ Successfully added ${icaos.length} ICAOs to tracking`
-      );
-    } catch (error) {
-      console.error(`[Tracking] ❌ Error adding ICAOs to tracking:`, error);
-    }
-  }
-
-  private async startTrackingManufacturer(manufacturer: string): Promise<void> {
-    try {
-      const response = await fetch('/api/aircraft/icao24s', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ manufacturer }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Failed to fetch ICAO24s: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-
-      if (data.success && data.data?.icao24List) {
-        await this.addICAOsToTracking(data.data.icao24List);
-      }
-    } catch (error) {
-      super.handleError(error);
-    }
-  }
-
-  private async stopTrackingManufacturer(manufacturer: string): Promise<void> {
-    try {
-      const response = await fetch('/api/aircraft/icao24s', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ manufacturer }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Failed to fetch ICAO24s: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-
-      if (data.success && data.data?.icao24List) {
-        for (const icao of data.data.icao24List) {
-          this.trackedICAOs.delete(icao);
-        }
-      }
-    } catch (error) {
-      super.handleError(error);
-    }
-  }
-
-  protected onDataUpdate(aircraft: Aircraft[]): void {
-    // Group aircraft by manufacturer
-    const byManufacturer = new Map<string, Aircraft[]>();
-    for (const ac of aircraft) {
-      if (ac.manufacturer) {
-        const mfr = ac.manufacturer.toLowerCase();
-        if (!byManufacturer.has(mfr)) {
-          byManufacturer.set(mfr, []);
-        }
-        byManufacturer.get(mfr)!.push(ac);
+    if (this.isServer) {
+      try {
+        this.trackingDatabaseManager =
+          require('@/lib/db/managers/trackingDatabaseManager').default;
+      } catch (error) {
+        console.error(
+          '[AircraftTrackingService] Failed to load database manager:',
+          error
+        );
       }
     }
-
-    // Notify manufacturer subscribers
-    for (const [manufacturer, subscribers] of this.manufacturerSubscriptions) {
-      const aircraftForMfr =
-        byManufacturer.get(manufacturer.toLowerCase()) || [];
-      subscribers.forEach((callback) => callback(aircraftForMfr));
-    }
   }
 
+  public static getInstance(): AircraftTrackingService {
+    if (!instance) {
+      instance = new AircraftTrackingService();
+    }
+    return instance;
+  }
+
+  // Implement abstract destroy method from BaseTrackingService
   public destroy(): void {
     this.manufacturerSubscriptions.clear();
     this.trackedICAOs.clear();
-    this.rateLimiter.stop();
-  }
-
-  private async getStaticAircraftData(
-    icao24s: string[]
-  ): Promise<Map<string, Aircraft>> {
-    if (!icao24s.length) return new Map<string, Aircraft>();
-
-    // First, check the cache
-    const cachedAircraft: Aircraft[] = icao24s
-      .map((icao24) => this.unifiedCache.getStaticData(icao24))
-      .filter((a): a is Aircraft => a !== undefined);
-
-    if (cachedAircraft.length === icao24s.length) {
-      console.log(
-        `[AircraftTrackingService] ✅ Using cached static data for ${icao24s.length} aircraft`
-      );
-      return new Map<string, Aircraft>(
-        cachedAircraft.map((a) => [a.icao24.toLowerCase(), a])
-      );
-    }
-
-    try {
-      console.log(
-        `[AircraftTrackingService] 🔍 Fetching static aircraft data for ${icao24s.length} aircraft`
-      );
-
-      // 🔄 Call the new API route
-      const response = await fetch('/api/aircraft/static-data', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ icao24s }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! Status: ${response.status}`);
-      }
-
-      const data = await response.json();
-      if (!data.success || !data.aircraft) {
-        throw new Error('Invalid response from static data API');
-      }
-
-      // Store fetched data in the cache
-      this.unifiedCache.setStaticData(data.aircraft);
-
-      // Convert fetched data into a Map
-      return new Map<string, Aircraft>(
-        data.aircraft.map((aircraft: Aircraft) => [
-          aircraft.icao24.toLowerCase(),
-          aircraft,
-        ])
-      );
-    } catch (error) {
-      console.error(
-        `[AircraftTrackingService] ❌ Error fetching static aircraft data:`,
-        error
-      );
-      return new Map<string, Aircraft>();
+    this.cache.clear();
+    if (this.rateLimiter) {
+      this.rateLimiter.stop();
     }
   }
 
@@ -301,10 +130,6 @@ export class AircraftTrackingService extends BaseTrackingService {
         throw new Error(data.error || 'Invalid response');
       }
 
-      const cachedAircraft: Aircraft[] = data.data.icao24List
-        .map((icao24: string) => this.unifiedCache.getStaticData(icao24))
-        .filter((a: Aircraft | undefined): a is Aircraft => a !== undefined);
-
       this.unifiedCache.setLiveData(
         manufacturer,
         data.data.icao24List.map((icao24: string) => ({ icao24 }))
@@ -320,80 +145,110 @@ export class AircraftTrackingService extends BaseTrackingService {
     }
   }
 
+  private async getStaticAircraftData(
+    icao24s: string[]
+  ): Promise<Map<string, Aircraft>> {
+    if (!icao24s.length) return new Map<string, Aircraft>();
+
+    const cachedAircraft: Aircraft[] = icao24s
+      .map((icao24) => this.unifiedCache.getStaticData(icao24))
+      .filter((a): a is Aircraft => a !== undefined);
+
+    if (cachedAircraft.length === icao24s.length) {
+      console.log(
+        `[AircraftTrackingService] ✅ Using cached static data for ${icao24s.length} aircraft`
+      );
+      return new Map<string, Aircraft>(
+        cachedAircraft.map((a) => [a.icao24.toLowerCase(), a])
+      );
+    }
+
+    try {
+      console.log(
+        `[AircraftTrackingService] 🔍 Fetching static aircraft data for ${icao24s.length} aircraft`
+      );
+
+      const response = await fetch('/api/aircraft/static-data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ icao24s }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! Status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      if (!data.success || !data.aircraft) {
+        throw new Error('Invalid response from static data API');
+      }
+
+      this.unifiedCache.setStaticData(data.aircraft);
+
+      return new Map<string, Aircraft>(
+        data.aircraft.map((aircraft: Aircraft) => [
+          aircraft.icao24.toLowerCase(),
+          aircraft,
+        ])
+      );
+    } catch (error) {
+      console.error(
+        `[AircraftTrackingService] ❌ Error fetching static aircraft data:`,
+        error
+      );
+      return new Map<string, Aircraft>();
+    }
+  }
+
   private async fetchOpenSkyBatch(
     icaoBatch: string[]
   ): Promise<OpenSkyStateArray[]> {
     if (!icaoBatch.length) return [];
 
-    const cachedData = this.unifiedCache.getLiveDataRaw('opensky');
-    const cachedIcaos = cachedData.map((a) => a.icao24.toLowerCase());
-    const missingIcao24s = icaoBatch.filter(
-      (icao) => !cachedIcaos.includes(icao)
-    );
+    try {
+      console.log('[AircraftTracking] Requesting OpenSky data:', {
+        count: icaoBatch.length,
+        sample: icaoBatch.slice(0, 3),
+      });
 
-    console.log(
-      `[AircraftTrackingService] ✅ Using cached OpenSky data for ${cachedIcaos.length} aircraft`
-    );
-    console.log(
-      `[AircraftTrackingService] 🔍 Fetching new OpenSky data for ${missingIcao24s.length} aircraft`
-    );
+      const response = await fetch(`${this.baseUrl}/api/proxy/opensky`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          icao24s: icaoBatch,
+        }),
+      });
 
-    let fetchedStates: OpenSkyStateArray[] = [];
-
-    if (missingIcao24s.length > 0) {
-      try {
-        const response = await fetch(`${this.baseUrl}/api/proxy/opensky`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ icao24s: missingIcao24s }),
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('[AircraftTracking] OpenSky request failed:', {
+          status: response.status,
+          statusText: response.statusText,
+          error: errorText,
         });
-
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-
-        const data = await response.json();
-        fetchedStates = data.success ? data.data.states : [];
-
-        const aircraftForCache: Aircraft[] = fetchedStates.map((state) =>
-          OpenSkyTransforms.toExtendedAircraft(state, 'Unknown')
-        );
-
-        this.unifiedCache.setLiveData('opensky', aircraftForCache);
-      } catch (error) {
-        console.error(
-          `[AircraftTrackingService] ❌ OpenSky batch fetch error:`,
-          error
-        );
+        return [];
       }
+
+      const data = await response.json();
+      console.log('[AircraftTracking] OpenSky response:', {
+        success: data.success,
+        statesCount: data.data?.states?.length || 0,
+        sampleState: data.data?.states?.[0],
+      });
+
+      if (!data.success || !data.data?.states) {
+        console.warn('[AircraftTracking] No states in response');
+        return [];
+      }
+
+      return data.data.states.filter(OpenSkyTransforms.validateState);
+    } catch (error) {
+      console.error('[AircraftTracking] OpenSky fetch error:', error);
+      return [];
     }
-
-    const formattedCachedData: OpenSkyStateArray[] = cachedData.map(
-      (a) =>
-        [
-          a.icao24,
-          '',
-          '',
-          0,
-          a.last_contact || Math.floor(Date.now() / 1000),
-          a.longitude || 0,
-          a.latitude || 0,
-          a.altitude || 0,
-          a.on_ground || false,
-          a.velocity || 0,
-          a.heading || 0,
-          0,
-          [],
-          0,
-          '',
-          false,
-          0,
-        ] as OpenSkyStateArray
-    );
-
-    return [...formattedCachedData, ...fetchedStates];
   }
 
+  // In AircraftTrackingService class
   async processManufacturer(manufacturer: string): Promise<Aircraft[]> {
     try {
       const cachedData = this.unifiedCache.getLiveData(manufacturer);
@@ -408,8 +263,13 @@ export class AircraftTrackingService extends BaseTrackingService {
       if (!icao24List.length) return [];
 
       const staticDataMap = await this.getStaticAircraftData(icao24List);
-
       let allAircraft: Aircraft[] = [];
+
+      console.log('[AircraftTracking] Fetching from OpenSky:', {
+        manufacturer,
+        totalICAOs: icao24List.length,
+        batchSize: AircraftTrackingService.BATCH_SIZE,
+      });
 
       for (
         let i = 0;
@@ -421,34 +281,159 @@ export class AircraftTrackingService extends BaseTrackingService {
           i + AircraftTrackingService.BATCH_SIZE
         );
 
-        let trackedAircraft: Aircraft[] = [];
-        if (typeof window === 'undefined' && trackingDatabaseManager) {
-          trackedAircraft =
-            await trackingDatabaseManager.getAircraftByIcao24(batch);
+        console.log('[AircraftTracking] Requesting OpenSky batch:', {
+          size: batch.length,
+          sample: batch.slice(0, 3),
+        });
+
+        const response = await fetch(`${this.baseUrl}/api/proxy/opensky`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            icao24s: batch,
+          }),
+        });
+
+        if (!response.ok) {
+          console.error('[AircraftTracking] OpenSky proxy error:', {
+            status: response.status,
+            statusText: response.statusText,
+          });
+          continue;
         }
 
-        const staleIcaos = batch.filter(
-          (icao) => !trackedAircraft.some((a) => a.icao24 === icao)
-        );
-        const freshStates = await this.fetchOpenSkyBatch(staleIcaos);
+        const data = (await response.json()) as StateResponse;
 
-        const newAircraft = freshStates.map((state) =>
-          normalizeAircraft({ ...state, manufacturer })
-        );
-        allAircraft = [...allAircraft, ...newAircraft, ...trackedAircraft];
+        if (data.success && Array.isArray(data.data?.states)) {
+          const newAircraft = data.data.states
+            .filter((state): state is OpenSkyStateArray =>
+              OpenSkyTransforms.validateState(state)
+            )
+            .map((state) =>
+              OpenSkyTransforms.toExtendedAircraft(state, manufacturer)
+            );
+
+          if (newAircraft.length > 0) {
+            console.log('[AircraftTracking] Found active aircraft:', {
+              manufacturer,
+              count: newAircraft.length,
+              sample: newAircraft.slice(0, 2).map((a) => a.icao24),
+            });
+          }
+
+          allAircraft = [...allAircraft, ...newAircraft];
+        }
       }
+
+      console.log('[AircraftTracking] OpenSky fetch complete:', {
+        manufacturer,
+        totalFound: allAircraft.length,
+      });
 
       this.unifiedCache.setLiveData(manufacturer, allAircraft);
       return allAircraft;
     } catch (error) {
       console.error(
-        `[AircraftTrackingService] ❌ Error processing manufacturer:`,
+        `[AircraftTracking] ❌ Error processing manufacturer:`,
         error
       );
       throw error;
     }
   }
+
+  // Modify the startTrackingManufacturer method in aircraft-tracking-service.ts
+
+  // In AircraftTrackingService
+  private async startTrackingManufacturer(manufacturer: string): Promise<void> {
+    try {
+      // Get ICAOs from manufacturer first
+      const response = await fetch('/api/aircraft/icao24s', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ manufacturer }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch ICAO24s: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+
+      if (data.success && data.data?.icao24List) {
+        // Check which ICAOs need tracking
+        const trackingResponse = await fetch('/api/tracking/positions', {
+          // Note the correct endpoint
+          method: 'POST', // Make sure to use POST
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'getTrackedAircraft',
+          }),
+        });
+
+        if (!trackingResponse.ok) {
+          const errorData = await trackingResponse.json();
+          throw new Error(
+            `Failed to get tracked aircraft: ${errorData.message}`
+          );
+        }
+
+        const trackingResult = await trackingResponse.json();
+
+        // Process new ICAOs
+        if (trackingResult.newICAOs?.length > 0) {
+          const states = await this.fetchOpenSkyBatch(trackingResult.newICAOs);
+          const activeAircraft = states.filter((state) => state && state[0]);
+
+          if (activeAircraft.length > 0) {
+            const positions = activeAircraft.map((state) => ({
+              icao24: state[0],
+              latitude: state[6],
+              longitude: state[5],
+              altitude: state[7],
+              velocity: state[9],
+              heading: state[10],
+              on_ground: state[8],
+              last_contact: state[4],
+              manufacturer,
+            }));
+
+            console.log('[AircraftTracking] Updating positions:', {
+              count: positions.length,
+              sample: positions.slice(0, 2),
+            });
+
+            const updateResponse = await fetch('/api/tracking/positions', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                action: 'updateBatch',
+                positions,
+              }),
+            });
+
+            const updateResult = await updateResponse.json();
+
+            if (!updateResponse.ok) {
+              throw new Error(
+                `Failed to update positions: ${updateResult.message || updateResponse.statusText}`
+              );
+            }
+
+            console.log('[AircraftTracking] Successfully updated positions:', {
+              updated: updateResult.updated,
+            });
+          }
+        }
+      }
+    } catch (error) {
+      console.error('[AircraftTracking] Error in startTrackingManufacturer:', {
+        manufacturer,
+        error: error instanceof Error ? error.message : error,
+      });
+      throw error;
+    }
+  }
 }
 
-const aircraftTrackingService = new AircraftTrackingService();
-export default aircraftTrackingService;
+export const getAircraftTrackingService = () =>
+  AircraftTrackingService.getInstance();
