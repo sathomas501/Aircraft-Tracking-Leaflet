@@ -1,25 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { Plus, Minus } from 'lucide-react';
+import { UnifiedSelectorProps } from '../selector/types';
 import ManufacturerSelector from './ManufacturerSelector';
 import ModelSelector from './ModelSelector';
-import { Aircraft, StaticModel, SelectOption, ActiveModel } from '@/types/base';
-
-interface UnifiedSelectorProps {
-  manufacturers: SelectOption[];
-  selectedManufacturer: string;
-  selectedModel: string;
-  setSelectedManufacturer: (manufacturer: string | null) => void;
-  setSelectedModel: (model: string) => void;
-  onManufacturerSelect: (manufacturer: string | null) => Promise<void>;
-  onModelSelect: (model: string) => void;
-  onAircraftUpdate: (aircraft: Aircraft[]) => void;
-  onModelsUpdate: (models: StaticModel[]) => void; // Updated to match ManufacturerSelector
-  onReset: () => void;
-  onError: (message: string) => void;
-  models: StaticModel[];
-  modelCounts: Record<string, number>;
-  totalActive?: number;
-}
 
 export const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
   manufacturers,
@@ -39,51 +22,19 @@ export const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
 }) => {
   const [isMinimized, setIsMinimized] = useState(false);
 
-  const handleToggle = () => setIsMinimized((prev) => !prev);
-
-  // Convert Aircraft[] to StaticModel[] for onModelsUpdate
-  const handleModelsUpdate = (aircraft: Aircraft[]): void => {
-    const staticModels: StaticModel[] = aircraft.map((aircraft) => ({
-      model: aircraft.model || '',
-      manufacturer: aircraft.manufacturer,
-      label: `${aircraft.model || 'Unknown'} (${aircraft.isTracked ? '1' : '0'} active)`,
-      count: 1,
-    }));
-    onModelsUpdate(staticModels);
-  };
-
-  const processedModels: ActiveModel[] = data.data.map((model: any) => ({
-    model: model.model,
-    manufacturer: model.manufacturer,
-    label: `${model.model} (${model.activeCount ?? 0} active)`,
-    activeCount: model.activeCount ?? 0,
-    totalCount: model.totalCount ?? model.count ?? 0,
-  }));
+  const handleToggle = useCallback(() => {
+    setIsMinimized((prev) => !prev);
+  }, []);
 
   // Process models with counts
-  const fetchModels = async (manufacturer: string) => {
-    try {
-      const response = await fetch(
-        `/api/aircraft/models?manufacturer=${encodeURIComponent(manufacturer)}`
-      );
-
-      if (!response.ok) {
-        throw new Error(`Failed to fetch models: ${response.statusText}`);
-      }
-
-      const data = await response.json(); // ✅ Ensure data is retrieved before mapping
-
-      if (!data || !data.data) {
-        throw new Error('Invalid response format');
-      }
-
-      const [models, setModels] = useState<ActiveModel[]>([]); // ✅ Correct use of useState
-
-      setModels(processedModels);
-    } catch (error) {
-      console.error('[UnifiedSelector] ❌ Error fetching models:', error);
-    }
-  };
+  const processedModels = React.useMemo(
+    () =>
+      models.map((model) => ({
+        ...model,
+        label: `${model.model} (${modelCounts[model.model] || 0} active)`,
+      })),
+    [models, modelCounts]
+  );
 
   if (isMinimized) {
     return (
@@ -121,7 +72,7 @@ export const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
         selectedManufacturer={selectedManufacturer}
         onSelect={onManufacturerSelect}
         onAircraftUpdate={onAircraftUpdate}
-        onModelsUpdate={onModelsUpdate} // Now expects StaticModel[]
+        onModelsUpdate={onModelsUpdate}
         onError={onError}
       />
 
@@ -137,3 +88,5 @@ export const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
     </div>
   );
 };
+
+export default UnifiedSelector;

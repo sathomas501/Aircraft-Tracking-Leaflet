@@ -2,14 +2,10 @@ import React, { useState, useEffect, useRef } from 'react';
 import ManufacturerSelector from '../../selector/ManufacturerSelector';
 import ModelSelector from '../../selector/ModelSelector';
 import NNumberSelector from '../../selector/nNumberSelector';
+import { aggregateAircraftModels } from '@/utils/model-transforms';
 import DynamicMap from '../Map/DynamicMap';
-import {
-  Aircraft,
-  SelectOption,
-  Model,
-  StaticModel,
-  ActiveModel,
-} from '@/types/base';
+import { Aircraft, Model, ActiveModel, SelectOption } from '@/types/base';
+import { AircraftModel } from '../../selector/types';
 
 interface ExtendedAircraft extends Aircraft {
   type: string;
@@ -17,13 +13,24 @@ interface ExtendedAircraft extends Aircraft {
 }
 
 interface MapComponentProps {
-  initialAircraft?: Aircraft[];
-  manufacturers: SelectOption[];
+  aircraft: Aircraft[];
+  initialAircraft?: Aircraft[]; // ✅ Make initialAircraft optional
+  onModelSelect?: (model: string) => void;
 }
 
-const MapComponent: React.FC<MapComponentProps> = ({
+// Helper to convert to ActiveModel
+const toActiveModel = (model: Partial<AircraftModel>): ActiveModel => ({
+  model: model.model || '',
+  manufacturer: model.manufacturer || '',
+  label: model.label || `${model.model || 'Unknown'}`,
+  activeCount: model.activeCount || 0,
+  totalCount: model.totalCount || 0,
+});
+
+export const MapComponent: React.FC<MapComponentProps> = ({
+  aircraft,
   initialAircraft = [],
-  manufacturers,
+  onModelSelect,
 }) => {
   const [displayedAircraft, setDisplayedAircraft] = useState<
     ExtendedAircraft[]
@@ -53,16 +60,17 @@ const MapComponent: React.FC<MapComponentProps> = ({
   };
 
   // Function to update model list when a manufacturer is selected
-  const handleModelsUpdate = (models: Model[]) => {
-    const convertedModels: ActiveModel[] = models.map((model) => ({
-      ...model,
-      totalCount: model.activeCount ?? 0, // ✅ Ensure totalCount is included
-    }));
+  const handleModelsUpdate = (models: ActiveModel[]): void => {
+    // Handle model updates
+    // Don't return the array
+    setModels(models);
+  };
 
-    setModels(convertedModels);
-    setTotalActive(
-      convertedModels.reduce((sum, m) => sum + (m.activeCount ?? 0), 0)
-    );
+  // For any other array operations that need to return void
+  const someArrayOperation = (): void => {
+    const result: any[] = []; // Explicitly typing it as an array
+
+    handleModelsUpdate(result.map(toActiveModel));
   };
 
   const handleError = (message: string) => {
@@ -161,7 +169,6 @@ const MapComponent: React.FC<MapComponentProps> = ({
       }
       stopPolling(); // Ensure polling is stopped on error
       setDisplayedAircraft([]); // Clear displayed aircraft on error
-      return [];
     }
   };
   // Filter aircraft by model
@@ -264,6 +271,19 @@ const MapComponent: React.FC<MapComponentProps> = ({
 
   const formattedModels = formatModelsForSelector(models);
 
+  const processedModels: AircraftModel[] = models.map((model) => ({
+    model: model.model,
+    manufacturer: model.manufacturer,
+    label: `${model.model} (${model.activeCount ?? 0} active)`,
+    activeCount: model.activeCount ?? 0,
+    totalCount: model.count ?? 0,
+  }));
+
+  const manufacturers: SelectOption[] = [
+    { value: 'boeing', label: 'Boeing' },
+    { value: 'airbus', label: 'Airbus' },
+  ];
+
   return (
     <div>
       <ManufacturerSelector
@@ -278,11 +298,11 @@ const MapComponent: React.FC<MapComponentProps> = ({
       {selectedManufacturer && (
         <div className="absolute top-20 left-4 z-10 max-w-sm">
           <ModelSelector
-            selectedModel={selectedModel}
-            setSelectedModel={setSelectedModel}
-            models={models} // TypeScript will now understand this conversion
-            totalActive={totalActive}
-            onModelSelect={handleModelSelect}
+            selectedModel=""
+            setSelectedModel={() => {}}
+            models={processedModels}
+            totalActive={aircraft.length}
+            onModelSelect={onModelSelect || (() => {})}
           />
         </div>
       )}

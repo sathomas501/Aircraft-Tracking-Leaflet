@@ -1,6 +1,5 @@
 // pages/api/aircraft/tracking.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
-import type { Aircraft } from '@/types/base';
 import trackingDatabaseManager from '@/lib/db/managers/trackingDatabaseManager';
 import { APIErrors } from '@/lib/services/error-handler/api-error';
 import { withErrorHandler } from '@/lib/middleware/error-handler';

@@ -1,12 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { SelectOption, Aircraft, StaticModel } from '@/types/base';
+import { AircraftModel } from '../selector/types'; //
 
 interface ManufacturerSelectorProps {
   manufacturers: SelectOption[];
   selectedManufacturer: string | null;
   onSelect: (manufacturer: string | null) => Promise<void>;
   onAircraftUpdate: (aircraft: Aircraft[]) => void;
-  onModelsUpdate: (models: StaticModel[]) => void; // Single declaration with StaticModel[]
+  onModelsUpdate: (models: AircraftModel[]) => void; // Changed from StaticModel to AircraftModel
   onError: (message: string) => void;
 }
 
