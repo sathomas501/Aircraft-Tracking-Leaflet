@@ -27,27 +27,38 @@ export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
-  if (req.method !== 'GET') {
+  if (req.method !== 'POST' && req.method !== 'GET') {
     return res.status(405).json({
       success: false,
-      error: 'Method Not Allowed. Use GET.',
+      error: 'Method Not Allowed. Use POST or GET.',
       errorType: ErrorType.OPENSKY_SERVICE,
     });
   }
 
-  // Extract ICAO24s from query
-  const { icao24 } = req.query;
-  if (!icao24 || typeof icao24 !== 'string') {
-    return res.status(400).json({
-      success: false,
-      error: 'Missing or invalid icao24 parameter',
-      errorType: ErrorType.OPENSKY_REQUEST,
-    });
-  }
+  // Get ICAO24s from either query params (GET) or body (POST)
+  let icao24List: string[] = [];
 
-  const icao24List = icao24
-    .split(',')
-    .filter((code) => /^[0-9a-f]{6}$/.test(code));
+  if (req.method === 'POST') {
+    const { icao24s, action } = req.body;
+    if (!Array.isArray(icao24s)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid ICAO24 list format in request body',
+        errorType: ErrorType.OPENSKY_REQUEST,
+      });
+    }
+    icao24List = icao24s.filter((code) => /^[0-9a-f]{6}$/.test(code));
+  } else {
+    const { icao24 } = req.query;
+    if (!icao24 || typeof icao24 !== 'string') {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing or invalid icao24 parameter',
+        errorType: ErrorType.OPENSKY_REQUEST,
+      });
+    }
+    icao24List = icao24.split(',').filter((code) => /^[0-9a-f]{6}$/.test(code));
+  }
 
   if (icao24List.length > API_CONFIG.PARAMS.MAX_ICAO_QUERY) {
     return res.status(400).json({
@@ -80,7 +91,13 @@ export default async function handler(
     const openSkyUrl = `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.ALL_STATES}`;
     const params = new URLSearchParams({
       icao24: icao24List.join(','),
-      extended: '1', // Request extended state information
+      extended: '1',
+    });
+
+    console.log('[OpenSky Proxy] Making request to OpenSky:', {
+      url: `${openSkyUrl}?${params}`,
+      icaoCount: icao24List.length,
+      sample: icao24List.slice(0, 3),
     });
 
     let responseData: any;

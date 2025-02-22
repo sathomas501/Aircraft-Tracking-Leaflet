@@ -15,6 +15,10 @@ interface HealthResponse {
         manufacturersAge: number | null;
         icaosAge: number | null;
       };
+      details?: {
+        hasRequiredTables: boolean;
+        connectionCheck: boolean;
+      };
     };
   };
   timestamp: number;
@@ -24,30 +28,54 @@ async function handler(
   req: NextApiRequest,
   res: NextApiResponse<HealthResponse>
 ) {
+  if (req.method !== 'GET') {
+    throw APIErrors.BadRequest('Method not allowed');
+  }
+
   try {
+    console.log('[HealthAPI] 🏥 Performing health check');
+
     // Get tracking database status
     const trackingDb = TrackingDatabaseManager.getInstance();
-    await trackingDb.initializeDatabase();
-    const trackingDbState = await trackingDb.getDatabaseState();
+    const [trackingDbState, connectionCheck] = await Promise.all([
+      trackingDb.getDatabaseState(),
+      trackingDb.checkConnection(),
+    ]);
+
+    // Determine overall status
+    const hasRequiredTables =
+      trackingDbState.tables.includes('tracked_aircraft');
+    const isHealthy =
+      connectionCheck && hasRequiredTables && trackingDbState.isReady;
 
     const response: HealthResponse = {
-      status: 'healthy',
+      status: isHealthy ? 'healthy' : 'degraded',
       uptime: process.uptime(),
       databases: {
         tracking: {
           status: trackingDbState.isReady ? 'connected' : 'disconnected',
           tables: trackingDbState.tables,
           cacheStatus: trackingDbState.cacheStatus,
+          details: {
+            hasRequiredTables,
+            connectionCheck,
+          },
         },
       },
       timestamp: Date.now(),
     };
 
-    res.status(200).json(response);
+    console.log('[HealthAPI] ✅ Health check complete:', {
+      status: response.status,
+      trackingDb: response.databases.tracking.status,
+    });
+
+    const statusCode = isHealthy ? 200 : 503;
+    res.status(statusCode).json(response);
   } catch (error) {
-    console.error('Health check failed:', error);
+    console.error('[HealthAPI] ❌ Health check failed:', error);
     throw APIErrors.Internal(
-      new Error(error instanceof Error ? error.message : 'Health check failed')
+      error instanceof Error ? error : new Error('Health check failed')
     );
   }
 }

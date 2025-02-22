@@ -46,15 +46,16 @@ export const BaseTransforms = {
   },
 
   normalize(partialAircraft: Partial<Aircraft>): Aircraft {
-    const base = this.createBase(Date.now());
+    const base = BaseTransforms.createBase(Date.now()); // ✅ Explicit reference
+
     return {
       ...base,
       ...partialAircraft,
       icao24: partialAircraft.icao24 || base.icao24,
       'N-NUMBER': partialAircraft['N-NUMBER'] || base['N-NUMBER'],
       manufacturer: partialAircraft.manufacturer || base.manufacturer,
-      latitude: partialAircraft.latitude ?? base.latitude,
-      longitude: partialAircraft.longitude ?? base.longitude,
+      latitude: partialAircraft.latitude ?? base.latitude ?? 0, // Ensure valid coords
+      longitude: partialAircraft.longitude ?? base.longitude ?? 0,
       altitude: partialAircraft.altitude ?? base.altitude,
       heading: partialAircraft.heading ?? base.heading,
       velocity: partialAircraft.velocity ?? base.velocity,
@@ -86,51 +87,56 @@ export const OpenSkyTransforms = {
 
     return (
       typeof state[0] === 'string' && // icao24
+      typeof state[4] === 'number' && // last_contact
       typeof state[5] === 'number' && // longitude
       typeof state[6] === 'number' && // latitude
-      state[5] >= -180 &&
-      state[5] <= 180 && // valid longitude
-      state[6] >= -90 &&
-      state[6] <= 90 // valid latitude
+      (state[8] === true || state[8] === false) // on_ground must be boolean
     );
   },
 
-  toTrackingData(state: OpenSkyStateArray): TrackingData {
-    return {
+  toTrackingData(state: OpenSkyStateArray): Aircraft {
+    return BaseTransforms.normalize({
       icao24: state[0],
       latitude: state[6],
       longitude: state[5],
-      altitude: state[7] ?? 0,
-      velocity: state[9] ?? 0,
-      heading: state[10] ?? 0,
-      on_ground: state[8] ?? false,
-      last_contact: state[4] ?? Math.floor(Date.now() / 1000),
-      updated_at: Date.now(),
-    };
-  },
-
-  toExtendedAircraft(state: OpenSkyStateArray, manufacturer: string): Aircraft {
-    return {
-      icao24: state[0],
+      altitude: state[7] || 0,
+      velocity: state[9] || 0,
+      heading: state[10] || 0,
+      on_ground: state[8] || false,
+      last_contact: state[4] || Math.floor(Date.now() / 1000),
+      manufacturer: '',
       'N-NUMBER': '',
-      manufacturer,
       model: '',
-      operator: '',
-      latitude: state[6],
-      longitude: state[5],
-      altitude: state[7] ?? 0,
-      heading: state[10] ?? 0,
-      velocity: state[9] ?? 0,
-      on_ground: state[8] ?? false,
-      last_contact: state[4] ?? Math.floor(Date.now() / 1000),
-      lastSeen: Date.now(),
       NAME: '',
       CITY: '',
       STATE: '',
-      OWNER_TYPE: '',
       TYPE_AIRCRAFT: '',
+      OWNER_TYPE: '',
       isTracked: true,
-    };
+    });
+  },
+
+  toExtendedAircraft(state: OpenSkyStateArray, manufacturer: string): Aircraft {
+    return BaseTransforms.normalize({
+      icao24: state[0],
+      latitude: state[6],
+      longitude: state[5],
+      altitude: state[7] || 0,
+      velocity: state[9] || 0,
+      heading: state[10] || 0,
+      on_ground: state[8] || false,
+      last_contact: state[4] || Math.floor(Date.now() / 1000),
+      manufacturer,
+      'N-NUMBER': '',
+      model: '',
+      NAME: '',
+      CITY: '',
+      STATE: '',
+      TYPE_AIRCRAFT: '',
+      OWNER_TYPE: '',
+      isTracked: true,
+      lastSeen: Date.now(),
+    });
   },
 };
 

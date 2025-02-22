@@ -8,68 +8,60 @@ import CacheManager from '@/lib/services/managers/cache-manager';
 const staticDataCache = new CacheManager<Map<string, Aircraft>>(5 * 60);
 const CACHE_KEY = 'static-aircraft-data';
 
+interface StaticDataResponse {
+  aircraft: Aircraft[];
+}
+
 async function fetchStaticData(
   icao24List: string[]
 ): Promise<Map<string, Aircraft>> {
   const cacheKey = `${CACHE_KEY}-${icao24List.sort().join(',')}`;
-
   const cachedData = await staticDataCache.get(cacheKey);
+
   if (cachedData) {
     console.log(
-      `[Tracked API] 📦 Using cached static data for ${icao24List.length} aircraft`
+      `[TrackingAPI] Using cached static data for ${icao24List.length} aircraft`
     );
     return cachedData;
   }
 
   console.log(
-    `[Tracked API] 📡 Fetching static data for ${icao24List.length} aircraft`
+    `[TrackingAPI] Fetching static data for ${icao24List.length} aircraft`
   );
 
   const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-  const staticDataResponse = await fetch(
-    `${baseUrl}/api/aircraft/static-data`,
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ icao24s: icao24List }),
-    }
-  );
+  const response = await fetch(`${baseUrl}/api/aircraft/static-data`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ icao24s: icao24List }),
+  });
 
-  if (!staticDataResponse.ok) {
-    throw new Error(
-      `Failed to fetch static data: ${staticDataResponse.statusText}`
-    );
+  if (!response.ok) {
+    throw new Error(`Failed to fetch static data: ${response.statusText}`);
   }
 
-  const staticDataResult = await staticDataResponse.json();
-
-  if (!Array.isArray(staticDataResult.aircraft)) {
+  const result = (await response.json()) as StaticDataResponse;
+  if (!Array.isArray(result.aircraft)) {
     throw new Error('Invalid response format from static-data API');
   }
 
-  const staticDataMap: Map<string, Aircraft> = new Map(
-    staticDataResult.aircraft.map((data: Aircraft): [string, Aircraft] => [
-      data.icao24.toLowerCase(),
-      data,
-    ])
-  );
+  const staticDataMap = result.aircraft.reduce((map, aircraft) => {
+    if (aircraft.icao24) {
+      map.set(aircraft.icao24.toLowerCase(), aircraft);
+    }
+    return map;
+  }, new Map<string, Aircraft>());
 
   await staticDataCache.set(cacheKey, staticDataMap);
-
   return staticDataMap;
 }
 
 async function handler(req: NextApiRequest, res: NextApiResponse) {
   const trackingDb = TrackingDatabaseManager.getInstance();
-  await trackingDb.initializeDatabase();
+  const { manufacturer } = req.query;
 
-  const staleThreshold = Math.floor(Date.now() / 1000) - 2 * 60 * 60; // 2 hours
-
-  const trackedAircraft = await trackingDb.executeQuery<Aircraft>(
-    'SELECT * FROM tracked_aircraft WHERE last_contact > ? ORDER BY last_contact DESC',
-    [staleThreshold]
+  const trackedAircraft = await trackingDb.getTrackedAircraft(
+    typeof manufacturer === 'string' ? manufacturer : undefined
   );
 
   if (trackedAircraft.length === 0) {
@@ -78,7 +70,6 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
       data: [],
       meta: {
         total: 0,
-        staleThreshold,
         timestamp: Date.now(),
       },
     });
@@ -87,7 +78,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
   const icao24List = trackedAircraft.map((aircraft) => aircraft.icao24);
   const staticDataMap = await fetchStaticData(icao24List);
 
-  const mergedAircraft = trackedAircraft.map((aircraft: Aircraft) => {
+  const mergedAircraft = trackedAircraft.map((aircraft) => {
     const staticInfo = staticDataMap.get(aircraft.icao24.toLowerCase());
     return {
       ...aircraft,
@@ -107,19 +98,14 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
   });
 
   console.log(
-    `[Tracked API] ✅ Merged ${mergedAircraft.length} aircraft with static data`
+    `[TrackingAPI] Merged ${mergedAircraft.length} aircraft with static data`
   );
-
-  const cacheKey = `${CACHE_KEY}-${icao24List.sort().join(',')}`;
-  const isCached = Boolean(await staticDataCache.get(cacheKey));
 
   return res.status(200).json({
     success: true,
     data: mergedAircraft,
     meta: {
       total: mergedAircraft.length,
-      staleThreshold,
-      fromCache: isCached,
       timestamp: Date.now(),
     },
   });

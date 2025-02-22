@@ -1,10 +1,10 @@
 import React from 'react';
-import { StaticModel } from '@/types/base';
+import { Model, ActiveModel, StaticModel } from '@/types/base';
 
 interface ModelSelectorProps {
   selectedModel: string;
   setSelectedModel: (model: string) => void;
-  models: StaticModel[];
+  models: ActiveModel[];
   totalActive?: number;
   onModelSelect: (model: string) => void;
 }
@@ -12,10 +12,15 @@ interface ModelSelectorProps {
 const ModelSelector: React.FC<ModelSelectorProps> = ({
   selectedModel,
   setSelectedModel,
+  onModelSelect,
   models,
   totalActive = 0,
-  onModelSelect,
 }) => {
+  const sortedModels = React.useMemo(
+    () => [...models].sort((a, b) => b.activeCount - a.activeCount),
+    [models]
+  );
+
   return (
     <div className="mt-2">
       <label
@@ -30,15 +35,20 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
         value={selectedModel}
         onChange={(e) => {
           const selected = e.target.value;
-          console.log(`[ModelSelector] Selected model: ${selected}`);
           setSelectedModel(selected);
           onModelSelect(selected);
         }}
       >
-        <option value="">All Models ({totalActive} total)</option>
-        {models.map((model) => (
-          <option key={model.model} value={model.model}>
-            {model.label || `${model.model} (${model.count} aircraft)`}
+        <option value="">All Models ({totalActive} active)</option>
+        {sortedModels.map((model) => (
+          <option
+            key={model.model}
+            value={model.model}
+            className={
+              model.activeCount > 0 ? 'font-semibold text-blue-700' : ''
+            }
+          >
+            {`${model.model} (${model.activeCount} active)`}
           </option>
         ))}
       </select>

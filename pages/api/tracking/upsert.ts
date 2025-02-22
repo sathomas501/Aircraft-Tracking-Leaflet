@@ -2,39 +2,43 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { TrackingDatabaseManager } from '@/lib/db/managers/trackingDatabaseManager';
 import { Aircraft } from '@/types/base';
+import { withErrorHandler } from '@/lib/middleware/error-handler';
+import { APIErrors } from '@/lib/services/error-handler/api-error';
 
-export default async function handler(
+interface UpsertResponse {
+  success: boolean;
+  message?: string;
+  error?: string;
+  data?: {
+    successCount: number;
+    errorCount: number;
+    errors: Array<{ icao24: string; error: string }>;
+  };
+}
+
+async function handler(
   req: NextApiRequest,
-  res: NextApiResponse
+  res: NextApiResponse<UpsertResponse>
 ) {
   if (req.method !== 'POST') {
-    return res.status(405).json({
-      success: false,
-      error: 'Method not allowed',
-    });
+    throw APIErrors.BadRequest('Method not allowed');
   }
 
   const { aircraft } = req.body;
   if (!Array.isArray(aircraft) || aircraft.length === 0) {
-    return res.status(400).json({
-      success: false,
-      error: 'Invalid aircraft data: Empty or not an array',
-    });
+    throw APIErrors.BadRequest('Invalid aircraft data: Empty or not an array');
   }
 
-  const db = TrackingDatabaseManager.getInstance();
-  await db.initializeDatabase();
-
+  const trackingDb = TrackingDatabaseManager.getInstance();
   let successCount = 0;
   let errorCount = 0;
-  const errors: { icao24: string; error: string }[] = [];
+  const errors: Array<{ icao24: string; error: string }> = [];
 
   try {
-    await db.executeQuery('BEGIN TRANSACTION');
+    await trackingDb.executeQuery('BEGIN TRANSACTION');
 
     for (const ac of aircraft) {
       try {
-        // Validate required fields
         if (
           !ac.icao24 ||
           typeof ac.latitude !== 'number' ||
@@ -43,17 +47,29 @@ export default async function handler(
           throw new Error('Missing required fields');
         }
 
-        // Use parameterized query for safety
         const sql = `
-          INSERT INTO active_tracking (
-            icao24, manufacturer, model, marker, latitude, longitude,
-            altitude, velocity, heading, on_ground, last_contact,
-            last_seen, TYPE_AIRCRAFT, "N-NUMBER", OWNER_TYPE, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO tracked_aircraft (
+            icao24,
+            manufacturer,
+            model,
+            "N-NUMBER",
+            latitude,
+            longitude,
+            altitude,
+            velocity,
+            heading,
+            on_ground,
+            last_contact,
+            TYPE_AIRCRAFT,
+            NAME,
+            CITY,
+            STATE,
+            OWNER_TYPE,
+            updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(icao24) DO UPDATE SET
-            manufacturer = COALESCE(excluded.manufacturer, active_tracking.manufacturer),
-            model = COALESCE(NULLIF(excluded.model, ''), active_tracking.model),
-            marker = COALESCE(NULLIF(excluded.marker, ''), active_tracking.marker),
+            manufacturer = COALESCE(excluded.manufacturer, tracked_aircraft.manufacturer),
+            model = COALESCE(NULLIF(excluded.model, ''), tracked_aircraft.model),
             latitude = excluded.latitude,
             longitude = excluded.longitude,
             altitude = excluded.altitude,
@@ -61,13 +77,15 @@ export default async function handler(
             heading = excluded.heading,
             on_ground = excluded.on_ground,
             last_contact = excluded.last_contact,
-            last_seen = excluded.last_seen,
-            TYPE_AIRCRAFT = COALESCE(NULLIF(excluded.TYPE_AIRCRAFT, ''), active_tracking.TYPE_AIRCRAFT),
-            "N-NUMBER" = COALESCE(NULLIF(excluded."N-NUMBER", ''), active_tracking."N-NUMBER"),
-            OWNER_TYPE = COALESCE(NULLIF(excluded.OWNER_TYPE, ''), active_tracking.OWNER_TYPE),
+            TYPE_AIRCRAFT = COALESCE(NULLIF(excluded.TYPE_AIRCRAFT, ''), tracked_aircraft.TYPE_AIRCRAFT),
+            "N-NUMBER" = COALESCE(NULLIF(excluded."N-NUMBER", ''), tracked_aircraft."N-NUMBER"),
+            NAME = COALESCE(NULLIF(excluded.NAME, ''), tracked_aircraft.NAME),
+            CITY = COALESCE(NULLIF(excluded.CITY, ''), tracked_aircraft.CITY),
+            STATE = COALESCE(NULLIF(excluded.STATE, ''), tracked_aircraft.STATE),
+            OWNER_TYPE = COALESCE(NULLIF(excluded.OWNER_TYPE, ''), tracked_aircraft.OWNER_TYPE),
             updated_at = excluded.updated_at`;
 
-        await db.executeQuery(sql, [
+        await trackingDb.executeQuery(sql, [
           ac.icao24,
           ac.manufacturer || '',
           ac.model || '',
@@ -79,11 +97,12 @@ export default async function handler(
           ac.heading || 0,
           ac.on_ground ? 1 : 0,
           ac.last_contact || Math.floor(Date.now() / 1000),
-          ac.lastSeen || Date.now(),
           ac.TYPE_AIRCRAFT || '',
-          ac['N-NUMBER'] || '',
+          ac.NAME || '',
+          ac.CITY || '',
+          ac.STATE || '',
           ac.OWNER_TYPE || '',
-          Date.now(),
+          Math.floor(Date.now() / 1000),
         ]);
 
         successCount++;
@@ -97,29 +116,33 @@ export default async function handler(
     }
 
     if (successCount > 0) {
-      await db.executeQuery('COMMIT');
-      res.status(200).json({
+      await trackingDb.executeQuery('COMMIT');
+      return res.status(200).json({
         success: true,
         message: 'Aircraft batch updated successfully',
-        successCount,
-        errorCount,
-        errors,
+        data: {
+          successCount,
+          errorCount,
+          errors,
+        },
       });
     } else {
-      await db.executeQuery('ROLLBACK');
+      await trackingDb.executeQuery('ROLLBACK');
       throw new Error('No successful updates completed');
     }
   } catch (error) {
     try {
-      await db.executeQuery('ROLLBACK');
+      await trackingDb.executeQuery('ROLLBACK');
     } catch (rollbackError) {
-      console.error('Rollback failed:', rollbackError);
+      console.error('[TrackingAPI] Rollback failed:', rollbackError);
     }
 
-    res.status(500).json({
-      success: false,
-      error: error instanceof Error ? error.message : 'Internal server error',
-      details: errors,
-    });
+    throw APIErrors.Internal(
+      error instanceof Error
+        ? error
+        : new Error('Failed to update aircraft batch')
+    );
   }
 }
+
+export default withErrorHandler(handler);
