@@ -71,6 +71,7 @@ export const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
         manufacturers={manufacturers}
         selectedManufacturer={selectedManufacturer}
         onSelect={onManufacturerSelect}
+        setSelectedManufacturer={setSelectedManufacturer} // Add this prop
         onAircraftUpdate={onAircraftUpdate}
         onModelsUpdate={onModelsUpdate}
         onError={onError}

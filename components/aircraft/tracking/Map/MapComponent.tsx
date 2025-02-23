@@ -1,333 +1,126 @@
-import React, { useState, useEffect, useRef } from 'react';
-import ManufacturerSelector from '../../selector/ManufacturerSelector';
-import ModelSelector from '../../selector/ModelSelector';
-import NNumberSelector from '../../selector/nNumberSelector';
-import { aggregateAircraftModels } from '@/utils/model-transforms';
-import DynamicMap from '../Map/DynamicMap';
-import { Aircraft, Model, ActiveModel, SelectOption } from '@/types/base';
-import { AircraftModel } from '../../selector/types';
+// MapComponent.tsx
+import React, { useState } from 'react';
+import type {
+  Aircraft,
+  SelectOption,
+  ActiveModel,
+  ExtendedAircraft,
+} from '@/types/base';
+import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
+import { useAircraftSelector } from '../../customHooks/useAircraftSelector';
+import { useAircraftData } from '../../customHooks/useAircraftData';
+import { UnifiedSelector } from '../selector/UnifiedSelector';
+import dynamic from 'next/dynamic';
 
-interface ExtendedAircraft extends Aircraft {
-  type: string;
-  isGovernment: boolean;
-}
-
-interface MapComponentProps {
-  aircraft: Aircraft[];
-  initialAircraft?: Aircraft[]; // ✅ Make initialAircraft optional
-  onModelSelect?: (model: string) => void;
-}
-
-// Helper to convert to ActiveModel
-const toActiveModel = (model: Partial<AircraftModel>): ActiveModel => ({
-  model: model.model || '',
-  manufacturer: model.manufacturer || '',
-  label: model.label || `${model.model || 'Unknown'}`,
-  activeCount: model.activeCount || 0,
-  totalCount: model.totalCount || 0,
+// Dynamic import for the map
+const DynamicMap = dynamic(() => import('./DynamicMap'), {
+  ssr: false,
+  loading: () => <LoadingSpinner message="Loading map..." />,
 });
 
-export const MapComponent: React.FC<MapComponentProps> = ({
-  aircraft,
-  initialAircraft = [],
-  onModelSelect,
+interface MapComponentProps {
+  manufacturers: SelectOption[];
+  onError: (message: string) => void;
+}
+
+const MapComponent: React.FC<MapComponentProps> = ({
+  manufacturers,
+  onError,
 }) => {
+  // Change the state type to string with empty string as default
+  const [selectedManufacturer, setSelectedManufacturer] = useState<string>('');
+
+  // State
+  const [isMapReady, setIsMapReady] = useState(false);
   const [displayedAircraft, setDisplayedAircraft] = useState<
     ExtendedAircraft[]
   >([]);
-  const [selectedManufacturer, setSelectedManufacturer] = useState<
-    string | null
-  >(null);
-  const [selectedModel, setSelectedModel] = useState<string>('');
-  const [totalActive, setTotalActive] = useState(0);
-  const [nNumber, setNNumber] = useState<string>('');
-  const [models, setModels] = useState<Model[]>([]);
-  const [isMapReady, setIsMapReady] = useState(false);
-  const [isPolling, setIsPolling] = useState(false);
-  const pollingInterval = useRef<NodeJS.Timeout | null>(null);
+  const [models, setModels] = useState<ActiveModel[]>([]);
 
-  // Function to update displayed aircraft list
-  const handleAircraftUpdate = (aircraft: Aircraft[]) => {
-    setDisplayedAircraft(transformToExtendedAircraft(aircraft));
-  };
+  // Use aircraft selector hook
+  const {
+    selectedManufacturer: currentManufacturer,
+    selectedModel,
+    isLoadingModels,
+    handleManufacturerSelect,
+    handleModelSelect,
+  } = useAircraftSelector({
+    onModelsUpdate: (newModels: ActiveModel[]) => {
+      setModels(newModels);
+    },
+    onAircraftUpdate: (aircraft: Aircraft[]) => {
+      const extendedAircraft = aircraft.map((a) => ({
+        ...a,
+        type: a.TYPE_AIRCRAFT || 'Unknown',
+        isGovernment: a.OWNER_TYPE === '5',
+      }));
+      setDisplayedAircraft(extendedAircraft);
+    },
+    onError,
+  });
 
-  // Or better yet, create a separate function for clarity:
-  const calculateTotalActive = (models: Model[]): number => {
-    return models.reduce(
-      (sum: number, model: Model) => sum + (model.activeCount || 0),
-      0
-    );
-  };
+  // Use aircraft data hook
+  const { activeCount, loading: trackingLoading } = useAircraftData();
 
-  // Function to update model list when a manufacturer is selected
-  const handleModelsUpdate = (models: ActiveModel[]): void => {
-    // Handle model updates
-    // Don't return the array
-    setModels(models);
-  };
-
-  // For any other array operations that need to return void
-  const someArrayOperation = (): void => {
-    const result: any[] = []; // Explicitly typing it as an array
-
-    handleModelsUpdate(result.map(toActiveModel));
-  };
-
-  const handleError = (message: string) => {
-    console.error(`[Error]: ${message}`);
-    alert(`Error: ${message}`);
-  };
-
-  useEffect(() => {
-    setIsMapReady(true);
-  }, []);
-
-  // Transform aircraft to ExtendedAircraft format
-  const transformToExtendedAircraft = (
-    aircraft: Aircraft[]
-  ): ExtendedAircraft[] => {
-    return aircraft.map((plane) => ({
-      ...plane,
-      type: plane.TYPE_AIRCRAFT || 'Unknown', // Ensure 'type' is set
-      isGovernment: plane.OWNER_TYPE?.toLowerCase() === 'government' || false, // Ensure 'isGovernment' is boolean
-    }));
-  };
-
-  // Fetch aircraft when manufacturer is selected
-  const handleManufacturerSelect = async (
-    manufacturer: string | null
-  ): Promise<void> => {
-    stopPolling();
-    setSelectedManufacturer(manufacturer);
-    setSelectedModel('');
-    setModels([]);
-
-    if (!manufacturer) {
-      setDisplayedAircraft([]);
-      return;
-    }
-
-    try {
-      // Update endpoint to positions
-      const response = await fetch('/api/tracking/positions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'getTrackedAircraft',
-          manufacturer,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Error: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-      let aircraftList: Aircraft[] = [];
-
-      if (data.aircraft) {
-        aircraftList = data.aircraft.filter(
-          (ac: Aircraft) =>
-            ac.manufacturer?.toLowerCase() === manufacturer.toLowerCase()
-        );
-      }
-
-      // Convert to ExtendedAircraft[]
-      const extendedAircraftList = transformToExtendedAircraft(aircraftList);
-      setDisplayedAircraft(extendedAircraftList);
-
-      // Fetch active models
-      const modelsResponse = await fetch(
-        `/api/aircraft/models?manufacturer=${encodeURIComponent(manufacturer)}`
-      );
-
-      if (!modelsResponse.ok) {
-        throw new Error(`Error: ${modelsResponse.statusText}`);
-      }
-
-      const modelsData = await modelsResponse.json();
-      if (modelsData.data) {
-        const processedModels = modelsData.data.map(
-          (model: { model: string; activeCount: number }) => ({
-            model: model.model,
-            label: `${model.model} (${model.activeCount || 0} active)`,
-            activeCount: model.activeCount || 0,
-          })
-        );
-        setModels(processedModels);
-        setTotalActive(calculateTotalActive(processedModels));
-      }
-
-      // Start polling after successful initial fetch
-      startPolling();
-
-      return;
-    } catch (error) {
-      console.error('[ManufacturerSelect] ❌ Error:', error);
-      if (error instanceof Error) {
-        alert(`Failed to load data: ${error.message}`);
-      }
-      stopPolling(); // Ensure polling is stopped on error
-      setDisplayedAircraft([]); // Clear displayed aircraft on error
-    }
-  };
-  // Filter aircraft by model
-  const handleModelSelect = (model: string) => {
-    setSelectedModel(model);
-    // If a model is selected, filter the continuously polled aircraft
-    if (model) {
-      setDisplayedAircraft((prev) =>
-        prev.filter((plane) => plane.model === model)
-      );
-    } else {
-      // If no model selected, show all aircraft for the manufacturer
-      pollTrackingDatabase();
-    }
-  };
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      stopPolling();
-    };
-  }, []);
-
-  // Search aircraft by N-Number
-  const handleNNumberSearch = async (nNumber: string) => {
-    try {
-      const response = await fetch(`/api/aircraft/search?nNumber=${nNumber}`);
-      if (!response.ok) throw new Error(`Error: ${response.statusText}`);
-
-      const data = await response.json();
-      if (!data.aircraft) throw new Error('No aircraft found.');
-
-      setDisplayedAircraft(transformToExtendedAircraft(data.aircraft)); // ✅ Fix type issue
-    } catch (error) {
-      console.error(error);
-    }
-  };
-
-  // Reset filters
+  // Update handleReset to use empty string instead of null
   const handleReset = () => {
-    setSelectedManufacturer('');
-    setSelectedModel('');
-    setNNumber('');
-    setDisplayedAircraft(transformToExtendedAircraft(initialAircraft));
+    handleManufacturerSelect('');
+    setDisplayedAircraft([]);
+    setModels([]);
   };
 
-  // Function to poll tracking database
-  const pollTrackingDatabase = async (): Promise<void> => {
-    try {
-      const response = await fetch('/api/tracking/positions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'getTrackedAircraft',
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(
-          `Failed to poll tracking database: ${response.statusText}`
-        );
-      }
-
-      const data = await response.json();
-      if (data.aircraft) {
-        setDisplayedAircraft(transformToExtendedAircraft(data.aircraft));
-      }
-    } catch (error) {
-      console.error('[Tracking] ❌ Failed to poll tracking database:', error);
-    }
-  };
-
-  // Function to start polling
-  const startPolling = () => {
-    if (!isPolling) {
-      setIsPolling(true);
-      pollTrackingDatabase(); // Initial poll
-      pollingInterval.current = setInterval(pollTrackingDatabase, 5000);
-    }
-  };
-
-  // Function to stop polling
-  const stopPolling = () => {
-    if (pollingInterval.current) {
-      clearInterval(pollingInterval.current);
-      pollingInterval.current = null;
-    }
-    setIsPolling(false);
-  };
-
-  const formatModelsForSelector = (inputModels: Model[]): ActiveModel[] => {
-    return inputModels.map((model) => ({
-      model: model.model,
-      manufacturer: model.manufacturer || '',
-      label: model.label || `${model.model} (${model.activeCount ?? 0} active)`,
-      activeCount: model.activeCount ?? 0, // ✅ Fix: Ensure activeCount is always a number
-      totalCount: model.activeCount ?? 0, // ✅ Fix: Ensure totalCount is included
-    }));
-  };
-
-  const formattedModels = formatModelsForSelector(models);
-
-  const processedModels: AircraftModel[] = models.map((model) => ({
-    model: model.model,
-    manufacturer: model.manufacturer,
-    label: `${model.model} (${model.activeCount ?? 0} active)`,
-    activeCount: model.activeCount ?? 0,
-    totalCount: model.count ?? 0,
-  }));
-
-  const manufacturers: SelectOption[] = [
-    { value: 'boeing', label: 'Boeing' },
-    { value: 'airbus', label: 'Airbus' },
-  ];
+  // Compute model counts
+  const modelCounts = React.useMemo(() => {
+    return Object.fromEntries(
+      models.reduce((acc, model) => {
+        acc.set(model.model, model.activeCount);
+        return acc;
+      }, new Map())
+    );
+  }, [models]);
 
   return (
-    <div>
-      <ManufacturerSelector
-        onSelect={handleManufacturerSelect}
-        selectedManufacturer={selectedManufacturer}
-        manufacturers={manufacturers}
-        onAircraftUpdate={handleAircraftUpdate}
-        onModelsUpdate={handleModelsUpdate}
-        onError={handleError}
-      />
+    <div className="relative w-full h-screen">
+      {/* Map Container */}
+      <div className="absolute inset-0">
+        <DynamicMap aircraft={displayedAircraft} onError={onError} />
+      </div>
 
-      {selectedManufacturer && (
-        <div className="absolute top-20 left-4 z-10 max-w-sm">
-          <ModelSelector
-            selectedModel=""
-            setSelectedModel={() => {}}
-            models={processedModels}
-            totalActive={aircraft.length}
-            onModelSelect={onModelSelect || (() => {})}
-          />
-        </div>
-      )}
-
-      {/* N-Number Selector */}
-      <div className="absolute top-36 left-4 z-10 max-w-sm">
-        <NNumberSelector
-          nNumber={nNumber}
-          setNNumber={setNNumber}
-          onSearch={handleNNumberSearch} // ✅ Now calls parent function
+      {/* Selector UI */}
+      <div className="absolute top-0 left-0 right-0 z-10 max-w-sm ml-4">
+        <UnifiedSelector
+          manufacturers={manufacturers}
+          selectedManufacturer={selectedManufacturer}
+          selectedModel={selectedModel}
+          setSelectedManufacturer={handleManufacturerSelect} // Now accepts string | null
+          setSelectedModel={handleModelSelect}
+          onManufacturerSelect={handleManufacturerSelect} // Now accepts string | null
+          onModelSelect={handleModelSelect}
+          models={models}
+          modelCounts={modelCounts}
+          onModelsUpdate={(newModels: ActiveModel[]) => setModels(newModels)}
+          totalActive={activeCount}
+          onAircraftUpdate={(aircraft: Aircraft[]) => {
+            const extendedAircraft = aircraft.map((a) => ({
+              ...a,
+              type: a.TYPE_AIRCRAFT || 'Unknown',
+              isGovernment: a.OWNER_TYPE === '5',
+            }));
+            setDisplayedAircraft(extendedAircraft);
+          }}
+          onReset={handleReset}
+          onError={onError}
         />
       </div>
 
-      {/* Reset Button */}
-      <button
-        onClick={handleReset}
-        className="absolute top-48 left-4 z-10 bg-red-500 text-white p-2 rounded"
-      >
-        Reset Filters
-      </button>
-
-      {/* Map Display */}
-      {isMapReady && (
-        <div className="absolute inset-0">
-          <DynamicMap aircraft={displayedAircraft} />
+      {/* Loading indicator */}
+      {(isLoadingModels || trackingLoading) && (
+        <div className="absolute top-4 right-4 z-20">
+          <LoadingSpinner
+            message={
+              isLoadingModels ? 'Loading models...' : 'Tracking aircraft...'
+            }
+          />
         </div>
       )}
     </div>

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { fetchManufacturers } from '../selector/services/aircraftService';
+import { fetchManufacturers } from '../../aircraft/tracking/selector/services/aircraftService';
 import { SelectOption } from '@/types/base';
 
 export const useFetchManufacturers = () => {

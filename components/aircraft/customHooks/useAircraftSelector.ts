@@ -1,3 +1,4 @@
+// useAircraftSelector.ts
 import { useState, useCallback } from 'react';
 import { Aircraft, ActiveModel } from '@/types/base';
 
@@ -12,15 +13,15 @@ export function useAircraftSelector({
   onAircraftUpdate,
   onError,
 }: UseAircraftSelectorProps) {
-  const [selectedManufacturer, setSelectedManufacturer] = useState<
-    string | null
-  >(null);
+  const [selectedManufacturer, setSelectedManufacturer] = useState<string>('');
   const [selectedModel, setSelectedModel] = useState<string>('');
   const [isLoadingModels, setIsLoadingModels] = useState(false);
   const [models, setModels] = useState<ActiveModel[]>([]);
 
   const fetchActiveAircraft = useCallback(
     async (icao24List: string[]) => {
+      if (icao24List.length === 0) return [];
+
       try {
         console.log(
           `[useAircraftSelector] 📡 Fetching positions for ${icao24List.length} aircraft`
@@ -45,23 +46,21 @@ export function useAircraftSelector({
           );
         }
 
-        // Extract the aircraft states and transform them into Aircraft objects
-        const activeAircraft = (responseData.data.states || []).map(
-          (state: any) => ({
-            icao24: state.icao24,
-            callsign: state.callsign,
+        const activeAircraft: Aircraft[] =
+          responseData.data.states?.map((state: any) => ({
+            icao24: state.icao24 || '',
+            callsign: state.callsign || '',
             manufacturer: selectedManufacturer || '',
             model: state.model || '',
-            latitude: state.latitude,
-            longitude: state.longitude,
-            altitude: state.altitude,
-            velocity: state.velocity,
-            heading: state.heading,
-            on_ground: state.on_ground,
-            last_contact: state.last_contact,
+            latitude: state.latitude || 0,
+            longitude: state.longitude || 0,
+            altitude: state.altitude || 0,
+            velocity: state.velocity || 0,
+            heading: state.heading || 0,
+            on_ground: state.on_ground || false,
+            last_contact: state.last_contact || 0,
             isTracked: true,
-          })
-        );
+          })) || [];
 
         console.log(
           `[useAircraftSelector] ✅ Processed ${activeAircraft.length} active aircraft`
@@ -72,16 +71,18 @@ export function useAircraftSelector({
           '[useAircraftSelector] ❌ Error fetching active aircraft:',
           error
         );
+        onError('Failed to fetch aircraft positions');
         return [];
       }
     },
-    [selectedManufacturer]
+    [selectedManufacturer, onError]
   );
 
+  // Update the handler to accept string | null
   const handleManufacturerSelect = useCallback(
     async (manufacturer: string | null) => {
       if (!manufacturer) {
-        setSelectedManufacturer(null);
+        setSelectedManufacturer('');
         setSelectedModel('');
         setModels([]);
         onModelsUpdate([]);
@@ -95,18 +96,15 @@ export function useAircraftSelector({
       setSelectedModel('');
 
       try {
-        // Step 1: Get ICAO24s
+        // ICAO24s fetch
+        console.log(
+          `[useAircraftSelector] 📡 Fetching ICAO24s for ${manufacturer}`
+        );
         const icaoResponse = await fetch('/api/aircraft/icao24s', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ manufacturer }),
         });
-
-        if (!icaoResponse.ok) {
-          throw new Error(
-            `Failed to fetch ICAO24s: ${icaoResponse.statusText}`
-          );
-        }
 
         const icaoData = await icaoResponse.json();
         const icao24List = icaoData.data?.icao24List || [];
@@ -115,18 +113,19 @@ export function useAircraftSelector({
           `[useAircraftSelector] ✅ Received ${icao24List.length} ICAO24s`
         );
 
-        // Step 2: Get active aircraft positions
         const activeAircraft = await fetchActiveAircraft(icao24List);
         console.log(
           `[useAircraftSelector] ✅ Retrieved ${activeAircraft.length} active positions`
         );
 
-        // Important: Update aircraft positions BEFORE fetching models
         onAircraftUpdate(activeAircraft);
 
-        // Step 3: Fetch models with active count information
+        console.log(
+          `[useAircraftSelector] 📡 Fetching models for ${manufacturer}`
+        );
+        const encodedManufacturer = encodeURIComponent(manufacturer || '');
         const modelsResponse = await fetch(
-          `/api/aircraft/models?manufacturer=${encodeURIComponent(manufacturer)}`
+          `/api/aircraft/models?manufacturer=${encodedManufacturer}`
         );
 
         if (!modelsResponse.ok) {
@@ -137,17 +136,27 @@ export function useAircraftSelector({
 
         const modelsData = await modelsResponse.json();
         if (modelsData.success && Array.isArray(modelsData.data)) {
-          const processedModels = modelsData.data.map((model: any) => ({
-            model: model.model,
-            manufacturer: model.manufacturer,
-            label: `${model.model} (${model.activeCount} active)`,
-            count: model.count || 0,
-            activeCount: model.activeCount || 0,
-            totalCount: model.count || 0,
-          }));
+          const processedModels: ActiveModel[] = modelsData.data.map(
+            (model: any) => ({
+              model: model.model || '',
+              manufacturer: model.manufacturer || '',
+              label: `${model.model || 'Unknown'} (${model.activeCount ?? 0} active)`,
+              activeCount: model.activeCount ?? 0,
+              totalCount: model.totalCount ?? model.count ?? 0,
+            })
+          );
 
+          console.log(
+            `[useAircraftSelector] ✅ Processed ${processedModels.length} models`
+          );
           setModels(processedModels);
           onModelsUpdate(processedModels);
+        } else {
+          console.warn(
+            `[useAircraftSelector] ⚠️ No models found for ${manufacturer}`
+          );
+          setModels([]);
+          onModelsUpdate([]);
         }
       } catch (error) {
         console.error('[useAircraftSelector] ❌ Error:', error);
@@ -162,12 +171,16 @@ export function useAircraftSelector({
     [fetchActiveAircraft, onModelsUpdate, onAircraftUpdate, onError]
   );
 
+  const handleModelSelect = useCallback((model: string) => {
+    setSelectedModel(model);
+  }, []);
+
   return {
     selectedManufacturer,
     selectedModel,
     models,
     isLoadingModels,
-    setSelectedModel,
     handleManufacturerSelect,
+    handleModelSelect,
   };
 }

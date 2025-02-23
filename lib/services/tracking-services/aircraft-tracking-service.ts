@@ -1,12 +1,9 @@
 // services/aircraft-tracking-service.ts
+import React, { useState, useEffect, useRef } from 'react';
 import UnifiedCacheService from '../managers/unified-cache-system';
 import { BaseTrackingService } from './base-tracking-service';
 import { RateLimiterOptions } from '../rate-limiter';
-import {
-  OpenSkyTransforms,
-  CacheTransforms,
-  normalizeAircraft,
-} from '@/utils/aircraft-transform1';
+import { OpenSkyTransforms } from '@/utils/aircraft-transform1';
 import type {
   Aircraft,
   OpenSkyStateArray,
@@ -29,6 +26,10 @@ interface StateResponse {
 
 // Singleton instance holder
 let instance: AircraftTrackingService | null = null;
+
+const [selectedManufacturer, setSelectedManufacturer] = useState<string | null>(
+  null
+);
 
 export class AircraftTrackingService extends BaseTrackingService {
   private readonly DEBUG = true;
@@ -102,11 +103,13 @@ export class AircraftTrackingService extends BaseTrackingService {
     }
   }
 
+  private fetchQueue: Map<string, Promise<string[]>> = new Map();
+
   private async getManufacturerIcao24s(
     manufacturer: string
   ): Promise<string[]> {
+    // ✅ Step 1: Check the cache first
     const cachedIcao24s = this.unifiedCache.getLiveDataRaw(manufacturer);
-
     if (cachedIcao24s.length > 0) {
       console.log(
         `[AircraftTrackingService] ✅ Using cached ICAO24s for ${manufacturer}`
@@ -114,35 +117,51 @@ export class AircraftTrackingService extends BaseTrackingService {
       return cachedIcao24s.map((a) => a.icao24);
     }
 
-    try {
+    // ✅ Step 2: Avoid duplicate requests for the same manufacturer
+    if (this.fetchQueue.has(manufacturer)) {
       console.log(
-        `[AircraftTrackingService] 🔍 Fetching ICAOs for manufacturer: ${manufacturer}`
+        `[AircraftTrackingService] ⏳ Waiting for ongoing request for ${manufacturer}`
       );
-      const url = `${this.baseUrl}/api/aircraft/icao24s?manufacturer=${encodeURIComponent(manufacturer)}`;
-      const response = await fetch(url);
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const data = await response.json();
-      if (!data.success || !data.data?.icao24List) {
-        throw new Error(data.error || 'Invalid response');
-      }
-
-      this.unifiedCache.setLiveData(
-        manufacturer,
-        data.data.icao24List.map((icao24: string) => ({ icao24 }))
-      );
-
-      return data.data.icao24List;
-    } catch (error) {
-      console.error(
-        `[AircraftTrackingService] ❌ Error fetching ICAO24s:`,
-        error
-      );
-      return [];
+      return this.fetchQueue.get(manufacturer)!;
     }
+
+    // ✅ Step 3: Fetch ICAO24s and store the Promise in fetchQueue
+    const fetchPromise = fetch(
+      `${this.baseUrl}/api/aircraft/icao24s?manufacturer=${encodeURIComponent(manufacturer)}`
+    )
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        const data = await response.json();
+        if (!data.success || !data.data?.icao24List) {
+          throw new Error(data.error || 'Invalid response');
+        }
+
+        // ✅ Step 4: Store in cache after successful fetch
+        const icao24List = data.data.icao24List.map((icao24: string) => ({
+          icao24,
+        }));
+        this.unifiedCache.setLiveData(manufacturer, icao24List);
+
+        console.log(
+          `[AircraftTrackingService] ✅ Fetched and cached ${icao24List.length} ICAO24s for ${manufacturer}`
+        );
+        return icao24List.map((entry: { icao24: string }) => entry.icao24);
+      })
+      .catch((error) => {
+        console.error(
+          `[AircraftTrackingService] ❌ Error fetching ICAO24s:`,
+          error
+        );
+        return []; // Return empty array on failure
+      })
+      .finally(() => {
+        this.fetchQueue.delete(manufacturer); // ✅ Ensure queue cleanup
+      });
+
+    this.fetchQueue.set(manufacturer, fetchPromise);
+    return fetchPromise;
   }
 
   private async getStaticAircraftData(
@@ -367,6 +386,7 @@ export class AircraftTrackingService extends BaseTrackingService {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             action: 'getTrackedAircraft',
+            manufacturer: selectedManufacturer, // ✅ Ensure manufacturer is passed
           }),
         });
 

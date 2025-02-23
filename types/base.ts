@@ -319,3 +319,9 @@ export interface ModelSelectorProps {
   totalActive?: number;
   onModelSelect: (model: string) => void;
 }
+
+export interface ExtendedAircraft extends Aircraft {
+  type: string; // From DynamicMap
+  isGovernment: boolean; // From DynamicMap
+  // Add any additional OpenSky properties if needed
+}
