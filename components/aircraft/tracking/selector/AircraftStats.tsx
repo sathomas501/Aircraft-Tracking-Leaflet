@@ -1,5 +1,5 @@
 import React from 'react';
-import { useAircraftData } from '../customHooks/useAircraftData';
+import { useAircraftData } from '../../customHooks/useAircraftData';
 
 interface AircraftStatsProps {
   manufacturer: string;

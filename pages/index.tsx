@@ -1,13 +1,20 @@
-import { useEffect, useState } from 'react';
+// pages/index.tsx
+import { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 import { useFetchManufacturers } from '../components/aircraft/customHooks/useFetchManufactures';
-import type { Aircraft } from '@/types/base';
+import type { MapWrapperProps } from '../components/aircraft/tracking/mapWrapper/MapWrapper';
 
-// Dynamically load MapWrapper to avoid SSR issues
-const DynamicMap = dynamic(
-  () => import('@/components/aircraft/tracking/mapWrapper/MapWrapper'),
-  { ssr: false, loading: () => <LoadingSpinner message="Loading map..." /> }
+// Type the dynamic import
+const DynamicMapWrapper = dynamic<MapWrapperProps>(
+  () =>
+    import('../components/aircraft/tracking/mapWrapper/MapWrapper').then(
+      (mod) => mod.default
+    ), // Get the default export
+  {
+    ssr: false,
+    loading: () => <LoadingSpinner message="Loading MapWrapper..." />,
+  }
 );
 
 export default function HomePage() {
@@ -19,6 +26,11 @@ export default function HomePage() {
   useEffect(() => {
     console.log('Manufacturers loaded:', manufacturers?.length);
   }, [manufacturers]);
+
+  console.log('[HomePage] Component is rendering!');
+  console.log('[HomePage] Manufacturers:', manufacturers);
+  console.log('[HomePage] Manufacturers length:', manufacturers?.length);
+  console.log('[HomePage] Manufacturers passed to MapWrapper:', manufacturers);
 
   // Error display component
   const ErrorDisplay = ({ message }: { message: string }) => (
@@ -37,8 +49,7 @@ export default function HomePage() {
 
   return (
     <div className="relative min-h-screen w-full">
-      {/* Use dynamically imported MapWrapper */}
-      <DynamicMap
+      <DynamicMapWrapper
         initialAircraft={[]}
         manufacturers={manufacturers || []}
         onError={setError}

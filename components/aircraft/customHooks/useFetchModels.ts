@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAircraftData } from './useAircraftData';
-import { fetchModels } from '../selector/services/aircraftService';
-import { Model } from '@/types/base';
+import { fetchModels } from '../tracking/selector/services/aircraftService';
+import { Model, SelectOption } from '@/types/base';
 
 export const useFetchModels = () => {
   const { selectedManufacturer } = useAircraftData();
@@ -21,9 +21,12 @@ export const useFetchModels = () => {
 
     try {
       console.log(
-        `[useFetchModels] 🔄 Fetching models for: ${selectedManufacturer}`
+        `[useFetchModels] 🔄 Fetching models for: ${selectedManufacturer.label}`
       );
-      const fetchedModels = await fetchModels(selectedManufacturer);
+
+      // ✅ Extract manufacturer name properly
+      const fetchedModels = await fetchModels(selectedManufacturer.value);
+
       console.log(
         `[useFetchModels] ✅ Received ${fetchedModels.length} models:`,
         fetchedModels

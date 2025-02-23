@@ -5,6 +5,10 @@ import {
   ErrorType,
 } from '@/lib/services/error-handler/error-handler';
 import { PollingRateLimiter } from '@/lib/services/rate-limiter';
+import {
+  getCachedIcao24s,
+  setCachedIcao24s,
+} from '../../../../../lib/services/managers/aircraft-cache';
 
 const REQUEST_CONSTANTS = {
   FETCH_TIMEOUT: 8000, // 8 seconds
@@ -26,6 +30,10 @@ const manufacturersRateLimiter = new PollingRateLimiter({
   interval: 60000, // Add appropriate interval value
   retryAfter: 1000, // Add appropriate retryAfter value
 });
+
+export async function getAircraftIcao24s(manufacturer: string) {
+  return await getCachedIcao24s(manufacturer);
+}
 
 async function fetchWithTimeout(
   input: RequestInfo,
@@ -91,25 +99,37 @@ export async function fetchAircraftByManufacturer(
 ): Promise<Aircraft[]> {
   if (!manufacturer) {
     console.warn('⚠️ No manufacturer selected, returning empty aircraft list.');
-    return []; // ✅ Prevents errors when manufacturer is null
+    return [];
+  }
+
+  // ✅ Check if ICAO24s exist in cache first
+  const cachedIcao24s = getCachedIcao24s(manufacturer);
+  if (cachedIcao24s) {
+    console.log(`[Cache] ✅ Returning cached ICAO24s for ${manufacturer}`);
+    return cachedIcao24s.map((icao24) => ({ icao24 }) as Aircraft);
   }
 
   try {
+    console.log(`[API] 📡 Fetching ICAO24s for manufacturer: ${manufacturer}`);
     const response = await fetch(
       `/api/aircraft/icao24s?manufacturer=${encodeURIComponent(manufacturer)}`
     );
-    const data = await response.json();
-
-    if (!data.success) {
-      throw new Error(data.error || 'Failed to fetch aircraft');
+    if (!response.ok) {
+      throw new Error(`[API] ❌ Failed to fetch ICAO24s for ${manufacturer}`);
     }
 
-    return data.data.icao24List.map(
-      (icao24: string) => ({ icao24 }) as Aircraft
-    ); // ✅ Ensure correct Aircraft type
+    const data = await response.json();
+    if (!data.success || !Array.isArray(data.icao24List)) {
+      throw new Error('[API] ❌ Invalid response format');
+    }
+
+    // ✅ Store ICAO24s in cache
+    setCachedIcao24s(manufacturer, data.icao24List);
+
+    return data.icao24List.map((icao24: string) => ({ icao24 }) as Aircraft);
   } catch (error) {
-    console.error('❌ Error fetching aircraft:', error);
-    throw error;
+    console.error('[Aircraft Service] ❌ Error fetching aircraft:', error);
+    return [];
   }
 }
 
@@ -128,11 +148,7 @@ export async function fetchManufacturers(): Promise<SelectOption[]> {
 
       const data = await response.json();
 
-      if (
-        !data.success ||
-        !data.manufacturers ||
-        !Array.isArray(data.manufacturers)
-      ) {
+      if (!data.success || !Array.isArray(data.manufacturers)) {
         console.error('[Aircraft Service] ❌ Invalid response format:', data);
         throw new Error('Invalid API response format');
       }
@@ -140,7 +156,11 @@ export async function fetchManufacturers(): Promise<SelectOption[]> {
       console.log(
         `[Aircraft Service] ✅ Loaded ${data.manufacturers.length} manufacturers`
       );
-      return data.manufacturers;
+
+      return data.manufacturers.map((m: any) => ({
+        value: m.value, // Ensure correct mapping
+        label: m.label, // Ensure UI compatibility
+      }));
     });
   } catch (error) {
     console.error(
@@ -182,10 +202,13 @@ export async function fetchModels(manufacturer: string): Promise<Model[]> {
       return [];
     }
 
-    const formattedModels = data.data;
-    console.log('[Aircraft Service] ✅ Returning models:', formattedModels);
-
-    return formattedModels;
+    return data.data.map((model: any) => ({
+      model: model.model || '',
+      manufacturer: model.manufacturer || '',
+      label: `${model.model} (${model.activeCount || 0} active)`,
+      activeCount: model.activeCount || 0,
+      totalCount: model.totalCount || 0,
+    }));
   } catch (error) {
     console.error('[Aircraft Service] ❌ Error fetching models:', error);
     return [];
@@ -212,7 +235,7 @@ export async function trackManufacturer(
 
     if (!data.success || !Array.isArray(data.liveAircraft)) {
       console.error('[Aircraft Service] ❌ Invalid response format:', data);
-      throw new Error('Invalid API response format');
+      return { liveAircraft: [] };
     }
 
     console.log(
@@ -221,10 +244,6 @@ export async function trackManufacturer(
     return { liveAircraft: data.liveAircraft };
   } catch (error) {
     console.error('[Aircraft Service] ❌ Failed to track manufacturer:', error);
-    errorHandler.handleError(
-      ErrorType.OPENSKY_SERVICE,
-      error instanceof Error ? error : new Error('Failed to track manufacturer')
-    );
     return { liveAircraft: [] };
   }
 }

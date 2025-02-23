@@ -1,91 +1,116 @@
+// DynamicMap.tsx
 import React, { useEffect, useRef, useState } from 'react';
-import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
+import type { ExtendedAircraft } from '@/types/base';
 import { MAP_CONFIG } from '@/config/map';
-import type { Aircraft } from '@/types/base';
-
-export interface ExtendedAircraft extends Aircraft {
-  type: string;
-  isGovernment: boolean;
-}
 
 export interface DynamicMapProps {
   aircraft: ExtendedAircraft[];
+  onError: (message: string) => void;
 }
 
-const DynamicMap: React.FC<DynamicMapProps> = ({ aircraft }) => {
-  const mapRef = useRef<L.Map | null>(null);
-  const markersRef = useRef<{ [key: string]: L.Marker }>({});
-  const mapContainerRef = useRef<HTMLDivElement | null>(null);
-  const [mapInitialized, setMapInitialized] = useState(false);
+const DynamicMap: React.FC<DynamicMapProps> = ({ aircraft, onError }) => {
+  const mapContainerRef = useRef<HTMLDivElement>(null);
+  const [L, setL] = useState<any>(null);
+  const [map, setMap] = useState<any>(null);
+  const [markerLayer, setMarkerLayer] = useState<any>(null);
 
-  // Create a marker layer group to manage markers
-  const markerLayerRef = useRef<L.LayerGroup | null>(null);
-
-  // Initialize map and marker layer group
+  // Initialize Leaflet and map
   useEffect(() => {
-    if (!mapContainerRef.current || mapInitialized) return;
+    let mounted = true;
 
-    try {
-      const map = L.map(mapContainerRef.current, {
-        center: MAP_CONFIG.CENTER,
-        zoom: MAP_CONFIG.DEFAULT_ZOOM,
-        minZoom: MAP_CONFIG.OPTIONS.minZoom,
-        maxZoom: MAP_CONFIG.OPTIONS.maxZoom,
-        scrollWheelZoom: true,
-        worldCopyJump: true,
-      });
+    const initMap = async () => {
+      try {
+        if (!mapContainerRef.current || map) return;
 
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© OpenStreetMap contributors',
-      }).addTo(map);
+        // Import Leaflet dynamically
+        const L = (await import('leaflet')).default;
+        await import('leaflet/dist/leaflet.css');
 
-      // Create marker layer group
-      const markerLayer = L.layerGroup().addTo(map);
+        if (!mounted || !mapContainerRef.current) return;
+        setL(L);
 
-      // Store references
-      mapRef.current = map;
-      markerLayerRef.current = markerLayer;
+        const newMap = L.map(mapContainerRef.current, {
+          center: MAP_CONFIG.CENTER,
+          zoom: MAP_CONFIG.DEFAULT_ZOOM,
+          minZoom: MAP_CONFIG.OPTIONS.minZoom,
+          maxZoom: MAP_CONFIG.OPTIONS.maxZoom,
+          preferCanvas: true,
+          worldCopyJump: true,
+        });
 
-      setMapInitialized(true);
-      console.log('[Map] ✅ Map initialized successfully');
-    } catch (error) {
-      console.error('[Map] ❌ Failed to initialize map:', error);
-    }
+        // Set up base layers
+        const layers = {
+          Topographic: L.tileLayer(
+            'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+            {
+              attribution: '© OpenTopoMap contributors',
+              maxZoom: 17,
+            }
+          ),
+          Streets: L.tileLayer(
+            'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+            {
+              attribution: '© OpenStreetMap contributors',
+            }
+          ),
+          Satellite: L.tileLayer(
+            'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+            {
+              attribution: '© Esri',
+              maxZoom: 19,
+            }
+          ),
+        };
+
+        // Add default layer
+        layers.Topographic.addTo(newMap);
+
+        // Add layer control
+        L.control.layers(layers).addTo(newMap);
+
+        // Add marker layer
+        const newMarkerLayer = L.layerGroup().addTo(newMap);
+
+        setMap(newMap);
+        setMarkerLayer(newMarkerLayer);
+        console.log('[DynamicMap] Map initialized successfully');
+      } catch (error) {
+        console.error('[DynamicMap] Failed to initialize map:', error);
+        onError('Failed to initialize map');
+      }
+    };
+
+    initMap();
 
     return () => {
-      if (markerLayerRef.current) {
-        markerLayerRef.current.clearLayers();
-      }
-      if (mapRef.current) {
-        mapRef.current.remove();
-        mapRef.current = null;
-        markerLayerRef.current = null;
-        setMapInitialized(false);
+      mounted = false;
+      if (map) {
+        map.remove();
+        setMap(null);
+        setMarkerLayer(null);
       }
     };
   }, []);
 
   // Update aircraft markers
   useEffect(() => {
-    if (!mapInitialized || !markerLayerRef.current) return;
-
-    console.log('[Map] 🔄 Updating aircraft positions:', aircraft.length);
+    if (!map || !markerLayer || !L) return;
 
     try {
-      // Clear existing markers
-      markerLayerRef.current.clearLayers();
+      console.log('[DynamicMap] Updating aircraft positions:', aircraft.length);
+      markerLayer.clearLayers();
 
-      // Add new markers
-      aircraft.forEach((plane) => {
-        if (!plane.latitude || !plane.longitude) {
-          console.warn('[Map] ⚠️ Aircraft missing coordinates:', plane.icao24);
-          return;
-        }
+      const validAircraft = aircraft.filter(
+        (plane) =>
+          typeof plane.latitude === 'number' &&
+          typeof plane.longitude === 'number' &&
+          !isNaN(plane.latitude) &&
+          !isNaN(plane.longitude)
+      );
 
-        const position = L.latLng(plane.latitude, plane.longitude);
-        const marker = L.marker(position, {
-          icon: new L.Icon({
+      validAircraft.forEach((plane) => {
+        const marker = L.marker([plane.latitude, plane.longitude], {
+          icon: L.icon({
             iconUrl: plane.isGovernment
               ? '/icons/governmentJetIconImg.png'
               : '/icons/jetIconImg.png',
@@ -93,34 +118,49 @@ const DynamicMap: React.FC<DynamicMapProps> = ({ aircraft }) => {
             iconAnchor: [12, 12],
             popupAnchor: [0, -12],
           }),
-        }).bindPopup(`
-          <div class="aircraft-popup">
-            <h3 class="text-lg font-bold">${plane.icao24.toUpperCase()}</h3>
-            <div class="text-sm">
-              <p>Altitude: ${Math.round(plane.altitude)} ft</p>
-              <p>Speed: ${Math.round(plane.velocity)} knots</p>
-              <p>Heading: ${Math.round(plane.heading)}°</p>
-              ${plane.model ? `<p>Model: ${plane.model}</p>` : ''}
-              ${plane['N-NUMBER'] ? `<p>N-Number: ${plane['N-NUMBER']}</p>` : ''}
+        });
+
+        // Create popup content
+        const content = `
+          <div class="aircraft-popup p-2">
+            <h3 class="text-lg font-bold mb-2">${plane.icao24.toUpperCase()}</h3>
+            <div class="text-sm space-y-1">
+              <p><span class="font-semibold">Model:</span> ${plane.model || 'Unknown'}</p>
+              <p><span class="font-semibold">Type:</span> ${plane.type || 'Unknown'}</p>
+              <p><span class="font-semibold">Altitude:</span> ${Math.round(plane.altitude)} ft</p>
+              <p><span class="font-semibold">Speed:</span> ${Math.round(plane.velocity)} knots</p>
+              <p><span class="font-semibold">Heading:</span> ${Math.round(plane.heading)}°</p>
+              ${plane['N-NUMBER'] ? `<p><span class="font-semibold">N-Number:</span> ${plane['N-NUMBER']}</p>` : ''}
             </div>
           </div>
-        `);
+        `;
 
-        markerLayerRef.current?.addLayer(marker);
-        markersRef.current[plane.icao24] = marker;
+        marker.bindPopup(content);
+        markerLayer.addLayer(marker);
       });
+
+      // Auto-fit bounds if we have aircraft
+      if (validAircraft.length > 0) {
+        const bounds = L.latLngBounds(
+          validAircraft.map((a) => [a.latitude, a.longitude])
+        );
+        map.fitBounds(bounds, {
+          padding: [50, 50],
+          maxZoom: 10, // Prevent too much zoom
+        });
+      }
     } catch (error) {
-      console.error('[Map] ❌ Error updating aircraft markers:', error);
+      console.error('[DynamicMap] Error updating aircraft:', error);
+      onError('Failed to update aircraft positions');
     }
-  }, [aircraft, mapInitialized]);
+  }, [aircraft, map, markerLayer, L]);
 
   return (
-    <div className="w-full h-full relative">
-      <div ref={mapContainerRef} className="absolute inset-0" />
-      <div className="absolute bottom-4 right-4 bg-white p-2 rounded shadow z-[1000]">
-        Aircraft Tracked: {aircraft.length}
-      </div>
-    </div>
+    <div
+      ref={mapContainerRef}
+      className="w-full h-full"
+      style={{ backgroundColor: '#f0f0f0' }} // Placeholder color while loading
+    />
   );
 };
 

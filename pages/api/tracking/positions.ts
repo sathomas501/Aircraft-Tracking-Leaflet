@@ -76,14 +76,56 @@ async function handler(req: NextApiRequest, res: NextApiResponse<APIResponse>) {
         });
       }
 
-      case 'getTracked': {
+      case 'getTrackedAircraft': {
+        // ✅ FIXED CASE STATEMENT
         const { manufacturer } = req.body;
+        if (!manufacturer) {
+          throw APIErrors.BadRequest('Manufacturer is required');
+        }
+
+        console.log(
+          `[TrackingAPI] Fetching tracked aircraft for: ${manufacturer}`
+        );
+
         const aircraft = await trackingDb.getTrackedAircraft(manufacturer);
 
         return res.status(200).json({
           success: true,
           message: `Found ${aircraft.length} tracked aircraft`,
           data: { aircraft },
+        });
+      }
+
+      case 'initializeMap': {
+        // Return empty success for initial map load
+        return res.status(200).json({
+          success: true,
+          message: 'Map initialized',
+          data: {
+            aircraft: [], // Empty initial state
+          },
+        });
+      }
+
+      case 'getTrackedAircraft': {
+        const { manufacturer } = req.body;
+        // Allow empty manufacturer for initial state
+        if (!manufacturer) {
+          return res.status(200).json({
+            success: true,
+            message: 'No manufacturer selected',
+            data: {
+              aircraft: [],
+            },
+          });
+        }
+
+        return res.status(200).json({
+          success: true,
+          message: 'No manufacturer selected',
+          data: {
+            aircraft: [],
+          },
         });
       }
 

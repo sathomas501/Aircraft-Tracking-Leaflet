@@ -1,6 +1,10 @@
 // pages/api/aircraft/icao24s.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
 import staticDatabaseManager from '@/lib/db/managers/staticDatabaseManager';
+import {
+  getCachedIcao24s,
+  setCachedIcao24s,
+} from '../../../lib/services/managers/aircraft-cache';
 
 interface IcaoResponse {
   success: boolean;
@@ -58,5 +62,35 @@ export default async function handler(
       success: false,
       error: error instanceof Error ? error.message : 'Internal server error',
     });
+  }
+}
+
+export async function fetchIcao24s(manufacturer: string): Promise<string[]> {
+  // Check if we already have the ICAO24s cached
+  const cachedIcao24s = getCachedIcao24s(manufacturer);
+  if (cachedIcao24s) {
+    console.log(`[Cache] ✅ Returning cached ICAO24s for ${manufacturer}`);
+    return cachedIcao24s;
+  }
+
+  console.log(`[API] 📡 Fetching ICAO24s for manufacturer: ${manufacturer}`);
+
+  try {
+    const response = await fetch(
+      `/api/aircraft/icao24s?manufacturer=${encodeURIComponent(manufacturer)}`
+    );
+    if (!response.ok) {
+      throw new Error(`[API] ❌ Failed to fetch ICAO24s for ${manufacturer}`);
+    }
+
+    const { icao24s } = await response.json();
+
+    // Store in cache for future lookups
+    setCachedIcao24s(manufacturer, icao24s);
+
+    return icao24s;
+  } catch (error) {
+    console.error(`[API] ❌ Error fetching ICAO24s:`, error);
+    return [];
   }
 }
