@@ -2,7 +2,7 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 import CacheManager from '@/lib/services/managers/cache-manager';
 import { processBatchedRequests } from '../../../utils/batchprocessor';
 
-const cache = new CacheManager<string[]>(2 * 60);
+const cache = new CacheManager<string[]>(2 * 60); // Cache for 2 minutes
 const BATCH_SIZE = 200;
 
 export default async function handler(
@@ -24,6 +24,13 @@ export default async function handler(
     return res.status(400).json({ error: 'Invalid ICAO24 list' });
   }
 
+  // ✅ Check cache before proceeding
+  const cachedResults = cache.get('icao24_results');
+  if (cachedResults) {
+    console.log('[ICAOFetcher] ⚡ Returning cached results');
+    return res.status(200).json({ success: true, data: cachedResults });
+  }
+
   console.log(
     `[ICAOFetcher] 🔄 Processing ${icao24s.length} ICAO24s before sending to proxy`
   );
@@ -39,10 +46,8 @@ export default async function handler(
       const proxyUrl = `http://localhost:3001/api/proxy/opensky?icao24=${encodeURIComponent(icao24Param)}`;
 
       const response = await fetch(proxyUrl, {
-        method: 'GET', // Use GET for OpenSky
-        headers: {
-          Accept: 'application/json',
-        },
+        method: 'GET',
+        headers: { Accept: 'application/json' },
       });
 
       if (!response.ok) {
@@ -58,10 +63,12 @@ export default async function handler(
       BATCH_SIZE
     );
 
+    // ✅ Cache results to avoid duplicate requests
+    cache.set('icao24_results', results);
+
     console.log(
       `[ICAOFetcher] ✅ Successfully processed ${icao24s.length} ICAO24s in batches`
     );
-
     return res.status(200).json({ success: true, data: results });
   } catch (error) {
     console.error('[ICAOFetcher] ❌ Error processing ICAO24s:', error);
