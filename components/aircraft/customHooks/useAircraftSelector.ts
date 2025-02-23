@@ -1,4 +1,3 @@
-// useAircraftSelector.ts
 import { useState, useCallback } from 'react';
 import { Aircraft, ActiveModel } from '@/types/base';
 
@@ -15,38 +14,34 @@ export function useAircraftSelector({
 }: UseAircraftSelectorProps) {
   const [selectedManufacturer, setSelectedManufacturer] = useState<string>('');
   const [selectedModel, setSelectedModel] = useState<string>('');
-  const [isLoadingModels, setIsLoadingModels] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const [models, setModels] = useState<ActiveModel[]>([]);
+  const [icao24List, setIcao24List] = useState<string[]>([]);
 
+  // Fetch active aircraft positions (only when a model is selected)
   const fetchActiveAircraft = useCallback(
-    async (icao24List: string[]) => {
-      if (icao24List.length === 0) return [];
+    async (icao24s: string[]) => {
+      if (icao24s.length === 0) return [];
 
       try {
         console.log(
-          `[useAircraftSelector] 📡 Fetching positions for ${icao24List.length} aircraft`
+          `[useAircraftSelector] 📡 Fetching ${icao24s.length} aircraft positions`
         );
 
         const response = await fetch('/api/aircraft/icaofetcher', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ icao24s: icao24List }),
+          body: JSON.stringify({ icao24s }),
         });
 
-        if (!response.ok) {
-          throw new Error(
-            `Failed to fetch aircraft positions: ${response.statusText}`
-          );
-        }
+        if (!response.ok)
+          throw new Error(`Failed to fetch positions: ${response.statusText}`);
 
         const responseData = await response.json();
-        if (!responseData.success) {
-          throw new Error(
-            responseData.error || 'Failed to fetch aircraft positions'
-          );
-        }
+        if (!responseData.success)
+          throw new Error(responseData.error || 'Unknown error');
 
-        const activeAircraft: Aircraft[] =
+        return (
           responseData.data.states?.map((state: any) => ({
             icao24: state.icao24 || '',
             callsign: state.callsign || '',
@@ -60,15 +55,11 @@ export function useAircraftSelector({
             on_ground: state.on_ground || false,
             last_contact: state.last_contact || 0,
             isTracked: true,
-          })) || [];
-
-        console.log(
-          `[useAircraftSelector] ✅ Processed ${activeAircraft.length} active aircraft`
+          })) || []
         );
-        return activeAircraft;
       } catch (error) {
         console.error(
-          '[useAircraftSelector] ❌ Error fetching active aircraft:',
+          '[useAircraftSelector] ❌ Error fetching aircraft:',
           error
         );
         onError('Failed to fetch aircraft positions');
@@ -78,108 +69,109 @@ export function useAircraftSelector({
     [selectedManufacturer, onError]
   );
 
-  // Update the handler to accept string | null
+  // Handle manufacturer selection
   const handleManufacturerSelect = useCallback(
     async (manufacturer: string | null) => {
       if (!manufacturer) {
         setSelectedManufacturer('');
         setSelectedModel('');
         setModels([]);
+        setIcao24List([]);
         onModelsUpdate([]);
         onAircraftUpdate([]);
         return;
       }
 
       setSelectedManufacturer(manufacturer);
-      setIsLoadingModels(true);
-      setModels([]);
+      setIsLoading(true);
       setSelectedModel('');
+      setModels([]);
+      setIcao24List([]);
+      onAircraftUpdate([]); // Clear aircraft before fetching new data
 
       try {
-        // ICAO24s fetch
         console.log(
-          `[useAircraftSelector] 📡 Fetching ICAO24s for ${manufacturer}`
+          `[useAircraftSelector] 📡 Fetching ICAO24s and models for ${manufacturer}`
         );
-        const icaoResponse = await fetch('/api/aircraft/icao24s', {
+
+        const response = await fetch(`/api/aircraft/models`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ manufacturer }),
         });
 
-        const icaoData = await icaoResponse.json();
-        const icao24List = icaoData.data?.icao24List || [];
+        if (!response.ok)
+          throw new Error(`Failed to fetch data: ${response.statusText}`);
+
+        const data = await response.json();
+        if (!data.success)
+          throw new Error(data.error || 'Failed to retrieve data');
+
+        // Process ICAO24 list
+        const icao24s = data.data.icao24List || [];
+        console.log(
+          `[useAircraftSelector] ✅ Received ${icao24s.length} ICAO24s`
+        );
+        setIcao24List(icao24s);
+
+        // Process models
+        const processedModels: ActiveModel[] =
+          data.data.models?.map((model: any) => ({
+            model: model.model || '',
+            manufacturer: model.manufacturer || '',
+            label: `${model.model} (${model.activeCount ?? 0} active)`,
+            activeCount: model.activeCount ?? 0,
+            totalCount: model.totalCount ?? model.count ?? 0,
+          })) || [];
 
         console.log(
-          `[useAircraftSelector] ✅ Received ${icao24List.length} ICAO24s`
+          `[useAircraftSelector] ✅ Processed ${processedModels.length} models`
         );
-
-        const activeAircraft = await fetchActiveAircraft(icao24List);
-        console.log(
-          `[useAircraftSelector] ✅ Retrieved ${activeAircraft.length} active positions`
-        );
-
-        onAircraftUpdate(activeAircraft);
-
-        console.log(
-          `[useAircraftSelector] 📡 Fetching models for ${manufacturer}`
-        );
-        const encodedManufacturer = encodeURIComponent(manufacturer || '');
-        const modelsResponse = await fetch(
-          `/api/aircraft/models?manufacturer=${encodedManufacturer}`
-        );
-
-        if (!modelsResponse.ok) {
-          throw new Error(
-            `Failed to fetch models: ${modelsResponse.statusText}`
-          );
-        }
-
-        const modelsData = await modelsResponse.json();
-        if (modelsData.success && Array.isArray(modelsData.data)) {
-          const processedModels: ActiveModel[] = modelsData.data.map(
-            (model: any) => ({
-              model: model.model || '',
-              manufacturer: model.manufacturer || '',
-              label: `${model.model || 'Unknown'} (${model.activeCount ?? 0} active)`,
-              activeCount: model.activeCount ?? 0,
-              totalCount: model.totalCount ?? model.count ?? 0,
-            })
-          );
-
-          console.log(
-            `[useAircraftSelector] ✅ Processed ${processedModels.length} models`
-          );
-          setModels(processedModels);
-          onModelsUpdate(processedModels);
-        } else {
-          console.warn(
-            `[useAircraftSelector] ⚠️ No models found for ${manufacturer}`
-          );
-          setModels([]);
-          onModelsUpdate([]);
-        }
+        setModels(processedModels);
+        onModelsUpdate(processedModels);
       } catch (error) {
         console.error('[useAircraftSelector] ❌ Error:', error);
         onError('Failed to process aircraft data');
         setModels([]);
+        setIcao24List([]);
         onModelsUpdate([]);
         onAircraftUpdate([]);
       } finally {
-        setIsLoadingModels(false);
+        setIsLoading(false);
       }
     },
-    [fetchActiveAircraft, onModelsUpdate, onAircraftUpdate, onError]
+    [onModelsUpdate, onAircraftUpdate, onError]
   );
 
-  const handleModelSelect = useCallback((model: string) => {
-    setSelectedModel(model);
-  }, []);
+  // Handle model selection (fetch active aircraft after model selection)
+  const handleModelSelect = useCallback(
+    async (model: string) => {
+      setSelectedModel(model);
+      if (!icao24List.length) {
+        console.warn(
+          '[useAircraftSelector] ⚠️ No ICAO24s available, skipping fetch'
+        );
+        return;
+      }
+
+      console.log(
+        `[useAircraftSelector] 📡 Fetching active aircraft for model: ${model}`
+      );
+      const activeAircraft = await fetchActiveAircraft(icao24List);
+      console.log(
+        `[useAircraftSelector] ✅ Retrieved ${activeAircraft.length} active aircraft`
+      );
+
+      onAircraftUpdate(activeAircraft);
+    },
+    [fetchActiveAircraft, icao24List, onAircraftUpdate]
+  );
 
   return {
     selectedManufacturer,
     selectedModel,
     models,
-    isLoadingModels,
+    isLoading,
     handleManufacturerSelect,
     handleModelSelect,
   };

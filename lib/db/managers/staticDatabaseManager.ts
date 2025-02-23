@@ -2,6 +2,7 @@
 import path from 'path';
 import { BaseDatabaseManager } from '../managers/baseDatabaseManager';
 import CacheManager from '@/lib/services/managers/cache-manager';
+import { aircraftCache } from '@/lib/services/managers/aircraft-cache';
 import { AircraftRecord, Aircraft } from '../../../types/base';
 import trackingDatabaseManager from './trackingDatabaseManager'; // ✅ Import TrackingDB
 
@@ -157,11 +158,12 @@ class StaticDatabaseManager extends BaseDatabaseManager {
     const cacheKey = `icao24s-${manufacturer.toUpperCase()}`;
     const cached = await this.icao24Cache.get(cacheKey);
 
-    if (cached) {
-      console.log(`[StaticDB] Using cached ICAO24s for ${manufacturer}`);
+    if (cached?.length) {
+      console.log(`[StaticDB] ✅ Using cached ICAO24s for ${manufacturer}`);
       return cached;
     }
 
+    console.log(`[StaticDB] 🔍 Fetching ICAO24s from DB for ${manufacturer}`);
     const query = `
       SELECT DISTINCT icao24
       FROM aircraft
@@ -176,23 +178,19 @@ class StaticDatabaseManager extends BaseDatabaseManager {
       const results = await this.executeQuery<{ icao24: string }>(query, [
         manufacturer,
       ]);
-      const icao24List = results
-        .map((item) => item.icao24.toLowerCase())
-        .filter((icao24) => /^[0-9a-f]{6}$/.test(icao24));
+      const icao24List = results.map((r) => r.icao24.toLowerCase());
 
-      await this.icao24Cache.set(cacheKey, icao24List);
-      console.log(
-        `[StaticDB] Cached ${icao24List.length} ICAO24s for ${manufacturer}`
-      );
+      if (icao24List.length) {
+        await this.icao24Cache.set(cacheKey, icao24List);
+        console.log(`[StaticDB] ✅ Cached ${icao24List.length} ICAO24s`);
+      } else {
+        console.warn(`[StaticDB] ⚠️ No ICAOs found for ${manufacturer}`);
+      }
 
       return icao24List;
     } catch (error) {
-      console.error('[StaticDB] Failed to fetch ICAO24s:', error);
-      throw new Error(
-        error instanceof Error
-          ? `Failed to fetch ICAO24s: ${error.message}`
-          : 'Failed to fetch ICAO24s'
-      );
+      console.error(`[StaticDB] ❌ Error fetching ICAO24s: ${error}`);
+      return [];
     }
   }
 
@@ -317,93 +315,59 @@ class StaticDatabaseManager extends BaseDatabaseManager {
   public async getModelsByManufacturer(
     manufacturer: string
   ): Promise<ActiveModel[]> {
+    await this.ensureInitialized();
+
+    console.log(`[StaticDB] 📊 Fetching models for ${manufacturer}`);
+
+    const query = `
+      SELECT model, COUNT(DISTINCT icao24) as total_count
+      FROM aircraft
+      WHERE manufacturer = ?
+      GROUP BY model
+      ORDER BY total_count DESC;
+    `;
+
+    let modelResults: { model: string; total_count: number }[] = [];
+
     try {
-      await this.ensureInitialized();
-      const activeThreshold = Math.floor(Date.now() / 1000) - 2 * 60 * 60; // 2 hours for active tracking
-
-      console.log(
-        `[StaticDB] 📊 Fetching models for manufacturer: ${manufacturer}`
-      );
-
-      // First get the basic model statistics
-      const modelQuery = `
-        SELECT 
-          model,
-          manufacturer,
-          COUNT(DISTINCT icao24) as total_count,
-          GROUP_CONCAT(icao24) as icao_list
-        FROM aircraft
-        WHERE manufacturer = ?
-        GROUP BY model, manufacturer
-        ORDER BY total_count DESC;
-      `;
-
-      const modelResults = await this.executeQuery<{
+      modelResults = await this.executeQuery<{
         model: string;
-        manufacturer: string;
         total_count: number;
-        icao_list: string;
-      }>(modelQuery, [manufacturer]);
+      }>(query, [manufacturer]);
 
       if (modelResults.length === 0) {
-        console.log(
-          `[StaticDB] ❌ No models found for manufacturer: ${manufacturer}`
-        );
+        console.log(`[StaticDB] ❌ No models found for ${manufacturer}`);
         return [];
       }
 
       console.log(`[StaticDB] ✅ Found ${modelResults.length} models`);
 
-      // Get active aircraft from tracking database
+      // Fetch active aircraft count **only if models exist**
+      const activeAircraftMap = new Map<string, boolean>();
       try {
-        // Get currently tracked aircraft for this manufacturer
         const trackedAircraft =
           await trackingDatabaseManager.getTrackedAircraft(manufacturer);
-
-        // Create a map of active aircraft by ICAO24
-        const activeAircraftMap = new Map<string, Aircraft>();
         trackedAircraft.forEach((aircraft) => {
-          if (aircraft.icao24) {
-            activeAircraftMap.set(aircraft.icao24.toLowerCase(), aircraft);
-          }
-        });
-
-        // Map results with active counts
-        return modelResults.map((result) => {
-          const icaos = result.icao_list
-            .split(',')
-            .map((icao) => icao.trim().toLowerCase());
-          const activeCount = icaos.reduce(
-            (count, icao) => count + (activeAircraftMap.has(icao) ? 1 : 0),
-            0
-          );
-
-          return {
-            model: result.model,
-            manufacturer: result.manufacturer,
-            label: `${result.model} (${activeCount} active)`,
-            totalCount: result.total_count,
-            count: result.total_count,
-            activeCount,
-          };
+          if (aircraft.icao24)
+            activeAircraftMap.set(aircraft.icao24.toLowerCase(), true);
         });
       } catch (trackingError) {
         console.warn(
-          '[StaticDB] ⚠️ Could not fetch tracking data:',
-          trackingError
+          `[StaticDB] ⚠️ Could not fetch tracking data: ${trackingError}`
         );
-        // Fallback to basic stats without active counts
-        return modelResults.map((result) => ({
-          model: result.model,
-          manufacturer: result.manufacturer,
-          label: `${result.model} (0 active)`,
-          totalCount: result.total_count,
-          count: result.total_count,
-          activeCount: 0,
-        }));
       }
+
+      // Map models with active counts
+      return modelResults.map(({ model, total_count }) => ({
+        model,
+        manufacturer,
+        label: `${model} (${activeAircraftMap.size} active)`,
+        totalCount: total_count,
+        count: total_count,
+        activeCount: activeAircraftMap.size,
+      }));
     } catch (error) {
-      console.error('[StaticDB] ❌ Failed to fetch models:', error);
+      console.error(`[StaticDB] ❌ Error fetching models: ${error}`);
       throw error;
     }
   }
@@ -417,17 +381,18 @@ class StaticDatabaseManager extends BaseDatabaseManager {
       throw new Error('Invalid ICAO24 list');
     }
 
-    console.log(`[StaticDB] Fetching data for ${icao24s.length} aircraft`);
+    console.log(
+      `[StaticDB] 🔍 Fetching aircraft for ${icao24s.length} ICAO24s`
+    );
 
-    // Check cache for existing aircraft data
-    const cachedResults: Record<string, AircraftRecord[]> =
-      await this.aircraftCache.getMultiple(
-        icao24s.map((code) => `${this.ICAO24_CACHE_PREFIX}${code}`)
-      );
+    const cacheKeys = icao24s.map(
+      (icao) => `${this.ICAO24_CACHE_PREFIX}${icao}`
+    );
+    const cachedResults = await this.aircraftCache.getMultiple(cacheKeys);
 
     const cachedAircraft = Object.values(cachedResults).flat();
     const missingIcao24s = icao24s.filter(
-      (code) => !cachedResults[`${this.ICAO24_CACHE_PREFIX}${code}`]
+      (icao) => !cachedResults[`${this.ICAO24_CACHE_PREFIX}${icao}`]
     );
 
     if (missingIcao24s.length === 0) {
@@ -435,40 +400,38 @@ class StaticDatabaseManager extends BaseDatabaseManager {
       return cachedAircraft;
     }
 
+    console.log(
+      `[StaticDB] 🔍 Fetching missing ${missingIcao24s.length} aircraft from DB`
+    );
+
     const placeholders = missingIcao24s.map(() => '?').join(',');
     const query = `
-      SELECT 
-        icao24,
-        "N-NUMBER",
-        manufacturer,
-        model,
-        NAME,
-        CITY,
-        STATE,
-        TYPE_AIRCRAFT,
-        OWNER_TYPE
+      SELECT icao24, "N-NUMBER", manufacturer, model, NAME, CITY, STATE, TYPE_AIRCRAFT, OWNER_TYPE
       FROM aircraft
       WHERE icao24 IN (${placeholders})
     `;
 
-    let fetchedAircraft: AircraftRecord[] = [];
-
     try {
-      fetchedAircraft = await this.executeQuery<AircraftRecord>(
+      const fetchedAircraft = await this.executeQuery<AircraftRecord>(
         query,
         missingIcao24s
       );
-      console.log(
-        `[StaticDB] ✅ Found ${fetchedAircraft.length} aircraft in DB`
-      );
 
-      const cacheEntries: Record<string, AircraftRecord[]> = {};
-      fetchedAircraft.forEach((aircraft) => {
-        cacheEntries[`${this.ICAO24_CACHE_PREFIX}${aircraft.icao24}`] = [
-          aircraft,
-        ];
-      });
-      await this.aircraftCache.setMultiple(cacheEntries);
+      // Cache the fetched aircraft
+      if (fetchedAircraft.length > 0) {
+        const cacheEntries: Record<string, AircraftRecord[]> = {};
+        fetchedAircraft.forEach((aircraft) => {
+          cacheEntries[`${this.ICAO24_CACHE_PREFIX}${aircraft.icao24}`] = [
+            aircraft,
+          ];
+        });
+        await this.aircraftCache.setMultiple(cacheEntries);
+      }
+
+      console.log(
+        `[StaticDB] ✅ Fetched ${fetchedAircraft.length} aircraft from DB`
+      );
+      return [...cachedAircraft, ...fetchedAircraft];
     } catch (error) {
       console.error(`[StaticDB] ❌ Error fetching aircraft data: ${error}`);
       throw new Error(
@@ -477,8 +440,6 @@ class StaticDatabaseManager extends BaseDatabaseManager {
           : 'Unknown error fetching aircraft data'
       );
     }
-
-    return [...cachedAircraft, ...fetchedAircraft];
   }
 
   public async getAircraftByNNumber(

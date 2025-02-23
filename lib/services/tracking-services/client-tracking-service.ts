@@ -108,15 +108,15 @@ export class ClientTrackingService {
 
   public async startTracking(manufacturer: string): Promise<void> {
     try {
-      this.stopTracking();
+      this.stopTracking(); // Stop any existing tracking
       console.log(`[Tracking] 🔍 Validating database schema...`);
       await fetch('/api/database/validate', { method: 'POST' });
 
       this.currentManufacturer = manufacturer;
 
-      // ✅ Step 1: Check cache first
-      let icao24List: string[] = this.cache.get(manufacturer) ?? [];
-      if (icao24List.length > 0) {
+      // ✅ Step 1: Check if ICAO24s are already cached
+      let icao24List = this.cache.get(manufacturer);
+      if (icao24List?.length) {
         console.log(`[Tracking] ✅ Using cached ICAOs for ${manufacturer}`);
         this.currentIcao24s = icao24List;
         await this.pollAircraftData();
@@ -124,40 +124,49 @@ export class ClientTrackingService {
         return;
       }
 
-      // ✅ Step 2: Prevent duplicate fetches
+      // ✅ Step 2: Prevent duplicate fetches using fetchQueue
       if (this.fetchQueue.has(manufacturer)) {
         console.log(
-          `[Tracking] ⏳ Waiting for ongoing request for ${manufacturer}`
+          `[Tracking] ⏳ Waiting for ongoing fetch for ${manufacturer}`
         );
         icao24List = await this.fetchQueue.get(manufacturer)!;
       } else {
-        // ✅ Step 3: Fetch ICAO24s from API
+        // ✅ Step 3: Fetch ICAO24s from API and store the Promise in fetchQueue
         const fetchPromise = this.fetchIcao24s(manufacturer);
         this.fetchQueue.set(manufacturer, fetchPromise);
+
         icao24List = await fetchPromise;
         this.fetchQueue.delete(manufacturer);
       }
 
-      // ✅ Step 4: Cache the results if successful
-      if (icao24List.length > 0) {
-        this.cache.set(manufacturer, icao24List);
-        console.log(`[Tracking] ✅ Cached ${icao24List.length} ICAOs`);
+      // ✅ Step 4: Handle empty ICAO24 response gracefully
+      if (icao24List.length === 0) {
+        console.warn(`[Tracking] ⚠️ No ICAOs found for ${manufacturer}.`);
+        this.notifySubscribers([]); // Notify subscribers even if no data
+        return;
       }
 
-      // ✅ Step 5: Update tracking with ICAOs
+      // ✅ Step 5: Cache the ICAOs to prevent redundant API calls
+      this.cache.set(manufacturer, icao24List);
+      console.log(
+        `[Tracking] ✅ Cached ${icao24List.length} ICAOs for ${manufacturer}`
+      );
+
+      // ✅ Step 6: Start polling with the fetched ICAOs
       this.currentIcao24s = icao24List;
       console.log(`[Tracking] ✅ ICAOs retrieved. Starting tracking...`);
       await this.pollAircraftData();
       this.startPolling();
     } catch (error) {
       console.error('[Tracking] ❌ Error in startTracking:', error);
-      this.notifySubscribers([]); // Ensure subscribers are notified even on failure
+      this.notifySubscribers([]); // Ensure subscribers are notified on failure
     }
   }
 
   private async fetchIcao24s(manufacturer: string): Promise<string[]> {
     try {
       console.log(`[Tracking] 🔍 Fetching ICAOs from API for ${manufacturer}`);
+
       const response = await fetch('/api/aircraft/icao24s', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -172,7 +181,9 @@ export class ClientTrackingService {
       }
 
       const data = await response.json();
-      return data.data.icao24List ?? [];
+
+      // ✅ Ensure valid response structure
+      return data?.data?.icao24List ?? [];
     } catch (error) {
       console.error('[Tracking] ❌ Failed to fetch ICAO24s:', error);
       return [];
