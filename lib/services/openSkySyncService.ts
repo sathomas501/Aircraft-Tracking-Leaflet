@@ -53,7 +53,7 @@ export class OpenSkySyncService {
       const activeAircraft = await this.dbManager.getAircraftByIcao24(icao24s);
       if (activeAircraft.length > 0) {
         console.log(
-          `[OpenSkySyncService] ✅ Found ${activeAircraft.length} active aircraft in tracking DB.`
+          `[OpenSkySyncService] ✅ Found ${activeAircraft.length} tracked aircraft in tracking DB.`
         );
         return activeAircraft;
       }

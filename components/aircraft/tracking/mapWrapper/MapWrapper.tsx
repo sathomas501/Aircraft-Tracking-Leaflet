@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import type {
   Aircraft,
@@ -23,7 +23,11 @@ export interface MapWrapperProps {
   onError: (message: string) => void;
 }
 
-const MapWrapper: React.FC<MapWrapperProps> = ({ manufacturers, onError }) => {
+const MapWrapper: React.FC<MapWrapperProps> = ({ onError }) => {
+  // Fetch manufacturers & ICAO24s
+  const { manufacturers, fetchManufacturerIcao24s, loading, error } =
+    useFetchManufacturers();
+
   // State for selections
   const [selectedManufacturer, setSelectedManufacturer] = useState<string>('');
   const [selectedManufacturerLabel, setSelectedManufacturerLabel] =
@@ -31,13 +35,9 @@ const MapWrapper: React.FC<MapWrapperProps> = ({ manufacturers, onError }) => {
   const [selectedModel, setSelectedModel] = useState<string>('');
   const [displayedAircraft, setDisplayedAircraft] = useState<
     ExtendedAircraft[]
-  >([]); // ✅ Fixed missing state
-
-  // Fetch manufacturers & ICAO24s
-  const { icao24s, fetchIcao24s } = useFetchManufacturers(); // ✅ Fetch ICAO24s dynamically
+  >([]);
 
   // Fetch aircraft tracking data based on ICAO24s
-  // Just pass the manufacturer string directly
   const { trackedAircraft, isInitializing, trackingStatus } =
     useOpenSkyData(selectedManufacturer);
 
@@ -55,11 +55,11 @@ const MapWrapper: React.FC<MapWrapperProps> = ({ manufacturers, onError }) => {
       type: a.TYPE_AIRCRAFT || 'Unknown',
       isGovernment: a.OWNER_TYPE === '5',
     }));
-    setDisplayedAircraft(extended); // ✅ Fixed missing state
+    setDisplayedAircraft(extended);
   }, []);
 
   // Update displayed aircraft when tracked aircraft changes
-  React.useEffect(() => {
+  useEffect(() => {
     if (trackedAircraft) {
       const filtered = selectedModel
         ? trackedAircraft.filter(
@@ -72,6 +72,7 @@ const MapWrapper: React.FC<MapWrapperProps> = ({ manufacturers, onError }) => {
   }, [trackedAircraft, selectedModel, processAircraft]);
 
   // Handle manufacturer selection
+  // Inside MapWrapper.tsx
   const handleManufacturerSelect = useCallback(
     async (manufacturer: string | null) => {
       const manuValue = manufacturer || '';
@@ -82,14 +83,16 @@ const MapWrapper: React.FC<MapWrapperProps> = ({ manufacturers, onError }) => {
           (m) => m.value === manufacturer
         );
         setSelectedManufacturerLabel(manufacturerObj?.label || manufacturer);
-        await fetchIcao24s(manufacturer); // ✅ Fetch ICAO24s dynamically
+
+        // ✅ Pass `manufacturer` as an argument to fetch ICAO24s
+        await fetchManufacturerIcao24s(manufacturer);
       } else {
         setSelectedManufacturerLabel('');
       }
 
       setSelectedModel('');
     },
-    [manufacturers, fetchIcao24s]
+    [manufacturers, fetchManufacturerIcao24s] // ✅ Include dependencies
   );
 
   // Handle model selection
