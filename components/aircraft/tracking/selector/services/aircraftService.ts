@@ -1,14 +1,8 @@
 // components/aircraft/selector/services/aircraftService.ts
-import { SelectOption, Aircraft, Model } from '@/types/base';
-import {
-  errorHandler,
-  ErrorType,
-} from '@/lib/services/error-handler/error-handler';
+import { Aircraft, Model } from '@/types/base';
+import { useFetchManufacturers } from '../../../customHooks/useFetchManufactures';
 import { PollingRateLimiter } from '@/lib/services/rate-limiter';
-import {
-  getCachedIcao24s,
-  setCachedIcao24s,
-} from '../../../../../lib/services/managers/aircraft-cache';
+import { getCachedIcao24s } from '../../../../../lib/services/managers/aircraft-cache';
 
 const REQUEST_CONSTANTS = {
   FETCH_TIMEOUT: 8000, // 8 seconds
@@ -99,83 +93,33 @@ export async function fetchAircraftByManufacturer(
 ): Promise<Aircraft[]> {
   if (!manufacturer) {
     console.warn('⚠️ No manufacturer selected, returning empty aircraft list.');
-    return [];
+    return []; // ✅ Ensure return even in this case
   }
 
   try {
-    console.log(`[API] 📡 Fetching ICAO24s for manufacturer: ${manufacturer}`);
-    const response = await fetch('/api/aircraft/icao24s', {
+    const response = await fetch('/api/aircraft/manufacturer', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ manufacturer }),
     });
 
     if (!response.ok) {
-      throw new Error(`[API] ❌ Failed to fetch ICAO24s for ${manufacturer}`);
+      throw new Error(`❌ Failed to fetch aircraft: ${response.statusText}`);
     }
 
     const data = await response.json();
-    if (!data.success || !data.data?.icao24List) {
-      throw new Error('[API] ❌ Invalid response format');
-    }
 
-    // Store ICAO24s in cache
-    setCachedIcao24s(manufacturer, data.data.icao24List);
-
-    return data.data.icao24List.map(
-      (icao24: string) => ({ icao24 }) as Aircraft
-    );
+    return data.aircraft || []; // ✅ Always return an array
   } catch (error) {
-    console.error('[Aircraft Service] ❌ Error fetching aircraft:', error);
-    return [];
+    console.error(`[fetchAircraftByManufacturer] ❌ Error:`, error);
+    return []; // ✅ Ensure function always returns something
   }
 }
 
-export async function fetchManufacturers(): Promise<SelectOption[]> {
-  try {
-    console.log('[Aircraft Service] 🔄 Starting manufacturers fetch');
-
-    return await manufacturersRateLimiter.schedule(async () => {
-      const response = await handleFetchWithRetry(
-        '/api/aircraft/manufacturers',
-        {
-          method: 'GET',
-          headers: { 'Content-Type': 'application/json' },
-        }
-      );
-
-      const data = await response.json();
-
-      if (!data.success || !Array.isArray(data.manufacturers)) {
-        console.error('[Aircraft Service] ❌ Invalid response format:', data);
-        throw new Error('Invalid API response format');
-      }
-
-      console.log(
-        `[Aircraft Service] ✅ Loaded ${data.manufacturers.length} manufacturers`
-      );
-
-      return data.manufacturers.map((m: any) => ({
-        value: m.value, // Ensure correct mapping
-        label: m.label, // Ensure UI compatibility
-      }));
-    });
-  } catch (error) {
-    console.error(
-      '[Aircraft Service] ❌ Failed to fetch manufacturers:',
-      error
-    );
-    errorHandler.handleError(
-      ErrorType.OPENSKY_SERVICE,
-      error instanceof Error
-        ? error
-        : new Error('Failed to fetch manufacturers')
-    );
-    return [];
-  }
-}
+export const getManufacturers = () => {
+  const { manufacturers } = useFetchManufacturers();
+  return manufacturers;
+};
 
 export async function fetchModels(manufacturer: string): Promise<Model[]> {
   try {

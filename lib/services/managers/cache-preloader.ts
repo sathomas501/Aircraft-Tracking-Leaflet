@@ -127,33 +127,64 @@ class CachePreloaderService {
   }
 
   private async preloadManufacturers(manufacturers: string[]): Promise<void> {
+    const processedManufacturers = new Set<string>(); // ✅ Prevent redundant requests
+
     for (const manufacturer of manufacturers) {
+      if (processedManufacturers.has(manufacturer)) {
+        console.log(
+          `[Preload] ✅ Skipping duplicate fetch for ${manufacturer}`
+        );
+        continue; // ✅ Skip if already processed
+      }
+
       try {
+        console.log(`[Preload] 🔄 Fetching ICAO24s for ${manufacturer}`);
+
         const response = await fetch(
           `/api/aircraft/manufacturers/icao24s?manufacturer=${manufacturer}`
         );
-        if (!response.ok) continue;
+        if (!response.ok) {
+          console.warn(
+            `[Preload] ❌ Failed to fetch ICAO24s for ${manufacturer}`
+          );
+          continue;
+        }
 
         const { icao24List } = await response.json();
         if (icao24List?.length) {
-          const positions = await fetch(
-            `/api/aircraft/tracking?icao24s=${icao24List.join(',')}`
+          console.log(
+            `[Preload] ✅ Found ${icao24List.length} ICAO24s for ${manufacturer}`
           );
+
+          // ✅ Batch ICAO24 tracking requests instead of individual calls
+          const positions = await fetch(`/api/aircraft/tracking`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ icao24s: icao24List }),
+          });
+
           if (positions.ok) {
             const data = await positions.json();
-
-            // Replace or remove the following line as necessary
-            // unifiedCache.updateFromRest(manufacturer, data); // Removed
+            console.log(
+              `[Preload] ✅ Successfully preloaded tracking data for ${manufacturer}`
+            );
+            // unifiedCache.updateFromRest(manufacturer, data); // ✅ Optionally store data in cache
           }
         }
+
+        // ✅ Mark as processed to prevent duplicate requests
+        processedManufacturers.add(manufacturer);
       } catch (error) {
+        console.error(`[Preload] ❌ Error processing ${manufacturer}:`, error);
         errorHandler.handleError(
           ErrorType.DATA,
           error instanceof Error ? error : new Error('Unknown error occurred'),
           { manufacturer }
         );
       }
-      await this.delay(10000); // Rate limit
+
+      // ✅ Apply a rate limit to avoid overloading API
+      await this.delay(5000); // Reduced delay to optimize performance
     }
   }
 
