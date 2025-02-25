@@ -6,7 +6,7 @@ import React, {
   useMemo,
 } from 'react';
 import { SelectOption, Aircraft, StaticModel, ActiveModel } from '@/types/base';
-import { AircraftModel } from '../selector/types';
+import { useRequestDeduplication } from '../../customHooks/useRequestDeduplication';
 
 interface ManufacturerSelectorProps {
   manufacturers: SelectOption[];
@@ -190,6 +190,8 @@ export const ManufacturerSelector: React.FC<ManufacturerSelectorProps> = ({
   onModelsUpdate,
   onError,
 }) => {
+  // ✅ Use `dedupedRequest` properly
+  const { dedupedRequest } = useRequestDeduplication(); // ✅ Ensure it's called inside a function
   const [searchTerm, setSearchTerm] = useState('');
   const [isOpen, setIsOpen] = useState(false);
   const [isSelecting, setIsSelecting] = useState(false);
@@ -199,38 +201,49 @@ export const ManufacturerSelector: React.FC<ManufacturerSelectorProps> = ({
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Memoize fetch function to prevent recreating it on every render
-  const fetchModelsData = useCallback(
-    async (manufacturer: string): Promise<ActiveModel[]> => {
-      const encodedManufacturer = encodeURIComponent(manufacturer);
-      const modelsResponse = await fetch(
-        `/api/aircraft/models?manufacturer=${encodedManufacturer}`,
-        {
-          method: 'GET', // Only use GET method
-          headers: {
-            'Cache-Control': 'no-cache', // Prevent browser caching
-          },
+  const fetchModelsData = async (
+    manufacturer: string
+  ): Promise<ActiveModel[]> => {
+    if (!manufacturer) return [];
+
+    const encodedManufacturer = encodeURIComponent(manufacturer.trim());
+    const url = `/api/aircraft/models?manufacturer=${encodedManufacturer}`;
+
+    try {
+      console.log(`[fetchModelsData] 🔄 Fetching models for ${manufacturer}`);
+
+      const response = await dedupedRequest(url, async () => {
+        const modelsResponse = await fetch(url, {
+          method: 'GET',
+          headers: { 'Cache-Control': 'no-cache' },
+        });
+
+        if (!modelsResponse.ok) {
+          throw new Error(
+            `Failed to fetch models: ${modelsResponse.statusText}`
+          );
         }
-      );
 
-      if (!modelsResponse.ok) {
-        throw new Error(`Failed to fetch models: ${modelsResponse.statusText}`);
+        return modelsResponse.json(); // ✅ Directly return the JSON response
+      });
+
+      // ✅ No `success` or `data` properties—use response directly
+      if (!Array.isArray(response)) {
+        throw new Error('[fetchModelsData] ❌ Invalid API response');
       }
 
-      const modelsData = await modelsResponse.json();
-      if (!modelsData.success || !Array.isArray(modelsData.data)) {
-        throw new Error('Invalid response format');
-      }
-
-      return modelsData.data.map((model: any) => ({
+      return response.map((model: any) => ({
         model: model.model || '',
         manufacturer: model.manufacturer || '',
         label: `${model.model || 'Unknown'} (${model.activeCount ?? 0} active)`,
         activeCount: model.activeCount ?? 0,
         totalCount: model.totalCount ?? model.count ?? 0,
       }));
-    },
-    []
-  );
+    } catch (error) {
+      console.error('[fetchModelsData] ❌ Error:', error);
+      return [];
+    }
+  };
 
   const handleManufacturerSelect = useCallback(
     async (manufacturer: SelectOption) => {
@@ -250,7 +263,7 @@ export const ManufacturerSelector: React.FC<ManufacturerSelectorProps> = ({
       setSelectedManufacturer(manufacturer.value);
 
       try {
-        // ✅ Step 1: Check cache before fetching
+        // ✅ Step 1: Check cache before making a network request
         const cachedModels = modelsCache.get(manufacturer.value);
         if (cachedModels?.models && !cachedModels.stale) {
           console.log('[ManufacturerSelector] ✅ Using cached models');
@@ -259,31 +272,40 @@ export const ManufacturerSelector: React.FC<ManufacturerSelectorProps> = ({
           return;
         }
 
-        // ✅ Step 2: Check if there's an in-flight request for the same manufacturer
-        let fetchPromise = modelsCache.getPromise(manufacturer.value);
+        // ✅ Step 2: Use `dedupedRequest` to prevent duplicate API calls
+        const fetchPromise = dedupedRequest(
+          `fetchModels-${manufacturer.value}`,
+          async () => fetchModelsData(manufacturer.value)
+        );
 
-        if (!fetchPromise) {
-          console.log('[ManufacturerSelector] 🔄 Fetching new models');
-          fetchPromise = fetchModelsData(manufacturer.value);
-          modelsCache.setPromise(manufacturer.value, fetchPromise);
-        } else {
-          console.log('[ManufacturerSelector] ⏳ Reusing in-flight request');
+        const response = await fetchPromise;
+
+        // ✅ Step 3: Validate and process the response
+        if (!Array.isArray(response)) {
+          throw new Error('[ManufacturerSelector] ❌ Invalid API response');
         }
 
-        const processedModels = await fetchPromise;
+        const processedModels = response.map((model: any) => ({
+          model: model.model || 'Unknown',
+          manufacturer: model.manufacturer || '',
+          label: `${model.model || 'Unknown'} (${model.activeCount ?? 0} active)`,
+          activeCount: Number.isFinite(model.activeCount)
+            ? model.activeCount
+            : 0,
+          totalCount: Number.isFinite(model.totalCount)
+            ? model.totalCount
+            : Number.isFinite(model.count)
+              ? model.count
+              : 0,
+        }));
 
-        // ✅ Step 3: Clear the promise before updating cache to prevent race conditions
-        modelsCache.clearPromise(manufacturer.value);
+        // ✅ Step 4: Cache models and update UI
         modelsCache.set(manufacturer.value, processedModels);
-
-        // ✅ Step 4: Ensure UI updates only when the selected manufacturer matches
-        if (selectedManufacturer === manufacturer.value) {
-          setModels(processedModels);
-          onModelsUpdate(processedModels);
-        }
+        setModels(processedModels);
+        onModelsUpdate(processedModels);
       } catch (error) {
         console.error('[ManufacturerSelector] ❌ Error:', error);
-        onError('Failed to process aircraft data');
+        onError('Failed to fetch aircraft models');
         setModels([]);
         onModelsUpdate([]);
         onAircraftUpdate([]);
@@ -299,6 +321,7 @@ export const ManufacturerSelector: React.FC<ManufacturerSelectorProps> = ({
       onError,
       setSelectedManufacturer,
       fetchModelsData,
+      dedupedRequest, // ✅ Include this as a dependency
     ]
   );
 

@@ -1,10 +1,9 @@
 import { useState, useEffect } from 'react';
-import { fetchIcao24s } from '@/lib/services/icao24Cache';
 import { SelectOption } from '@/types/base';
+import { icao24CacheService } from '@/lib/services/icao24Cache';
 
 export const useFetchManufacturers = () => {
   const [manufacturers, setManufacturers] = useState<SelectOption[]>([]);
-  const [icao24s, setIcao24s] = useState<string[]>([]); // ✅ Ensure this exists
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -16,7 +15,7 @@ export const useFetchManufacturers = () => {
         if (!response.ok) throw new Error('Failed to fetch manufacturers');
 
         const data = await response.json();
-        setManufacturers(data.manufacturers);
+        setManufacturers(data.manufacturers || []);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Unknown error');
       } finally {
@@ -27,18 +26,45 @@ export const useFetchManufacturers = () => {
     fetchManufacturers();
   }, []);
 
-  // ✅ Ensure fetchIcao24s function exists and updates state
-  const fetchManufacturerIcao24s = async (manufacturer: string) => {
-    const icaoList = await fetchIcao24s(manufacturer);
-    setIcao24s(icaoList); // ✅ Update state
-    return icaoList;
+  // ✅ Pass `manufacturer` as an argument instead of using an undefined variable
+  const fetchManufacturerIcao24s = async (
+    manufacturer: string
+  ): Promise<string[]> => {
+    if (!manufacturer) {
+      console.warn(`[useFetchManufacturers] ⚠️ Manufacturer is undefined.`);
+      return [];
+    }
+
+    try {
+      console.log(
+        `[useFetchManufacturers] 🔍 Fetching ICAO24s for ${manufacturer}`
+      );
+
+      // ✅ Ensure no direct recursion
+      const response = await fetch('/api/aircraft/icao24s', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ manufacturer }),
+      });
+
+      if (!response.ok) {
+        console.error(
+          `[useFetchManufacturers] ❌ Failed to fetch ICAO24s: ${response.statusText}`
+        );
+        return [];
+      }
+
+      const data = await response.json();
+      return data?.data?.icao24List ?? []; // ✅ Proper data extraction
+    } catch (error) {
+      console.error(
+        `[useFetchManufacturers] ❌ Error fetching ICAO24s:`,
+        error
+      );
+      return [];
+    }
   };
 
-  return {
-    manufacturers,
-    icao24s,
-    fetchIcao24s: fetchManufacturerIcao24s,
-    loading,
-    error,
-  };
+  // ✅ Ensure this function is correctly returned
+  return { manufacturers, fetchManufacturerIcao24s, loading, error };
 };

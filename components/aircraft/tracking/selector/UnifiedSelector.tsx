@@ -4,12 +4,12 @@ import { UnifiedSelectorProps } from '../selector/types';
 import ManufacturerSelector from './ManufacturerSelector';
 import ModelSelector from './ModelSelector';
 import { useOpenSkyData } from '../../customHooks/useOpenSkyData';
-import { fetchIcao24s } from '@/lib/services/icao24Cache';
+import { icao24CacheService } from '@/lib/services/icao24Cache';
 
 const handleManufacturerSelect = async (manufacturer: string | null) => {
   if (!manufacturer) return;
 
-  const icao24List = await fetchIcao24s(manufacturer); // ✅ Use cache
+  const icao24List = await icao24CacheService.getIcao24s(manufacturer); // ✅ Correct
   console.log(`[UnifiedSelector] Received ${icao24List.length} ICAO24s`);
 };
 
@@ -76,7 +76,7 @@ export const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
 
       try {
         setLoadingIcao24s(true);
-        await fetchIcao24s(manufacturer); // ✅ Fetch ICAO24s using the hook
+        await icao24CacheService.getIcao24s(manufacturer); // ✅ Correct
 
         console.log(`[UnifiedSelector] ✅ ICAO24s fetched from hook`);
       } catch (error) {
@@ -86,7 +86,7 @@ export const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
         setLoadingIcao24s(false);
       }
     },
-    [fetchIcao24s, onError]
+    [icao24CacheService, onError]
   );
 
   const processedModels = React.useMemo(
