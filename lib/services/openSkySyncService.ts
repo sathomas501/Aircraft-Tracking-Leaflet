@@ -1,40 +1,26 @@
 // lib/services/openSkySyncService.ts
 import { Aircraft } from '@/types/base';
 import UnifiedCacheService from '@/lib/services/managers/unified-cache-system';
-import { PollingRateLimiter } from './rate-limiter';
 import {
   errorHandler,
   ErrorType,
 } from '../services/error-handler/error-handler';
 import { DatabaseTransforms } from '@/utils/aircraft-transform1';
+import { TrackingDatabaseManager } from '../db/managers/trackingDatabaseManager';
 
 export class OpenSkySyncService {
   private static instance: OpenSkySyncService;
   private cache: UnifiedCacheService;
-  private rateLimiter: PollingRateLimiter;
-  private dbManager: any; // Use dynamic loading
-  private isPolling: boolean = false;
-  private pollingInterval: NodeJS.Timeout | null = null;
-
-  private readonly POLLING_DELAY = 5000; // 5 seconds
-  private readonly MAX_BATCH_SIZE = 100;
-  private readonly STALE_THRESHOLD = 15 * 60 * 1000; // 15 minutes
+  private dbManager: TrackingDatabaseManager | null = null; // ✅ Initialize to `null`
 
   private constructor() {
     this.cache = UnifiedCacheService.getInstance();
-    this.rateLimiter = new PollingRateLimiter({
-      requestsPerMinute: 60,
-      requestsPerDay: 1000,
-      minPollingInterval: 5000,
-      maxPollingInterval: 30000,
-      interval: 60000, // Add appropriate interval value
-      retryAfter: 1000, // Add appropriate retryAfter value
-    });
 
+    // ✅ Ensure `dbManager` is initialized only on the server-side
     if (typeof window === 'undefined') {
       const {
         TrackingDatabaseManager,
-      } = require('@/lib/db/trackingDatabaseManager'); // ✅ Dynamically load it
+      } = require('@/lib/db/managers/trackingDatabaseManager');
       this.dbManager = TrackingDatabaseManager.getInstance();
     }
   }
@@ -46,149 +32,77 @@ export class OpenSkySyncService {
     return OpenSkySyncService.instance;
   }
 
-  private async processAircraftData(aircraft: Aircraft): Promise<void> {
+  /**
+   * Fetches live aircraft data using the proxy API instead of direct OpenSky calls.
+   */
+  public async fetchLiveAircraft(icao24s: string[]): Promise<Aircraft[]> {
+    if (icao24s.length === 0) return [];
+
+    console.log(
+      `[OpenSkySyncService] Fetching live data for ${icao24s.length} ICAOs...`
+    );
+
     try {
       if (!this.dbManager) {
         throw new Error(
-          '[OpenSkySyncService] Database manager is not initialized on client side.'
+          '[OpenSkySyncService] ❌ Database manager is not available.'
         );
       }
 
-      this.cache.setLiveData(aircraft.icao24, [aircraft]);
-
-      const trackingData = DatabaseTransforms.toTracking(aircraft);
-      await this.dbManager.upsertActiveAircraftBatch([trackingData]);
-    } catch (error) {
-      errorHandler.handleError(
-        ErrorType.OPENSKY_SERVICE,
-        'Error processing aircraft data',
-        { error, icao24: aircraft.icao24 }
-      );
-      throw error;
-    }
-  }
-
-  private async processBatch(aircraftBatch: Aircraft[]): Promise<void> {
-    if (!aircraftBatch.length) return;
-
-    try {
-      if (!(await this.rateLimiter.tryAcquire())) {
-        console.log('[OpenSkySync] Rate limited, waiting for next slot');
-        return;
+      // ✅ Step 1: Check tracking database first
+      const activeAircraft = await this.dbManager.getAircraftByIcao24(icao24s);
+      if (activeAircraft.length > 0) {
+        console.log(
+          `[OpenSkySyncService] ✅ Found ${activeAircraft.length} active aircraft in tracking DB.`
+        );
+        return activeAircraft;
       }
 
-      // Parallel processing with original Aircraft objects
-      await Promise.all([
-        // Update cache with Aircraft objects
-        ...aircraftBatch.map((aircraft) =>
-          this.cache.setLiveData(aircraft.icao24, [aircraft])
-        ),
-        // Transform and update database
-        this.dbManager.upsertActiveAircraftBatch(
-          aircraftBatch.map(DatabaseTransforms.toTracking)
-        ),
-      ]);
-
-      this.rateLimiter.recordSuccess();
-    } catch (error) {
-      this.rateLimiter.recordFailure();
-      errorHandler.handleError(
-        ErrorType.OPENSKY_SERVICE,
-        'Error processing aircraft batch',
-        { error, batchSize: aircraftBatch.length }
+      // ✅ Step 2: Call the OpenSky Proxy API
+      console.log(
+        `[OpenSkySyncService] 🔄 Fetching live aircraft from OpenSky proxy...`
       );
-      throw error;
-    }
-  }
-
-  public async startSync(aircraft: Aircraft[]): Promise<void> {
-    if (this.isPolling) {
-      console.log('[OpenSkySync] Sync already in progress');
-      return;
-    }
-
-    this.isPolling = true;
-    console.log(`[OpenSkySync] Starting sync for ${aircraft.length} aircraft`);
-
-    try {
-      // Process in batches
-      for (let i = 0; i < aircraft.length; i += this.MAX_BATCH_SIZE) {
-        const batch = aircraft.slice(i, i + this.MAX_BATCH_SIZE);
-        await this.processBatch(batch);
-
-        // Add delay between batches if more remain
-        if (i + this.MAX_BATCH_SIZE < aircraft.length) {
-          await new Promise((resolve) =>
-            setTimeout(resolve, this.POLLING_DELAY)
-          );
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_BASE_URL}/api/proxy/opensky`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ icao24s }),
         }
-      }
-
-      this.startPolling(aircraft);
-    } catch (error) {
-      this.stopSync(); // Ensure cleanup on error
-      errorHandler.handleError(
-        ErrorType.OPENSKY_SERVICE,
-        'Error starting sync',
-        { error, aircraftCount: aircraft.length }
       );
-    }
-  }
 
-  private startPolling(aircraft: Aircraft[]): void {
-    this.stopPolling(); // Clear any existing interval
-
-    this.pollingInterval = setInterval(async () => {
-      try {
-        await this.processBatch(aircraft);
-      } catch (error) {
-        errorHandler.handleError(
-          ErrorType.OPENSKY_POLLING,
-          'Error during polling',
-          { error, aircraftCount: aircraft.length }
+      if (!response.ok) {
+        throw new Error(
+          `[OpenSkySyncService] ❌ OpenSky Proxy API error: ${response.statusText}`
         );
       }
-    }, this.POLLING_DELAY);
-  }
 
-  private stopPolling(): void {
-    if (this.pollingInterval) {
-      clearInterval(this.pollingInterval);
-      this.pollingInterval = null;
-    }
-  }
+      const data = await response.json();
+      if (!data.success || !data.data?.states) {
+        throw new Error(
+          '[OpenSkySyncService] ❌ Invalid response format from OpenSky Proxy'
+        );
+      }
 
-  public stopSync(): void {
-    console.log('[OpenSkySync] Stopping sync');
-    this.isPolling = false;
-    this.stopPolling();
-  }
+      // ✅ Step 3: Transform and store data
+      const liveAircraft = data.data.states.map(DatabaseTransforms.toTracking);
+      await this.dbManager.upsertActiveAircraftBatch(liveAircraft);
 
-  public isActive(): boolean {
-    return this.isPolling;
-  }
-
-  public getCache(): UnifiedCacheService {
-    return this.cache;
-  }
-
-  public async cleanup(): Promise<void> {
-    this.stopSync();
-    this.cache.clearCache();
-
-    try {
-      const staleAircraft = await this.dbManager.getStaleAircraft();
-      await Promise.all(
-        staleAircraft.map(async (aircraft: { icao24: string }) => {
-          await this.dbManager.deleteAircraft(aircraft.icao24);
-        })
+      console.log(
+        `[OpenSkySyncService] ✅ OpenSky Proxy returned ${liveAircraft.length} aircraft.`
       );
+      return liveAircraft;
     } catch (error) {
+      console.error(
+        '[OpenSkySyncService] ❌ Error fetching live aircraft:',
+        error
+      );
       errorHandler.handleError(
-        ErrorType.OPENSKY_CLEANUP,
-        'Error during cleanup',
+        ErrorType.OPENSKY_SERVICE,
+        'Error fetching live aircraft',
         { error }
       );
+      return [];
     }
   }
 }

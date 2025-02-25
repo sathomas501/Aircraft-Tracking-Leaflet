@@ -1,5 +1,4 @@
-// MapWrapper.tsx
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import type {
   Aircraft,
@@ -9,10 +8,10 @@ import type {
 } from '../../../../types/base';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 import { UnifiedSelector } from '../selector/UnifiedSelector';
-import { useAircraftSelector } from '../../customHooks/useAircraftSelector';
-import { useAircraftData } from '../../customHooks/useAircraftData';
+import { useOpenSkyData } from '../../customHooks/useOpenSkyData';
+import { useFetchModels } from '../../customHooks/useFetchModels';
+import { useFetchManufacturers } from '../../customHooks/useFetchManufactures';
 
-// Dynamic import for the map
 const DynamicMap = dynamic(() => import('../Map/DynamicMap'), {
   ssr: false,
   loading: () => <LoadingSpinner message="Loading map..." />,
@@ -25,43 +24,106 @@ export interface MapWrapperProps {
 }
 
 const MapWrapper: React.FC<MapWrapperProps> = ({ manufacturers, onError }) => {
-  const [isMapReady, setIsMapReady] = useState(false);
+  // State for selections
+  const [selectedManufacturer, setSelectedManufacturer] = useState<string>('');
+  const [selectedManufacturerLabel, setSelectedManufacturerLabel] =
+    useState<string>('');
+  const [selectedModel, setSelectedModel] = useState<string>('');
   const [displayedAircraft, setDisplayedAircraft] = useState<
     ExtendedAircraft[]
-  >([]);
+  >([]); // ✅ Fixed missing state
 
-  const {
+  // Fetch manufacturers & ICAO24s
+  const { icao24s, fetchIcao24s } = useFetchManufacturers(); // ✅ Fetch ICAO24s dynamically
+
+  // Fetch aircraft tracking data based on ICAO24s
+  // Just pass the manufacturer string directly
+  const { trackedAircraft, isInitializing, trackingStatus } =
+    useOpenSkyData(selectedManufacturer);
+
+  // Get model data
+  const { models, loading: loadingModels } = useFetchModels(
     selectedManufacturer,
-    selectedModel,
-    models,
-    isLoadingModels,
-    handleManufacturerSelect,
-    handleModelSelect,
-  } = useAircraftSelector({
-    onModelsUpdate: (newModels: ActiveModel[]) => {
-      console.log('[MapWrapper] Models updated:', newModels.length);
-    },
-    onAircraftUpdate: (aircraft: Aircraft[]) => {
-      console.log('[MapWrapper] Aircraft updated:', aircraft.length);
-      const extendedAircraft = aircraft.map((a) => ({
-        ...a,
-        type: a.TYPE_AIRCRAFT || 'Unknown',
-        isGovernment: a.OWNER_TYPE === '5',
-      }));
-      setDisplayedAircraft(extendedAircraft);
-    },
-    onError,
-  });
+    selectedManufacturerLabel
+  );
 
-  const {
-    activeCount,
-    liveAircraft,
-    loading: trackingLoading,
-  } = useAircraftData();
+  // Process aircraft for display
+  const processAircraft = useCallback((aircraft: Aircraft[]) => {
+    console.log('[MapWrapper] Aircraft updated:', aircraft.length);
+    const extended = aircraft.map((a) => ({
+      ...a,
+      type: a.TYPE_AIRCRAFT || 'Unknown',
+      isGovernment: a.OWNER_TYPE === '5',
+    }));
+    setDisplayedAircraft(extended); // ✅ Fixed missing state
+  }, []);
 
+  // Update displayed aircraft when tracked aircraft changes
+  React.useEffect(() => {
+    if (trackedAircraft) {
+      const filtered = selectedModel
+        ? trackedAircraft.filter(
+            (a) =>
+              a.model === selectedModel || a.TYPE_AIRCRAFT === selectedModel
+          )
+        : trackedAircraft;
+      processAircraft(filtered);
+    }
+  }, [trackedAircraft, selectedModel, processAircraft]);
+
+  // Handle manufacturer selection
+  const handleManufacturerSelect = useCallback(
+    async (manufacturer: string | null) => {
+      const manuValue = manufacturer || '';
+      setSelectedManufacturer(manuValue);
+
+      if (manufacturer) {
+        const manufacturerObj = manufacturers.find(
+          (m) => m.value === manufacturer
+        );
+        setSelectedManufacturerLabel(manufacturerObj?.label || manufacturer);
+        await fetchIcao24s(manufacturer); // ✅ Fetch ICAO24s dynamically
+      } else {
+        setSelectedManufacturerLabel('');
+      }
+
+      setSelectedModel('');
+    },
+    [manufacturers, fetchIcao24s]
+  );
+
+  // Handle model selection
+  const handleModelSelect = useCallback((model: string | null) => {
+    setSelectedModel(model || '');
+  }, []);
+
+  // Transform models to include required totalCount
+  const enhancedModels = useMemo(() => {
+    return models.map((model) => ({
+      ...model,
+      totalCount: (model as any).totalCount || model.count || 0,
+      activeCount: model.activeCount || 0,
+      label: model.label ?? `${model.model} (${model.activeCount || 0} active)`,
+    }));
+  }, [models]);
+
+  // Handle reset
   const handleReset = useCallback(() => {
     handleManufacturerSelect(null);
   }, [handleManufacturerSelect]);
+
+  // Calculate model counts
+  const modelCounts = useMemo(() => {
+    return Object.fromEntries(
+      models.reduce((acc, model) => {
+        acc.set(model.model, model.activeCount);
+        return acc;
+      }, new Map())
+    );
+  }, [models]);
+
+  // Determine loading state
+  const isLoading = isInitializing || loadingModels;
 
   return (
     <div className="relative w-full h-screen">
@@ -78,29 +140,33 @@ const MapWrapper: React.FC<MapWrapperProps> = ({ manufacturers, onError }) => {
           setSelectedModel={handleModelSelect}
           onManufacturerSelect={handleManufacturerSelect}
           onModelSelect={handleModelSelect}
-          models={models}
-          modelCounts={Object.fromEntries(
-            models.reduce((acc, model) => {
-              acc.set(model.model, model.activeCount);
-              return acc;
-            }, new Map())
-          )}
-          onModelsUpdate={() => {}} // Handled by useAircraftSelector
-          totalActive={activeCount}
-          onAircraftUpdate={() => {}} // Handled by useAircraftSelector
+          models={enhancedModels}
+          modelCounts={modelCounts}
+          onModelsUpdate={(newModels: ActiveModel[]) => {
+            console.log('[MapWrapper] Models updated:', newModels.length);
+          }}
+          totalActive={trackedAircraft?.length || 0}
+          onAircraftUpdate={processAircraft}
           onReset={handleReset}
           onError={onError}
         />
       </div>
 
       {/* Loading indicator */}
-      {(isLoadingModels || trackingLoading) && (
+      {isLoading && (
         <div className="absolute top-4 right-4 z-20">
           <LoadingSpinner
             message={
-              isLoadingModels ? 'Loading models...' : 'Tracking aircraft...'
+              loadingModels ? 'Loading models...' : 'Tracking aircraft...'
             }
           />
+        </div>
+      )}
+
+      {/* Tracking status */}
+      {trackingStatus && !isLoading && (
+        <div className="absolute bottom-4 right-4 z-20 bg-white p-2 rounded shadow">
+          <p className="text-sm">{trackingStatus}</p>
         </div>
       )}
     </div>

@@ -197,33 +197,66 @@ class TrackingDatabaseManager extends BaseDatabaseManager {
     return this.executeQuery<Aircraft>(query, [...params, activeThreshold]);
   }
 
+  // Excerpt of the fixed code
+
   public async upsertActiveAircraftBatch(
     aircraftData: Aircraft[]
   ): Promise<number> {
+    if (!aircraftData.length) {
+      console.log('[TrackingDB] No aircraft to upsert');
+      return 0;
+    }
+
     await this.ensureInitialized();
 
-    try {
-      await this.executeQuery('BEGIN TRANSACTION');
+    // Track if we're in a transaction we started
+    let transactionStarted = false;
 
+    try {
+      // Check for active transaction - with null check
+      const transactionStatus = await this.db?.get('PRAGMA transaction_status');
+      const isInTransaction =
+        transactionStatus && transactionStatus.transaction_status !== 0;
+
+      if (!isInTransaction) {
+        console.log('[TrackingDB] Starting new transaction');
+        await this.executeQuery('BEGIN TRANSACTION');
+        transactionStarted = true;
+      } else {
+        console.log('[TrackingDB] Using existing transaction');
+      }
+
+      let successCount = 0;
+
+      // Add null check before preparing statement
+      if (!this.db) {
+        throw new Error('[TrackingDB] Database connection not initialized');
+      }
+
+      // Prepare the statement once for better performance
+      const stmt = await this.db.prepare(`
+      INSERT INTO tracked_aircraft (
+        icao24, manufacturer, model, "N-NUMBER", latitude, longitude,
+        altitude, velocity, heading, on_ground, last_contact,
+        TYPE_AIRCRAFT, NAME, CITY, STATE, OWNER_TYPE, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(icao24) DO UPDATE SET
+        manufacturer = COALESCE(excluded.manufacturer, tracked_aircraft.manufacturer),
+        model = COALESCE(NULLIF(excluded.model, ''), tracked_aircraft.model),
+        latitude = excluded.latitude,
+        longitude = excluded.longitude,
+        altitude = excluded.altitude,
+        velocity = excluded.velocity,
+        heading = excluded.heading,
+        on_ground = excluded.on_ground,
+        last_contact = excluded.last_contact,
+        updated_at = excluded.updated_at
+    `);
+
+      // Process aircraft in batches
       for (const aircraft of aircraftData) {
-        await this.executeQuery(
-          `INSERT INTO tracked_aircraft (
-            icao24, manufacturer, model, "N-NUMBER", latitude, longitude,
-            altitude, velocity, heading, on_ground, last_contact,
-            TYPE_AIRCRAFT, NAME, CITY, STATE, OWNER_TYPE, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-          ON CONFLICT(icao24) DO UPDATE SET
-            manufacturer = COALESCE(excluded.manufacturer, tracked_aircraft.manufacturer),
-            model = COALESCE(NULLIF(excluded.model, ''), tracked_aircraft.model),
-            latitude = excluded.latitude,
-            longitude = excluded.longitude,
-            altitude = excluded.altitude,
-            velocity = excluded.velocity,
-            heading = excluded.heading,
-            on_ground = excluded.on_ground,
-            last_contact = excluded.last_contact,
-            updated_at = excluded.updated_at`,
-          [
+        try {
+          await stmt.run(
             aircraft.icao24,
             aircraft.manufacturer || '',
             aircraft.model || '',
@@ -240,16 +273,43 @@ class TrackingDatabaseManager extends BaseDatabaseManager {
             aircraft.CITY || '',
             aircraft.STATE || '',
             aircraft.OWNER_TYPE || '',
-            Math.floor(Date.now() / 1000),
-          ]
-        );
+            Math.floor(Date.now() / 1000)
+          );
+          successCount++;
+        } catch (insertError) {
+          console.error(
+            `[TrackingDB] Error inserting aircraft ${aircraft.icao24}:`,
+            insertError
+          );
+        }
       }
 
-      await this.executeQuery('COMMIT');
-      return aircraftData.length;
+      // Finalize the prepared statement
+      await stmt.finalize();
+
+      // Only commit if we started the transaction
+      if (transactionStarted) {
+        console.log('[TrackingDB] Committing transaction');
+        await this.executeQuery('COMMIT');
+      }
+
+      console.log(
+        `[TrackingDB] ✅ Successfully upserted ${successCount} aircraft`
+      );
+      return successCount;
     } catch (error) {
-      await this.executeQuery('ROLLBACK');
       console.error('[TrackingDB] Failed to upsert aircraft batch:', error);
+
+      // Only rollback if we started the transaction
+      if (transactionStarted) {
+        try {
+          console.log('[TrackingDB] Rolling back transaction');
+          await this.executeQuery('ROLLBACK');
+        } catch (rollbackError) {
+          console.error('[TrackingDB] Rollback failed:', rollbackError);
+        }
+      }
+
       throw error;
     }
   }

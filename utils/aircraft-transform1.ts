@@ -7,8 +7,8 @@ import type {
   TrackingData,
   OpenSkyStateArray,
   OpenSkyState,
+  ExtendedAircraft,
 } from '../types/base';
-import type { OpenSkyAircraft } from '@/types/opensky';
 
 const DEFAULT_VALUES = {
   STRING: 'Unknown',
@@ -342,6 +342,19 @@ export function parsePositionData(rawData: unknown[]): PositionData | null {
     last_contact: Math.floor(Number(last_contact) || Date.now() / 1000),
   };
 }
+
+/**
+ * Convert Aircraft[] to ExtendedAircraft[]
+ */
+export const transformToExtendedAircraft = (
+  aircraft: Aircraft[]
+): ExtendedAircraft[] => {
+  return aircraft.map((a) => ({
+    ...a,
+    type: a.TYPE_AIRCRAFT || 'Unknown', // Ensure 'type' exists
+    isGovernment: a.OWNER_TYPE === '5', // Ensure 'isGovernment' exists
+  }));
+};
 
 // Convenience exports for backward compatibility
 export const { createBase: createBaseAircraft, normalize: normalizeAircraft } =

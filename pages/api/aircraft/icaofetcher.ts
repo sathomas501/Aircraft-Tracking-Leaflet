@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import CacheManager from '@/lib/services/managers/cache-manager';
 import { processBatchedRequests } from '../../../utils/batchprocessor';
+import { OpenSkySyncService } from '@/lib/services/openSkySyncService'; // ✅ Added OpenSky API
 
 const cache = new CacheManager<string[]>(2 * 60); // Cache for 2 minutes
 const BATCH_SIZE = 200;
@@ -24,56 +25,32 @@ export default async function handler(
     return res.status(400).json({ error: 'Invalid ICAO24 list' });
   }
 
-  // ✅ Check cache before proceeding
+  // ✅ Fetch fresh data from OpenSky if cache is missing or outdated
   const cachedResults = cache.get('icao24_results');
-  if (cachedResults) {
+  if (cachedResults && cachedResults.length > 0) {
     console.log('[ICAOFetcher] ⚡ Returning cached results');
-    return res.status(200).json({ success: true, data: cachedResults });
+    return res.status(200).json({ data: cachedResults });
   }
 
-  console.log(
-    `[ICAOFetcher] 🔄 Processing ${icao24s.length} ICAO24s before sending to proxy`
-  );
+  console.log('[ICAOFetcher] 🆕 Fetching fresh ICAO24 data from OpenSky...');
 
   try {
-    const batchProcessor = async (batch: string[]) => {
-      console.log(
-        `[ICAOFetcher] 🚀 Sending batch of ${batch.length} ICAO24s to OpenSky Proxy`
-      );
+    const openSkySyncService = OpenSkySyncService.getInstance();
+    const freshAircraft = await openSkySyncService.fetchLiveAircraft(icao24s);
 
-      // Convert batch to URL query parameters for GET request
-      const icao24Param = batch.join(',');
-      const proxyUrl = `http://localhost:3001/api/proxy/opensky?icao24=${encodeURIComponent(icao24Param)}`;
+    if (freshAircraft.length === 0) {
+      console.log('[ICAOFetcher] ❌ No data found from OpenSky');
+      return res.status(204).json({ data: [] });
+    }
 
-      const response = await fetch(proxyUrl, {
-        method: 'GET',
-        headers: { Accept: 'application/json' },
-      });
+    const freshICAOs = freshAircraft.map((ac) => ac.icao24);
 
-      if (!response.ok) {
-        throw new Error(`Proxy Request Failed: ${response.statusText}`);
-      }
+    // ✅ Store new data in cache
+    cache.set('icao24_results', freshICAOs);
 
-      return await response.json();
-    };
-
-    const results = await processBatchedRequests(
-      icao24s,
-      batchProcessor,
-      BATCH_SIZE
-    );
-
-    // ✅ Cache results to avoid duplicate requests
-    cache.set('icao24_results', results);
-
-    console.log(
-      `[ICAOFetcher] ✅ Successfully processed ${icao24s.length} ICAO24s in batches`
-    );
-    return res.status(200).json({ success: true, data: results });
+    return res.status(200).json({ data: freshICAOs });
   } catch (error) {
-    console.error('[ICAOFetcher] ❌ Error processing ICAO24s:', error);
-    return res
-      .status(500)
-      .json({ error: 'Failed to fetch aircraft positions from OpenSky' });
+    console.error('[ICAOFetcher] ❌ Error fetching ICAO24 data:', error);
+    return res.status(500).json({ error: 'Failed to fetch ICAO24 data' });
   }
 }

@@ -1,12 +1,29 @@
 // pages/api/aircraft/models.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { StaticDatabaseManager } from '../../../lib/db/managers/staticDatabaseManager';
-import { TrackingDatabaseManager } from '../../../lib/db/managers/trackingDatabaseManager';
 
 const CACHE_TTL = 5000; // 5 seconds
 
 // Cache for request deduplication
 const requestCache = new Map<string, Promise<any>>();
+
+/**
+ * Dummy implementation of processRequest.
+ * Replace this with your actual data fetching logic.
+ */
+async function processRequest(
+  manufacturer: string
+): Promise<{ models: any[]; stats: object }> {
+  // Simulate some async work (e.g., fetching from a database or external API)
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  // Return dummy data
+  return {
+    models: [
+      { model: 'Model A', activeCount: 2, totalCount: 10 },
+      { model: 'Model B', activeCount: 0, totalCount: 5 },
+    ],
+    stats: { dummyStat: 123 },
+  };
+}
 
 export default async function handler(
   req: NextApiRequest,
@@ -51,8 +68,8 @@ export default async function handler(
       );
     }
 
-    const result = await resultPromise;
-
+    // Assert that resultPromise is defined.
+    const result = await resultPromise!;
     res.status(200).json({
       success: true,
       data: result.models,
