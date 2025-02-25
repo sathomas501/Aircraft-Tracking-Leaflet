@@ -102,31 +102,31 @@ export async function fetchAircraftByManufacturer(
     return [];
   }
 
-  // ✅ Check if ICAO24s exist in cache first
-  const cachedIcao24s = getCachedIcao24s(manufacturer);
-  if (cachedIcao24s) {
-    console.log(`[Cache] ✅ Returning cached ICAO24s for ${manufacturer}`);
-    return cachedIcao24s.map((icao24) => ({ icao24 }) as Aircraft);
-  }
-
   try {
     console.log(`[API] 📡 Fetching ICAO24s for manufacturer: ${manufacturer}`);
-    const response = await fetch(
-      `/api/aircraft/icao24s?manufacturer=${encodeURIComponent(manufacturer)}`
-    );
+    const response = await fetch('/api/aircraft/icao24s', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ manufacturer }),
+    });
+
     if (!response.ok) {
       throw new Error(`[API] ❌ Failed to fetch ICAO24s for ${manufacturer}`);
     }
 
     const data = await response.json();
-    if (!data.success || !Array.isArray(data.icao24List)) {
+    if (!data.success || !data.data?.icao24List) {
       throw new Error('[API] ❌ Invalid response format');
     }
 
-    // ✅ Store ICAO24s in cache
-    setCachedIcao24s(manufacturer, data.icao24List);
+    // Store ICAO24s in cache
+    setCachedIcao24s(manufacturer, data.data.icao24List);
 
-    return data.icao24List.map((icao24: string) => ({ icao24 }) as Aircraft);
+    return data.data.icao24List.map(
+      (icao24: string) => ({ icao24 }) as Aircraft
+    );
   } catch (error) {
     console.error('[Aircraft Service] ❌ Error fetching aircraft:', error);
     return [];

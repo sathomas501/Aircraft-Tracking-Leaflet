@@ -15,6 +15,10 @@ interface StaticDataResponse {
 async function fetchStaticData(
   icao24List: string[]
 ): Promise<Map<string, Aircraft>> {
+  if (!icao24List || icao24List.length === 0) {
+    return new Map<string, Aircraft>();
+  }
+
   const cacheKey = `${CACHE_KEY}-${icao24List.sort().join(',')}`;
   const cachedData = await staticDataCache.get(cacheKey);
 
@@ -57,58 +61,96 @@ async function fetchStaticData(
 }
 
 async function handler(req: NextApiRequest, res: NextApiResponse) {
-  const trackingDb = TrackingDatabaseManager.getInstance();
-  const { manufacturer } = req.query;
+  try {
+    const trackingDb = TrackingDatabaseManager.getInstance();
+    const { manufacturer } = req.query;
 
-  const trackedAircraft = await trackingDb.getTrackedAircraft(
-    typeof manufacturer === 'string' ? manufacturer : undefined
-  );
+    if (manufacturer && typeof manufacturer !== 'string') {
+      return res.status(400).json({
+        success: false,
+        error: 'Manufacturer must be a string',
+      });
+    }
 
-  if (trackedAircraft.length === 0) {
-    return res.status(200).json({
-      success: true,
-      data: [],
-      meta: {
-        total: 0,
-        timestamp: Date.now(),
-      },
+    const trackedAircraft = await trackingDb.getTrackedAircraft(
+      typeof manufacturer === 'string' ? manufacturer : undefined
+    );
+
+    if (trackedAircraft.length === 0) {
+      return res.status(200).json({
+        success: true,
+        data: [],
+        meta: {
+          total: 0,
+          timestamp: Date.now(),
+        },
+      });
+    }
+
+    const icao24List = trackedAircraft.map((aircraft) => aircraft.icao24);
+
+    try {
+      const staticDataMap = await fetchStaticData(icao24List);
+
+      const mergedAircraft = trackedAircraft.map((aircraft) => {
+        const staticInfo = staticDataMap.get(aircraft.icao24.toLowerCase());
+        return {
+          ...aircraft,
+          ...(staticInfo && {
+            model: staticInfo.model,
+            manufacturer: staticInfo.manufacturer,
+            TYPE_AIRCRAFT: staticInfo.TYPE_AIRCRAFT,
+            'N-NUMBER': staticInfo['N-NUMBER'],
+            NAME: staticInfo.NAME,
+            CITY: staticInfo.CITY,
+            STATE: staticInfo.STATE,
+            OWNER_TYPE: staticInfo.OWNER_TYPE,
+          }),
+          isTracked: true,
+          lastSeen: aircraft.last_contact * 1000,
+        };
+      });
+
+      console.log(
+        `[TrackingAPI] Merged ${mergedAircraft.length} aircraft with static data`
+      );
+
+      return res.status(200).json({
+        success: true,
+        data: mergedAircraft,
+        meta: {
+          total: mergedAircraft.length,
+          timestamp: Date.now(),
+        },
+      });
+    } catch (staticDataError) {
+      console.error(
+        '[TrackingAPI] Error fetching static data:',
+        staticDataError
+      );
+
+      // Return basic aircraft data without enrichment
+      return res.status(200).json({
+        success: true,
+        data: trackedAircraft.map((aircraft) => ({
+          ...aircraft,
+          isTracked: true,
+          lastSeen: aircraft.last_contact * 1000,
+        })),
+        meta: {
+          total: trackedAircraft.length,
+          timestamp: Date.now(),
+          enriched: false,
+        },
+      });
+    }
+  } catch (error) {
+    console.error('[TrackingAPI] Error:', error);
+    return res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Internal server error',
     });
   }
-
-  const icao24List = trackedAircraft.map((aircraft) => aircraft.icao24);
-  const staticDataMap = await fetchStaticData(icao24List);
-
-  const mergedAircraft = trackedAircraft.map((aircraft) => {
-    const staticInfo = staticDataMap.get(aircraft.icao24.toLowerCase());
-    return {
-      ...aircraft,
-      ...(staticInfo && {
-        model: staticInfo.model,
-        manufacturer: staticInfo.manufacturer,
-        TYPE_AIRCRAFT: staticInfo.TYPE_AIRCRAFT,
-        'N-NUMBER': staticInfo['N-NUMBER'],
-        NAME: staticInfo.NAME,
-        CITY: staticInfo.CITY,
-        STATE: staticInfo.STATE,
-        OWNER_TYPE: staticInfo.OWNER_TYPE,
-      }),
-      isTracked: true,
-      lastSeen: aircraft.last_contact * 1000,
-    };
-  });
-
-  console.log(
-    `[TrackingAPI] Merged ${mergedAircraft.length} aircraft with static data`
-  );
-
-  return res.status(200).json({
-    success: true,
-    data: mergedAircraft,
-    meta: {
-      total: mergedAircraft.length,
-      timestamp: Date.now(),
-    },
-  });
 }
 
 export default withErrorHandler(handler);

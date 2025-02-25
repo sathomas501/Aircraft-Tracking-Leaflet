@@ -1,5 +1,5 @@
 import React from 'react';
-import { Model, ActiveModel, StaticModel } from '@/types/base';
+import { ActiveModel } from '@/types/base';
 
 interface ModelSelectorProps {
   selectedModel: string;
@@ -11,6 +11,16 @@ interface ModelSelectorProps {
   disabled?: boolean;
 }
 
+/**
+ * Helper to sort models by descending activeCount and then alphabetically.
+ */
+const sortModels = (models: ActiveModel[]): ActiveModel[] => {
+  return [...models].sort((a, b) => {
+    const countDiff = b.activeCount - a.activeCount;
+    return countDiff !== 0 ? countDiff : a.model.localeCompare(b.model);
+  });
+};
+
 const ModelSelector: React.FC<ModelSelectorProps> = ({
   selectedModel,
   setSelectedModel,
@@ -20,17 +30,10 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
   isLoading = false,
   disabled = false,
 }) => {
-  // Sort models by active count and then alphabetically for same count
-  const sortedModels = React.useMemo(
-    () =>
-      [...models].sort((a, b) => {
-        const countDiff = b.activeCount - a.activeCount;
-        return countDiff !== 0 ? countDiff : a.model.localeCompare(b.model);
-      }),
-    [models]
-  );
+  // Memoize sorted models to avoid re-sorting on each render.
+  const sortedModels = React.useMemo(() => sortModels(models), [models]);
 
-  // Calculate total active count if not provided
+  // Compute total active count if not provided.
   const actualTotalActive = React.useMemo(
     () =>
       totalActive || models.reduce((sum, model) => sum + model.activeCount, 0),
@@ -73,7 +76,9 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
               ${model.activeCount > 5 ? 'bg-blue-50' : ''}
             `}
           >
-            {`${model.model} (${model.activeCount} active${model.totalCount ? ` of ${model.totalCount}` : ''})`}
+            {`${model.model} (${model.activeCount} active${
+              model.totalCount ? ` of ${model.totalCount}` : ''
+            })`}
           </option>
         ))}
       </select>

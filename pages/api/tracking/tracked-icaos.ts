@@ -3,6 +3,7 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 import { TrackingDatabaseManager } from '@/lib/db/managers/trackingDatabaseManager';
 import { withErrorHandler } from '@/lib/middleware/error-handler';
 import { APIErrors } from '@/lib/services/error-handler/api-error';
+import { OpenSkySyncService } from '@/lib/services/openSkySyncService'; // ✅ Added OpenSky service
 
 interface TrackedICAOsResponse {
   success: boolean;
@@ -24,11 +25,27 @@ async function handler(
 
   try {
     const trackingDb = TrackingDatabaseManager.getInstance();
-    const trackedICAOs = await trackingDb.getTrackedICAOs();
+    let trackedICAOs = await trackingDb.getTrackedICAOs();
 
     console.log(
       `[TrackingAPI] ✅ Retrieved ${trackedICAOs.length} tracked ICAOs`
     );
+
+    // ✅ Fetch missing aircraft from OpenSky if the DB is empty
+    if (trackedICAOs.length === 0) {
+      console.log(
+        `[TrackingAPI] No ICAOs in tracking DB. Fetching from OpenSky...`
+      );
+      const openSkySyncService = OpenSkySyncService.getInstance();
+      const freshAircraft = await openSkySyncService.fetchLiveAircraft([]);
+
+      if (freshAircraft.length > 0) {
+        trackedICAOs = freshAircraft.map((ac) => ac.icao24);
+        console.log(
+          `[TrackingAPI] ✅ Fetched ${freshAircraft.length} aircraft from OpenSky`
+        );
+      }
+    }
 
     return res.status(200).json({
       success: true,
@@ -40,11 +57,10 @@ async function handler(
     });
   } catch (error) {
     console.error('[TrackingAPI] ❌ Error fetching tracked ICAOs:', error);
-    throw APIErrors.Internal(
-      error instanceof Error
-        ? error
-        : new Error('Failed to fetch tracked ICAOs')
-    );
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to fetch tracked ICAOs',
+    });
   }
 }
 

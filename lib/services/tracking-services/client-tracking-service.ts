@@ -375,3 +375,7 @@ export class ClientTrackingService {
 }
 
 export const clientTrackingService = ClientTrackingService.getInstance();
+// Public wrapper
+export async function fetchIcao24s(manufacturer: string): Promise<string[]> {
+  return fetchIcao24s(manufacturer);
+}

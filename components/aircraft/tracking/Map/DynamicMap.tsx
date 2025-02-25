@@ -1,5 +1,6 @@
 // DynamicMap.tsx
 import React, { useEffect, useRef, useState } from 'react';
+import { useMap } from 'react-leaflet';
 import type { ExtendedAircraft } from '@/types/base';
 import { MAP_CONFIG } from '@/config/map';
 
