@@ -114,66 +114,103 @@ export class AircraftTrackingService extends BaseTrackingService {
   private async getManufacturerIcao24s(
     manufacturer: string
   ): Promise<string[]> {
+    // ✅ Step 1: Check unified cache first (in-memory, fastest)
+    const unifiedCacheData = this.unifiedCache.getLiveDataRaw(manufacturer);
+    if (unifiedCacheData.length > 0) {
+      console.log(
+        `[AircraftTrackingService] ✅ Using unified cache for ${manufacturer}`
+      );
+      return unifiedCacheData.map((a: CachedAircraftData) => a.icao24);
+    }
+
+    // ✅ Step 2: Check persistent cache service
+    const persistentCacheKey = `manufacturer-icao24s-${manufacturer}`;
+    const persistentCacheData =
+      await this.cacheService?.get(persistentCacheKey);
+    if (persistentCacheData?.length > 0) {
+      console.log(
+        `[AircraftTrackingService] ✅ Using persistent cache for ${manufacturer}`
+      );
+      // Update unified cache from persistent cache
+      this.unifiedCache.setLiveData(manufacturer, persistentCacheData);
+      return persistentCacheData.map((a: CachedAircraftData) => a.icao24);
+    }
+
+    // ✅ Step 3: Check for in-flight requests
+    if (this.fetchQueue.has(manufacturer)) {
+      console.log(
+        `[AircraftTrackingService] ⏳ Reusing in-flight request for ${manufacturer}`
+      );
+      return this.fetchQueue.get(manufacturer)!;
+    }
+
+    // ✅ Step 4: Fetch from Static Database if all caches miss
+    console.log(
+      `[AircraftTrackingService] 🔄 Cache miss. Fetching from static DB for ${manufacturer}`
+    );
+
+    // Create a new promise for this fetch
     const fetchPromise = new Promise<string[]>(async (resolve) => {
-      try {
-        const fetchedList =
-          await staticDatabaseManager.getManufacturerIcao24s(manufacturer);
+      const icao24List =
+        await staticDatabaseManager.getManufacturerIcao24s(manufacturer);
 
-        if (!fetchedList || fetchedList.length === 0) {
-          console.warn(
-            `[AircraftTrackingService] ❌ No ICAO24s found for ${manufacturer} in static DB`
-          );
-          resolve([]);
-          return;
-        }
-
-        // ✅ Step 4: Transform ICAO24 list to `Aircraft` type
-        const processedAircraft: Aircraft[] = fetchedList.map(
-          (icao24: string): Aircraft => ({
-            icao24,
-            'N-NUMBER': '',
-            manufacturer,
-            model: '',
-            operator: '',
-            NAME: '',
-            CITY: '',
-            STATE: '',
-            OWNER_TYPE: '',
-            TYPE_AIRCRAFT: '',
-            latitude: 0,
-            longitude: 0,
-            velocity: 0,
-            heading: 0,
-            altitude: 0,
-            on_ground: false,
-            isTracked: false,
-            last_contact: Date.now() / 1000,
-          })
+      if (!icao24List || icao24List.length === 0) {
+        console.warn(
+          `[AircraftTrackingService] ❌ No ICAO24s found for ${manufacturer} in static DB`
         );
-
-        // Cache the transformed Aircraft objects
-        this.unifiedCache.setLiveData(manufacturer, processedAircraft);
-
-        // Return the list of ICAO24s
-        resolve(processedAircraft.map((aircraft: Aircraft) => aircraft.icao24));
-      } catch (error) {
-        console.error(
-          '[AircraftTrackingService] Error fetching ICAO24s:',
-          error
-        );
-        resolve([]);
+        return [];
       }
+
+      // ✅ Step 4: Transform ICAO24 list to `Aircraft` type
+      const aircraftData: Aircraft[] = icao24List.map((icao24) => ({
+        icao24,
+        'N-NUMBER': '', // Placeholder, should be fetched from DB if needed
+        manufacturer,
+        model: '',
+        operator: '',
+        NAME: '',
+        CITY: '',
+        STATE: '',
+        OWNER_TYPE: '',
+        created_at: new Date().toISOString(), // Default to current timestamp
+        TYPE_AIRCRAFT: '',
+        latitude: 0, // Default values, should be populated from tracking data
+        longitude: 0,
+        velocity: 0,
+        heading: 0,
+        altitude: 0,
+        on_ground: false,
+        isTracked: false,
+        last_contact: Date.now() / 1000, // Unix timestamp
+      }));
+
+      // ✅ Cache the transformed `Aircraft` objects in both caches
+      this.unifiedCache.setLiveData(manufacturer, aircraftData);
+      await this.cacheService?.set(
+        `manufacturer-icao24s-${manufacturer}`,
+        aircraftData,
+        60 * 60 // Cache for 1 hour
+      );
+
+      console.log(
+        `[AircraftTrackingService] ✅ Cached ${aircraftData.length} ICAO24s for ${manufacturer}`
+      );
+
+      resolve(aircraftData.map((entry) => entry.icao24));
     });
 
+    // Add this promise to the fetch queue
     this.fetchQueue.set(manufacturer, fetchPromise);
 
     try {
       const result = await fetchPromise;
       return result;
     } finally {
+      // Clean up the fetch queue after completion
       this.fetchQueue.delete(manufacturer);
     }
   }
+
   private async getStaticAircraftData(
     icao24s: string[]
   ): Promise<Map<string, Aircraft>> {
@@ -390,45 +427,39 @@ export class AircraftTrackingService extends BaseTrackingService {
     }
   }
 
+  // In AircraftTrackingService
   private async startTrackingManufacturer(manufacturer: string): Promise<void> {
     try {
       console.log(
         `[AircraftTracking] 🚀 Starting tracking for ${manufacturer}`
       );
 
-      // Get initial ICAO24s from cache or service
-      let icao24List = await this.getManufacturerIcao24s(manufacturer);
+      // ✅ Step 1: Get ICAO24s using optimized caching
+      const icao24List = await this.getManufacturerIcao24s(manufacturer);
+
+      // ✅ Step 2: Check tracking cache
       const trackingCacheKey = `tracking-${manufacturer}`;
       const cachedTrackingData = await this.cacheService?.get(trackingCacheKey);
 
-      // If no ICAOs found in cache or service, try fetching from API
       if (!icao24List.length) {
         console.log(
           `[AircraftTracking] 🔍 Fetching ICAO24s for ${manufacturer}`
         );
 
-        try {
-          const response = await fetch('/api/aircraft/icao24s', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ manufacturer }),
-          });
+        // Fetch ICAOs from API if not cached
+        let data; // Declare data in the correct scope
 
-          if (!response.ok) {
-            throw new Error(`Failed to fetch ICAO24s: ${response.statusText}`);
-          }
+        const response = await fetch('/api/aircraft/icao24s', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ manufacturer }),
+        });
 
-          const data = await response.json();
-          if (data.success && Array.isArray(data.data?.icao24List)) {
-            icao24List = data.data.icao24List;
-          }
-        } catch (error) {
-          console.error(
-            `[AircraftTracking] ❌ Failed to fetch ICAO24s:`,
-            error
-          );
-          throw error;
+        if (response.ok) {
+          data = await response.json();
         }
+
+        const icao24List = data?.data?.icao24List ?? []; // ✅ Now data is always defined
 
         // Cache the ICAO24s to avoid redundant fetches
         if (icao24List.length > 0) {
@@ -447,14 +478,14 @@ export class AircraftTrackingService extends BaseTrackingService {
         );
       }
 
-      // Fetch full aircraft details
+      // ✅ Step 2: Fetch full aircraft details
       const aircraftDetails: Aircraft[] =
         await this.trackingDatabaseManager.getAircraftDetailsByIcao24s(
           icao24List
         );
       this.onAircraftUpdate(aircraftDetails);
 
-      // Get already tracked aircraft from cache or database
+      // ✅ Step 3: Get already tracked aircraft from cache or database
       let trackedAircraft =
         await this.trackingDatabaseManager.getTrackedAircraftCached(
           manufacturer

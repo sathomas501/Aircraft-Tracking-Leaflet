@@ -4,25 +4,13 @@ import { UnifiedSelectorProps } from '../selector/types';
 import ManufacturerSelector from './ManufacturerSelector';
 import ModelSelector from './ModelSelector';
 import { useOpenSkyData } from '../../customHooks/useOpenSkyData';
+import { fetchIcao24s } from '@/lib/services/icao24Cache';
 
-const fetchIcao24s = async (manufacturer: string): Promise<string[]> => {
-  try {
-    const response = await fetch('/api/aircraft/icao24s', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ manufacturer }),
-    });
+const handleManufacturerSelect = async (manufacturer: string | null) => {
+  if (!manufacturer) return;
 
-    if (!response.ok) {
-      throw new Error(`[API] ❌ Failed to fetch ICAO24s for ${manufacturer}`);
-    }
-
-    const data = await response.json();
-    return data.success && data.data?.icao24List ? data.data.icao24List : [];
-  } catch (error) {
-    console.error(`[API] ❌ Error fetching ICAO24s:`, error);
-    return [];
-  }
+  const icao24List = await fetchIcao24s(manufacturer); // ✅ Use cache
+  console.log(`[UnifiedSelector] Received ${icao24List.length} ICAO24s`);
 };
 
 export const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
@@ -154,6 +142,10 @@ export const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
         manufacturers={manufacturers}
         selectedManufacturer={selectedManufacturer}
         onSelect={onManufacturerSelectHandler}
+        setSelectedManufacturer={setSelectedManufacturer} // ✅ Ensure this function exists
+        onAircraftUpdate={onAircraftUpdate} // ✅ Ensure this function exists
+        onModelsUpdate={onModelsUpdate} // ✅ Ensure this function exists
+        onError={onError} // ✅ Ensure this function exists
       />
 
       {selectedManufacturer && (

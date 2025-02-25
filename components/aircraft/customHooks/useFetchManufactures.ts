@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
+import { fetchIcao24s } from '@/lib/services/icao24Cache';
+import { SelectOption } from '@/types/base';
 
 export const useFetchManufacturers = () => {
-  const [manufacturers, setManufacturers] = useState([]);
-  const [icao24s, setIcao24s] = useState<string[]>([]);
+  const [manufacturers, setManufacturers] = useState<SelectOption[]>([]);
+  const [icao24s, setIcao24s] = useState<string[]>([]); // ✅ Ensure this exists
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -25,33 +27,18 @@ export const useFetchManufacturers = () => {
     fetchManufacturers();
   }, []);
 
-  const fetchIcao24s = async (manufacturer: string) => {
-    if (!manufacturer) return;
-
-    setLoading(true);
-    try {
-      const response = await fetch('/api/aircraft/icao24s', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ manufacturer }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch ICAO24s');
-      }
-
-      const { icao24s } = await response.json();
-      console.log(`[useFetchManufacturers] ✅ Found ${icao24s.length} ICAO24s`);
-
-      setIcao24s(icao24s);
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : 'Unknown error fetching ICAO24s'
-      );
-    } finally {
-      setLoading(false);
-    }
+  // ✅ Ensure fetchIcao24s function exists and updates state
+  const fetchManufacturerIcao24s = async (manufacturer: string) => {
+    const icaoList = await fetchIcao24s(manufacturer);
+    setIcao24s(icaoList); // ✅ Update state
+    return icaoList;
   };
 
-  return { manufacturers, icao24s, fetchIcao24s, loading, error };
+  return {
+    manufacturers,
+    icao24s,
+    fetchIcao24s: fetchManufacturerIcao24s,
+    loading,
+    error,
+  };
 };
