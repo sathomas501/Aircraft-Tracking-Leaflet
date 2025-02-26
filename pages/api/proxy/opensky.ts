@@ -89,6 +89,20 @@ export default async function handler(
     }
 
     const openSkyUrl = `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.ALL_STATES}`;
+
+    console.log('[OpenSky Proxy] 🌍 Using OpenSky API URL:', openSkyUrl);
+
+    if (!API_CONFIG.BASE_URL) {
+      console.error(
+        '[OpenSky Proxy] ❌ Missing OPENSKY_API_URL in environment variables'
+      );
+      return res.status(500).json({
+        success: false,
+        error: 'Server misconfiguration: Missing OPENSKY_API_URL',
+        errorType: ErrorType.OPENSKY_SERVICE,
+      });
+    }
+
     const params = new URLSearchParams({
       icao24: icao24List.join(','),
       extended: '1',

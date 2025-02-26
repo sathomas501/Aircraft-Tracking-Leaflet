@@ -16,7 +16,7 @@ interface ModelSelectorProps {
  */
 const sortModels = (models: ActiveModel[]): ActiveModel[] => {
   return [...models].sort((a, b) => {
-    const countDiff = b.activeCount - a.activeCount;
+    const countDiff = (b.activeCount || 0) - (a.activeCount || 0);
     return countDiff !== 0 ? countDiff : a.model.localeCompare(b.model);
   });
 };
@@ -33,11 +33,35 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
   // Memoize sorted models to avoid re-sorting on each render.
   const sortedModels = React.useMemo(() => sortModels(models), [models]);
 
-  // Compute total active count if not provided.
-  const actualTotalActive = React.useMemo(
+  // Directly use model data to format option labels
+  const formatOptionLabel = (model: ActiveModel) => {
+    const totalCount = model.totalCount || model.count || 0;
+    const activeCount = model.activeCount || 0;
+    const inactiveCount = totalCount - activeCount;
+
+    if (activeCount > 0) {
+      return `${model.model} (${activeCount} active, ${inactiveCount} inactive)`;
+    } else {
+      return `${model.model} (${inactiveCount} inactive)`;
+    }
+  };
+
+  // Compute total numbers for header option
+  const totalInactiveCount = React.useMemo(
     () =>
-      totalActive || models.reduce((sum, model) => sum + model.activeCount, 0),
-    [totalActive, models]
+      models.reduce(
+        (sum, model) =>
+          sum +
+          ((model.totalCount || model.count || 0) - (model.activeCount || 0)),
+        0
+      ),
+    [models]
+  );
+
+  // Calculate total active aircraft across all models
+  const actualTotalActive = React.useMemo(
+    () => models.reduce((sum, model) => sum + (model.activeCount || 0), 0),
+    [models]
   );
 
   return (
@@ -65,25 +89,30 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
         disabled={disabled || isLoading}
       >
         <option value="" className="text-gray-500">
-          All Models ({actualTotalActive} active)
+          {actualTotalActive > 0
+            ? `All Models (${actualTotalActive} active, ${totalInactiveCount} inactive)`
+            : `All Models (${totalInactiveCount} inactive)`}
         </option>
         {sortedModels.map((model) => (
           <option
             key={model.model}
             value={model.model}
             className={`
-              ${model.activeCount > 0 ? 'font-semibold text-blue-700' : 'text-gray-700'}
-              ${model.activeCount > 5 ? 'bg-blue-50' : ''}
+              ${model.activeCount && model.activeCount > 0 ? 'font-semibold text-blue-700' : 'text-gray-700'}
+              ${model.activeCount && model.activeCount > 5 ? 'bg-blue-50' : ''}
             `}
           >
-            {`${model.model} (${model.activeCount} active${
-              model.totalCount ? ` of ${model.totalCount}` : ''
-            })`}
+            {formatOptionLabel(model)}
           </option>
         ))}
       </select>
       {models.length === 0 && !isLoading && (
         <p className="mt-1 text-sm text-gray-500">No models available</p>
+      )}
+      {actualTotalActive === 0 && models.length > 0 && (
+        <p className="mt-1 text-sm text-gray-500">
+          No live aircraft found in OpenSky
+        </p>
       )}
     </div>
   );
