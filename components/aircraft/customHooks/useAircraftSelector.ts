@@ -30,13 +30,15 @@ export function useAircraftSelector({
   const [selectedModel, setSelectedModel] = useState<string | null>(null);
 
   // Data state
-  const [models, setModels] = useState<AircraftModel[]>([]);
+  const [staticModels, setStaticModels] = useState<AircraftModel[]>([]);
+  const [mergedModels, setMergedModels] = useState<AircraftModel[]>([]);
   const [isLoadingModels, setIsLoadingModels] = useState(false);
   const [modelError, setModelError] = useState<Error | null>(null);
 
   // Connect to OpenSky data
   const {
     trackedAircraft,
+    aircraftModels: liveModels,
     trackingStatus,
     isInitializing,
     error: trackingError,
@@ -57,13 +59,12 @@ export function useAircraftSelector({
     onAircraftUpdate(trackedAircraft);
   }, [trackedAircraft, onAircraftUpdate]);
 
-  // Load models for the selected manufacturer
-  const loadModels = useCallback(
+  // Load static models for the selected manufacturer
+  const loadStaticModels = useCallback(
     async (manufacturer: string | null) => {
       if (!manufacturer) {
-        setModels([]);
-        onModelsUpdate([]);
-        return;
+        setStaticModels([]);
+        return [];
       }
 
       // Check cache first
@@ -72,9 +73,8 @@ export function useAircraftSelector({
         console.log(
           `[useAircraftSelector] Using cached models for ${manufacturer}`
         );
-        setModels(cachedEntry.models);
-        onModelsUpdate(cachedEntry.models);
-        return;
+        setStaticModels(cachedEntry.models);
+        return cachedEntry.models;
       }
 
       setIsLoadingModels(true);
@@ -82,7 +82,7 @@ export function useAircraftSelector({
 
       try {
         console.log(
-          `[useAircraftSelector] Fetching models for ${manufacturer}`
+          `[useAircraftSelector] Fetching static models for ${manufacturer}`
         );
         const fetchedModels = await fetchModels(manufacturer);
 
@@ -90,53 +90,123 @@ export function useAircraftSelector({
         const processedModels: AircraftModel[] = fetchedModels.map((model) => ({
           model: model.model || '',
           manufacturer: model.manufacturer || manufacturer,
-          label: `${model.model} (${model.activeCount ?? 0} active)`,
-          activeCount: model.activeCount ?? 0,
+          label: `${model.model} (${model.count ?? 0} total)`,
+          activeCount: 0, // Will be updated by mergeModels
           count: (model as any).count ?? 0,
           totalCount: (model as any).totalCount ?? (model as any).count ?? 0,
         }));
 
-        // Sort models by activeCount (descending) then name
-        const sortedModels = [...processedModels].sort((a, b) => {
-          const countDiff = (b.activeCount ?? 0) - (a.activeCount ?? 0);
-          return countDiff !== 0
-            ? countDiff
-            : (a.model || '').localeCompare(b.model || '');
-        });
-
         // Cache the models
         modelsCache[manufacturer] = {
-          models: sortedModels,
+          models: processedModels,
           timestamp: Date.now(),
         };
 
         // Update state
-        setModels(sortedModels);
-        onModelsUpdate(sortedModels);
+        setStaticModels(processedModels);
+        return processedModels;
       } catch (error) {
         console.error('[useAircraftSelector] Error fetching models:', error);
         setModelError(
           error instanceof Error ? error : new Error('Failed to load models')
         );
         onError('Failed to load aircraft models');
+        return [];
       } finally {
         setIsLoadingModels(false);
       }
     },
-    [onModelsUpdate, onError]
+    [onError]
+  );
+
+  // Merge static and live model data
+  const mergeModels = useCallback(
+    (static_models: AircraftModel[], live_models: AircraftModel[]) => {
+      if (!static_models.length) return live_models;
+      if (!live_models.length) return static_models;
+
+      // Create a map to merge by model name
+      const modelMap = new Map<string, AircraftModel>();
+
+      // First, add all static models to the map
+      static_models.forEach((model) => {
+        modelMap.set(model.model, { ...model });
+      });
+
+      // Then, update with live data where available
+      live_models.forEach((liveModel) => {
+        const existing = modelMap.get(liveModel.model);
+        if (existing) {
+          modelMap.set(liveModel.model, {
+            ...existing,
+            activeCount: liveModel.activeCount || 0,
+            label: `${liveModel.model} (${liveModel.activeCount || 0} active of ${existing.totalCount || existing.count || 0})`,
+          });
+        } else {
+          // This is a live model not in our static database
+          modelMap.set(liveModel.model, {
+            ...liveModel,
+            totalCount: liveModel.activeCount || 0,
+            count: liveModel.activeCount || 0,
+          });
+        }
+      });
+
+      // Convert back to array and sort
+      const merged = Array.from(modelMap.values()).sort((a, b) => {
+        // Sort by active count first (descending)
+        const activeCountDiff = (b.activeCount || 0) - (a.activeCount || 0);
+        if (activeCountDiff !== 0) return activeCountDiff;
+
+        // Then by total count (descending)
+        const totalCountDiff =
+          (b.totalCount || b.count || 0) - (a.totalCount || a.count || 0);
+        if (totalCountDiff !== 0) return totalCountDiff;
+
+        // Finally alphabetically
+        return a.model.localeCompare(b.model);
+      });
+
+      return merged;
+    },
+    []
   );
 
   // Handle manufacturer selection
   const handleManufacturerSelect = useCallback(
-    (manufacturer: string | null) => {
+    async (manufacturer: string | null) => {
       setSelectedManufacturer(manufacturer);
       setSelectedModel(null); // Reset model selection
 
-      // Load models for the new manufacturer
-      loadModels(manufacturer);
+      // Load static models for the new manufacturer
+      const models = await loadStaticModels(manufacturer);
+
+      // Initial merge with empty live data
+      const initialMerged = mergeModels(models, []);
+      setMergedModels(initialMerged);
+      onModelsUpdate(initialMerged);
     },
-    [loadModels]
+    [loadStaticModels, mergeModels, onModelsUpdate]
   );
+
+  // Update merged models when either static or live models change
+  useEffect(() => {
+    const merged = mergeModels(staticModels, liveModels);
+    setMergedModels(merged);
+    onModelsUpdate(merged);
+
+    // Format model labels based on live data status
+    const hasLiveData = trackedAircraft.length > 0;
+    console.log(
+      `[useAircraftSelector] Merged ${staticModels.length} static and ${liveModels.length} live models. Has live data: ${hasLiveData}`
+    );
+  }, [
+    staticModels,
+    liveModels,
+    mergeModels,
+    onModelsUpdate,
+    trackedAircraft.length,
+  ]);
 
   // Handle model selection
   const handleModelSelect = useCallback((model: string | null) => {
@@ -164,7 +234,9 @@ export function useAircraftSelector({
     selectedModel,
 
     // Data
-    models,
+    models: mergedModels,
+    staticModelCount: staticModels.length,
+    liveModelCount: liveModels.length,
     allAircraft: trackedAircraft,
     filteredAircraft,
 
@@ -172,6 +244,7 @@ export function useAircraftSelector({
     isLoading: isLoadingModels || isInitializing,
     trackingStatus,
     error: trackingError || modelError,
+    hasLiveData: trackedAircraft.length > 0,
 
     // Actions
     handleManufacturerSelect,

@@ -11,18 +11,11 @@
 │   │   └── 📄 index.tsx
 │   ├── 📂 aircraft
 │   │   ├── 📂 customHooks
-│   │   │   ├── 📄 useAircraftData.ts
+│   │   │   ├── 📄 useAircraftSelector.ts
 │   │   │   ├── 📄 useFetchManufactures.ts
-│   │   │   └── 📄 useFetchModels.ts
-│   │   ├── 📂 selector
-│   │   │   ├── 📄 AircraftStats.tsx
-│   │   │   ├── 📄 ManufacturerSelector.tsx
-│   │   │   ├── 📄 MinimizeToggle.tsx
-│   │   │   ├── 📄 ModelSelector.tsx
-│   │   │   ├── 📄 UnifiedSelector.tsx
-│   │   │   ├── 📄 nNumberSelector.tsx
-│   │   │   └── 📂 services
-│   │   │       └── 📄 aircraftService.ts
+│   │   │   ├── 📄 useFetchModels.ts
+│   │   │   ├── 📄 useOpenSkyData.ts
+│   │   │   └── 📄 useRequestDeduplication.ts
 │   │   └── 📂 tracking
 │   │       ├── 📂 Map
 │   │       │   ├── 📄 DynamicMap.tsx
@@ -38,9 +31,19 @@
 │   │       │   │   └── 📄 MapControls.tsx
 │   │       │   ├── 📄 index.ts
 │   │       │   └── 📄 types.ts
-│   │       └── 📂 mapWrapper
-│   │           ├── 📄 MapWrapper.tsx
-│   │           └── 📄 index.ts
+│   │       ├── 📂 mapWrapper
+│   │       │   ├── 📄 MapWrapper.tsx
+│   │       │   └── 📄 index.ts
+│   │       └── 📂 selector
+│   │           ├── 📄 AircraftStats.tsx
+│   │           ├── 📄 ManufacturerSelector.tsx
+│   │           ├── 📄 MinimizeToggle.tsx
+│   │           ├── 📄 ModelSelector.tsx
+│   │           ├── 📄 UnifiedSelector.tsx
+│   │           ├── 📄 nNumberSelector.tsx
+│   │           ├── 📂 services
+│   │           │   └── 📄 aircraftService.ts
+│   │           └── 📄 types.ts
 │   ├── 📂 shared
 │   │   ├── 📄 ErrorBoundary.tsx
 │   │   ├── 📂 LoadingSpinner
@@ -49,7 +52,6 @@
 │   │   │   ├── 📄 index.ts
 │   │   │   └── 📄 types.ts
 │   │   └── 📄 index.ts
-│   ├── 📄 test-map.tsx
 │   └── 📂 ui
 │       ├── 📂 Card
 │       │   ├── 📄 Card.tsx
@@ -74,19 +76,20 @@
 │   ├── 📄 opensky.ts
 │   ├── 📄 parsers.ts
 │   └── 📄 ui.ts
-├── 📂 data
-│   ├── 📄 active_status.db
-│   └── 📄 aircraft.db
+├── 📂 database
 ├── 📄 db_cleanup.py
 ├── 📄 eslintrc.json
 ├── 📄 graph.svg
 ├── 📂 lib
+│   ├── 📂 api
+│   │   └── 📄 trackingApiClient.ts
 │   ├── 📂 db
-│   │   ├── 📄 backendDatabaseManager.ts
 │   │   ├── 📄 constants.ts
-│   │   ├── 📄 databaseManager.ts
-│   │   ├── 📂 migrations
-│   │   │   └── 📄 active-aircraft.ts
+│   │   ├── 📂 managers
+│   │   │   ├── 📄 baseDatabaseManager.ts
+│   │   │   ├── 📄 staticDatabaseManager.ts
+│   │   │   ├── 📄 trackingAPIManager.ts
+│   │   │   └── 📄 trackingDatabaseManager.ts
 │   │   ├── 📄 queries.ts
 │   │   ├── 📄 schema.ts
 │   │   ├── 📄 static
@@ -96,8 +99,7 @@
 │   │   ├── 📄 tracking
 │   │   ├── 📄 tracking.db
 │   │   ├── 📄 tracking.db-shm
-│   │   ├── 📄 tracking.db-wal
-│   │   └── 📄 trackingDatabaseManager.ts
+│   │   └── 📄 tracking.db-wal
 │   ├── 📂 middleware
 │   │   ├── 📄 BodyParser.ts
 │   │   └── 📄 error-handler.ts
@@ -114,6 +116,7 @@
 │   │   │   └── 📄 utils.ts
 │   │   ├── 📄 extrapolation.ts
 │   │   ├── 📄 icao-batch-service.ts
+│   │   ├── 📄 icao24Cache.ts
 │   │   ├── 📂 managers
 │   │   │   ├── 📄 aircraft-cache.ts
 │   │   │   ├── 📄 cache-manager.ts
@@ -153,6 +156,7 @@
 │   │   │   ├── 📄 n-number.ts
 │   │   │   ├── 📄 plane-icon-icon-on-transparent-background-free-png.png
 │   │   │   ├── 📄 static-data.ts
+│   │   │   ├── 📄 track.ts
 │   │   │   └── 📄 tracking.ts
 │   │   ├── 📄 health.ts
 │   │   ├── 📂 proxy
@@ -161,6 +165,7 @@
 │   │       ├── 📄 db.ts
 │   │       ├── 📄 maintenance.ts
 │   │       ├── 📄 positions.ts
+│   │       ├── 📄 tracked-icaos.ts
 │   │       ├── 📄 tracked.ts
 │   │       └── 📄 upsert.ts
 │   ├── 📄 index.tsx
@@ -184,6 +189,7 @@
 ├── 📄 requirements.txt
 ├── 📂 server
 │   └── 📄 init.ts
+├── 📄 static.db
 ├── 📂 styles
 │   ├── 📄 @tailwinds.css
 │   ├── 📄 globals.css
@@ -193,9 +199,12 @@
 │   └── 📄 utils.ts
 ├── 📄 tailwind.config.js
 ├── 📄 tracking.db
+├── 📄 tree_output.txt
 ├── 📄 tsconfig.json
 ├── 📄 tsconfig.tsbuildinfo
 ├── 📂 types
+│   ├── 📄 aircraft-models.ts
+│   ├── 📄 aircraft-types.ts
 │   ├── 📄 auth.ts
 │   ├── 📄 base.ts
 │   ├── 📄 css.d.ts
@@ -207,11 +216,14 @@
 │   ├── 📄 modules.ts
 │   ├── 📄 opensky.ts
 │   ├── 📄 regions.ts
-│   └── 📄 responses.ts
+│   ├── 📄 responses.ts
+│   └── 📄 tracking.ts
 └── 📂 utils
+    ├── 📄 aircraft-tracking-utils.ts
     ├── 📄 aircraft-transform1.ts
     ├── 📄 batchprocessor.ts
     ├── 📄 cn.ts
     ├── 📄 database-transforms.ts
+    ├── 📄 model-transforms.ts
     ├── 📄 polling-utils.ts
     └── 📄 waitForCache.ts

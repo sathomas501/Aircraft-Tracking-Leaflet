@@ -309,6 +309,7 @@ export interface StaticModel extends BaseModel {
 export interface ActiveModel extends BaseModel {
   activeCount: number;
   totalCount: number;
+  count?: number;
 }
 
 // Props interface for ModelSelector component

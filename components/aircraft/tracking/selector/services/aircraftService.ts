@@ -138,20 +138,41 @@ export async function fetchModels(manufacturer: string): Promise<Model[]> {
       headers: { 'Content-Type': 'application/json' },
     });
 
-    const data = await response.json();
-    console.log('[Aircraft Service] 📦 Raw response:', data);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch models: ${response.statusText}`);
+    }
+
+    // First, log the raw response text to debug it
+    const responseText = await response.text();
+    console.log(
+      '[Aircraft Service] 📦 Raw response text:',
+      responseText.substring(0, 300) + '...'
+    );
+
+    // Parse the response
+    const data = JSON.parse(responseText);
 
     if (!data.success || !Array.isArray(data.data)) {
       console.warn('[Aircraft Service] ⚠️ Invalid response format:', data);
       return [];
     }
 
+    console.log(
+      '[Aircraft Service] ✅ Received models:',
+      data.data.slice(0, 2)
+    );
+
     return data.data.map((model: any) => ({
       model: model.model || '',
       manufacturer: model.manufacturer || '',
-      label: `${model.model} (${model.activeCount || 0} active)`,
+      count: model.count || 0,
+      totalCount: model.totalCount || model.count || 0,
       activeCount: model.activeCount || 0,
-      totalCount: model.totalCount || 0,
+      inactiveCount:
+        model.inactiveCount || model.totalCount - model.activeCount || 0,
+      label:
+        model.label ||
+        `${model.model} (${model.activeCount || 0} active, ${model.totalCount - model.activeCount || 0} inactive)`,
     }));
   } catch (error) {
     console.error('[Aircraft Service] ❌ Error fetching models:', error);

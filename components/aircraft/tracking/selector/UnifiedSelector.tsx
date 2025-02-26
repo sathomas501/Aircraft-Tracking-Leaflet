@@ -1,112 +1,47 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback } from 'react';
 import { Plus, Minus } from 'lucide-react';
 import { UnifiedSelectorProps } from '../selector/types';
 import ManufacturerSelector from './ManufacturerSelector';
 import ModelSelector from './ModelSelector';
-import { useOpenSkyData } from '../../customHooks/useOpenSkyData';
-import { icao24CacheService } from '@/lib/services/icao24Cache';
-
-const handleManufacturerSelect = async (manufacturer: string | null) => {
-  if (!manufacturer) return;
-
-  const icao24List = await icao24CacheService.getIcao24s(manufacturer); // ✅ Correct
-  console.log(`[UnifiedSelector] Received ${icao24List.length} ICAO24s`);
-};
+import { useAircraftSelector } from '../../customHooks/useAircraftSelector';
 
 export const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
   manufacturers,
-  selectedManufacturer,
-  selectedModel,
-  setSelectedManufacturer,
-  setSelectedModel,
-  onManufacturerSelect,
-  onModelSelect,
-  onAircraftUpdate,
-  onModelsUpdate,
-  onReset,
   onError,
-  models,
-  modelCounts,
-  totalActive = 0,
 }) => {
   const [isMinimized, setIsMinimized] = useState(false);
-  const [loadingIcao24s, setLoadingIcao24s] = useState<boolean>(false);
 
-  // Connect to OpenSky tracking system
+  // Use the hook for all data and selection logic
   const {
-    isInitializing,
+    selectedManufacturer,
+    selectedModel,
+    models,
+    allAircraft,
+    filteredAircraft,
+    isLoading,
     trackingStatus,
-    trackedAircraft,
-    aircraftModels,
-    error: trackingError,
-  } = useOpenSkyData(selectedManufacturer);
+    error,
+    hasLiveData,
+    handleManufacturerSelect,
+    handleModelSelect,
+    aircraftCount,
+  } = useAircraftSelector({
+    onError: (message) => {
+      if (onError) onError(message);
+    },
+  });
 
-  // Notify parent component of updates
-  useEffect(() => {
-    if (trackingError && onError) {
-      onError(trackingError.message);
-    }
-  }, [trackingError, onError]);
-
-  useEffect(() => {
-    if (trackedAircraft && onAircraftUpdate) {
-      onAircraftUpdate(trackedAircraft);
-    }
-  }, [trackedAircraft, onAircraftUpdate]);
-
-  useEffect(() => {
-    if (aircraftModels && onModelsUpdate) {
-      onModelsUpdate(aircraftModels);
-    }
-  }, [aircraftModels, onModelsUpdate]);
-
+  // Simply toggle the minimized state
   const handleToggle = useCallback(() => {
     setIsMinimized((prev) => !prev);
   }, []);
 
-  /**
-   * Handle manufacturer selection
-   */
-  const onManufacturerSelectHandler = useCallback(
-    async (manufacturer: string | null) => {
-      if (!manufacturer) return;
-
-      setSelectedManufacturer(manufacturer);
-      console.log(`[UnifiedSelector] Manufacturer selected: ${manufacturer}`);
-
-      try {
-        setLoadingIcao24s(true);
-        await icao24CacheService.getIcao24s(manufacturer); // ✅ Correct
-
-        console.log(`[UnifiedSelector] ✅ ICAO24s fetched from hook`);
-      } catch (error) {
-        console.error('[UnifiedSelector] ❌ Error fetching ICAO24s:', error);
-        onError?.('Error fetching aircraft data.');
-      } finally {
-        setLoadingIcao24s(false);
-      }
-    },
-    [icao24CacheService, onError]
-  );
-
-  const processedModels = React.useMemo(
-    () =>
-      models.map((model) => ({
-        ...model,
-        label: `${model.model} (${modelCounts[model.model] || 0} active)`,
-      })),
-    [models, modelCounts]
-  );
-
-  /**
-   * Handle reset button click
-   */
+  // Reset handler - this will clear selections in the hook
   const handleReset = useCallback(() => {
-    if (onReset) {
-      onReset();
-    }
-  }, [onReset]);
+    handleManufacturerSelect(null);
+  }, [handleManufacturerSelect]);
 
+  // For the minimized state, show just a button
   if (isMinimized) {
     return (
       <button
@@ -141,20 +76,18 @@ export const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
       <ManufacturerSelector
         manufacturers={manufacturers}
         selectedManufacturer={selectedManufacturer}
-        onSelect={onManufacturerSelectHandler}
-        setSelectedManufacturer={setSelectedManufacturer} // ✅ Ensure this function exists
-        onAircraftUpdate={onAircraftUpdate} // ✅ Ensure this function exists
-        onModelsUpdate={onModelsUpdate} // ✅ Ensure this function exists
-        onError={onError} // ✅ Ensure this function exists
+        onSelect={handleManufacturerSelect}
+        isLoading={isLoading}
+        onError={onError}
       />
 
       {selectedManufacturer && (
         <ModelSelector
-          selectedModel={selectedModel}
-          setSelectedModel={setSelectedModel}
-          models={processedModels}
-          totalActive={totalActive}
-          onModelSelect={onModelSelect}
+          selectedModel={selectedModel || ''}
+          setSelectedModel={handleModelSelect}
+          models={models}
+          onModelSelect={handleModelSelect}
+          isLoading={isLoading}
         />
       )}
 
@@ -162,7 +95,7 @@ export const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
       {trackingStatus && (
         <div className="mt-2 p-2 border rounded bg-gray-50">
           <div className="flex items-center">
-            {isInitializing && (
+            {isLoading && (
               <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-2"></div>
             )}
             <span className="text-sm text-gray-700">{trackingStatus}</span>
@@ -171,9 +104,9 @@ export const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
       )}
 
       {/* Show aircraft count if available */}
-      {trackedAircraft.length > 0 && (
+      {aircraftCount > 0 && (
         <div className="mt-2 text-sm text-gray-600">
-          Found {trackedAircraft.length} aircraft
+          Found {filteredAircraft.length} of {aircraftCount} aircraft
         </div>
       )}
     </div>

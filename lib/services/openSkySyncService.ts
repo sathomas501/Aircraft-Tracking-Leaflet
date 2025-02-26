@@ -33,37 +33,21 @@ export class OpenSkySyncService {
   }
 
   /**
-   * Fetches live aircraft data using the proxy API instead of direct OpenSky calls.
    */
-  public async fetchLiveAircraft(icao24s: string[]): Promise<Aircraft[]> {
-    if (icao24s.length === 0) return [];
-
-    console.log(
-      `[OpenSkySyncService] Fetching live data for ${icao24s.length} ICAOs...`
-    );
+  async fetchLiveAircraft(icao24s: string[]): Promise<any[]> {
+    if (!icao24s || icao24s.length === 0) {
+      console.warn('[OpenSkySyncService] ⚠️ No ICAO24s provided');
+      return [];
+    }
 
     try {
-      if (!this.dbManager) {
-        throw new Error(
-          '[OpenSkySyncService] ❌ Database manager is not available.'
-        );
-      }
-
-      // ✅ Step 1: Check tracking database first
-      const activeAircraft = await this.dbManager.getAircraftByIcao24(icao24s);
-      if (activeAircraft.length > 0) {
-        console.log(
-          `[OpenSkySyncService] ✅ Found ${activeAircraft.length} tracked aircraft in tracking DB.`
-        );
-        return activeAircraft;
-      }
-
-      // ✅ Step 2: Call the OpenSky Proxy API
       console.log(
-        `[OpenSkySyncService] 🔄 Fetching live aircraft from OpenSky proxy...`
+        `[OpenSkySyncService] 🔄 Requesting live data for ${icao24s.length} ICAOs...`
       );
+
+      // ✅ Calls the fetcher instead of OpenSky Proxy
       const response = await fetch(
-        `${process.env.NEXT_PUBLIC_BASE_URL}/api/proxy/opensky`,
+        `${process.env.NEXT_PUBLIC_API_URL}/api/aircraft/icaofetcher`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -73,34 +57,15 @@ export class OpenSkySyncService {
 
       if (!response.ok) {
         throw new Error(
-          `[OpenSkySyncService] ❌ OpenSky Proxy API error: ${response.statusText}`
+          `[OpenSkySyncService] ❌ Fetcher API Error: ${response.statusText}`
         );
       }
 
-      const data = await response.json();
-      if (!data.success || !data.data?.states) {
-        throw new Error(
-          '[OpenSkySyncService] ❌ Invalid response format from OpenSky Proxy'
-        );
-      }
-
-      // ✅ Step 3: Transform and store data
-      const liveAircraft = data.data.states.map(DatabaseTransforms.toTracking);
-      await this.dbManager.upsertActiveAircraftBatch(liveAircraft);
-
-      console.log(
-        `[OpenSkySyncService] ✅ OpenSky Proxy returned ${liveAircraft.length} aircraft.`
-      );
-      return liveAircraft;
+      return response.json();
     } catch (error) {
       console.error(
         '[OpenSkySyncService] ❌ Error fetching live aircraft:',
         error
-      );
-      errorHandler.handleError(
-        ErrorType.OPENSKY_SERVICE,
-        'Error fetching live aircraft',
-        { error }
       );
       return [];
     }

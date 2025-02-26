@@ -1,7 +1,7 @@
 // useOpenSkyData.ts
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Aircraft } from '@/types/base';
-import { AircraftModel, ActiveModel } from '@/types/aircraft-types';
+import { AircraftModel } from '@/types/aircraft-types';
 import { useRequestDeduplication } from './useRequestDeduplication';
 import { icao24CacheService } from '@/lib/services/icao24Cache';
 
@@ -12,7 +12,7 @@ export function useOpenSkyData(manufacturer: string | null) {
   const [isInitializing, setIsInitializing] = useState<boolean>(false);
   const [trackingStatus, setTrackingStatus] = useState<string>('');
   const [trackedAircraft, setTrackedAircraft] = useState<Aircraft[]>([]);
-  const [aircraftModels, setAircraftModels] = useState<ActiveModel[]>([]);
+  const [aircraftModels, setAircraftModels] = useState<AircraftModel[]>([]);
   const [error, setError] = useState<Error | null>(null);
 
   const pollingInterval = useRef<NodeJS.Timeout | null>(null);
@@ -84,7 +84,7 @@ export function useOpenSkyData(manufacturer: string | null) {
     (aircraft: Aircraft[]) => {
       if (!aircraft.length) return;
 
-      const modelMap = new Map<string, ActiveModel>();
+      const modelMap = new Map<string, AircraftModel>();
 
       aircraft.forEach((aircraft: Aircraft) => {
         const modelName = aircraft.model || aircraft.TYPE_AIRCRAFT || 'Unknown';
@@ -94,30 +94,30 @@ export function useOpenSkyData(manufacturer: string | null) {
         const existing = modelMap.get(key);
 
         if (existing) {
-          existing.activeCount++;
-          if (existing.icao24s && aircraft.icao24) {
-            existing.icao24s.push(aircraft.icao24);
-          }
+          existing.count = (existing.count || 0) + 1;
+          existing.activeCount =
+            (existing.activeCount || 0) + (aircraft.isTracked ? 1 : 0);
+          existing.totalCount = (existing.totalCount || 0) + 1;
         } else {
           modelMap.set(key, {
             model: modelName,
             manufacturer: aircraft.manufacturer || manufacturer || '',
             label: `${modelName} (${aircraft.isTracked ? 'active' : 'inactive'})`,
+            count: 1,
             activeCount: aircraft.isTracked ? 1 : 0,
             totalCount: 1,
-            icao24s: aircraft.icao24 ? [aircraft.icao24] : [],
           });
         }
       });
 
       // Convert to array and sort by active count (most active first)
       const models = Array.from(modelMap.values()).sort(
-        (a, b) => b.activeCount - a.activeCount
+        (a, b) => (b.activeCount || 0) - (a.activeCount || 0)
       );
 
       // Update label with counts
       models.forEach((model) => {
-        model.label = `${model.model} (${model.activeCount} active)`;
+        model.label = `${model.model} (${model.activeCount || 0} active)`;
       });
 
       console.log(

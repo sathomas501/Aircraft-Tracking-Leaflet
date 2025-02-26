@@ -2,7 +2,6 @@
 import path from 'path';
 import { BaseDatabaseManager } from '../managers/baseDatabaseManager';
 import CacheManager from '@/lib/services/managers/cache-manager';
-import { aircraftCache } from '@/lib/services/managers/aircraft-cache';
 import { AircraftRecord, Aircraft } from '../../../types/base';
 import trackingDatabaseManager from './trackingDatabaseManager'; // ✅ Import TrackingDB
 
@@ -97,46 +96,52 @@ class StaticDatabaseManager extends BaseDatabaseManager {
     console.log('[StaticDB] Tables and indices created');
   }
 
-  private async getValidManufacturers(): Promise<Set<string>> {
+  private async getValidManufacturers(
+    limit: number = 50
+  ): Promise<Set<string>> {
     const cached = await this.manufacturerValidationCache.get(
       this.MANUFACTURER_VALIDATION_CACHE_KEY
     );
-
     if (cached) {
       console.log(
-        '[StaticDB] Using cached top 50 manufacturer validation list'
+        `[StaticDB] Using cached manufacturer validation list (Top ${limit})`
       );
       return cached;
     }
 
     console.log(
-      '[StaticDB] Fetching top 50 manufacturer validation list from database'
+      `[StaticDB] Fetching top ${limit} manufacturers for validation from database`
     );
 
-    // Select top 50 manufacturers based on aircraft count
     const query = `
-        SELECT manufacturer 
-        FROM aircraft 
-        WHERE manufacturer IS NOT NULL 
-        AND manufacturer != ''
-        GROUP BY manufacturer
-        ORDER BY COUNT(*) DESC
-        LIMIT 50
-    `;
+    SELECT manufacturer
+    FROM (
+      SELECT 
+        TRIM(manufacturer) AS manufacturer, 
+        COUNT(*) AS count
+      FROM aircraft 
+      WHERE manufacturer IS NOT NULL 
+      AND TRIM(manufacturer) != ''
+      GROUP BY TRIM(manufacturer)
+      ORDER BY count DESC
+      LIMIT ?
+    ) AS TopManufacturers
+  `;
 
-    const results = await this.executeQuery<{ manufacturer: string }>(query);
+    const results = await this.executeQuery<{ manufacturer: string }>(query, [
+      limit,
+    ]);
     const manufacturers = new Set(
       results.map((r) => r.manufacturer.trim().toUpperCase())
     );
 
-    // Cache the filtered top 50 manufacturers
     await this.manufacturerValidationCache.set(
       this.MANUFACTURER_VALIDATION_CACHE_KEY,
       manufacturers
     );
 
     console.log(
-      `[StaticDB] Cached ${manufacturers.size} manufacturers for validation`
+      `[StaticDB] Cached ${manufacturers.size} top manufacturers for validation`
     );
 
     return manufacturers;

@@ -63,28 +63,25 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
 
       // Create minimal Aircraft objects for tracking initialization
       const currentTime = Math.floor(Date.now() / 1000); // Current timestamp in seconds
-      const aircraft = icao24s.map(
-        (icao24) =>
-          ({
-            icao24,
-            'N-NUMBER': '',
-            manufacturer,
-            latitude: 0,
-            longitude: 0,
-            altitude: 0,
-            heading: 0,
-            velocity: 0,
-            on_ground: true,
-            last_contact: currentTime,
-            lastSeen: currentTime * 1000, // Convert to milliseconds for lastSeen
-            NAME: '',
-            CITY: '',
-            STATE: '',
-            OWNER_TYPE: '',
-            TYPE_AIRCRAFT: '',
-            isTracked: true,
-          }) as Aircraft
-      );
+      const aircraft = icao24s.map((icao24) => ({
+        icao24, // Make sure this is never null or empty
+        manufacturer,
+        latitude: 0,
+        longitude: 0,
+        altitude: 0,
+        on_ground: true,
+        last_contact: Math.floor(Date.now() / 1000) - 48 * 60 * 60, // Old timestamp
+        updated_at: Math.floor(Date.now() / 1000),
+        'N-NUMBER': '',
+        heading: 0,
+        velocity: 0,
+        NAME: '',
+        CITY: '',
+        STATE: '',
+        OWNER_TYPE: '',
+        TYPE_AIRCRAFT: '',
+        isTracked: false,
+      }));
 
       // Process in smaller batches to avoid overwhelming the database
       const BATCH_SIZE = 100;
@@ -100,10 +97,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
         totalProcessed += batchCount;
       }
 
-      console.log(
-        `[Track API] ✅ Initialized tracking for ${totalProcessed} aircraft`
-      );
-
+      // Then use totalProcessed instead of batchCount in your response
       return {
         success: true,
         message: `Initialized tracking for ${totalProcessed} aircraft`,
