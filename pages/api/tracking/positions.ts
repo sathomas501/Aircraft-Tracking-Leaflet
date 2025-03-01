@@ -1,9 +1,9 @@
-// pages/api/tracking/positions.ts
+// pages/api/tracking/position.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { TrackingDatabaseManager } from '@/lib/db/managers/trackingDatabaseManager';
 import { withErrorHandler } from '@/lib/middleware/error-handler';
 import { APIErrors } from '@/lib/services/error-handler/api-error';
-import type { Aircraft } from '@/types/base';
+import { TrackingDataService } from '../../../lib/services/tracking-services/tracking-data-service';
 
 interface PositionUpdate {
   icao24: string;
@@ -13,127 +13,59 @@ interface PositionUpdate {
   velocity?: number;
   heading?: number;
   on_ground?: boolean;
-  last_contact?: number;
   manufacturer?: string;
 }
 
 interface APIResponse {
   success: boolean;
   message: string;
-  data?: {
-    newICAOs?: string[];
-    existingICAOs?: string[];
-    updated?: number;
-    aircraft?: Aircraft[];
-  };
+  data?: any;
 }
 
+/**
+ * API for updating individual aircraft positions
+ */
 async function handler(req: NextApiRequest, res: NextApiResponse<APIResponse>) {
   if (req.method !== 'POST') {
     throw APIErrors.BadRequest('Method not allowed');
   }
 
-  const { action } = req.body;
   const trackingDb = TrackingDatabaseManager.getInstance();
+  const trackingService = new TrackingDataService(trackingDb);
+  const { icao24, position } = req.body;
+
+  if (!icao24 || !position || typeof position !== 'object') {
+    throw APIErrors.BadRequest('Invalid request format');
+  }
+
+  const { latitude, longitude, heading } = position;
+  if (
+    typeof latitude !== 'number' ||
+    typeof longitude !== 'number' ||
+    typeof heading !== 'number'
+  ) {
+    throw APIErrors.BadRequest('Missing required position fields');
+  }
 
   try {
-    switch (action) {
-      case 'updateBatch': {
-        const { positions } = req.body;
-        if (!Array.isArray(positions)) {
-          throw APIErrors.BadRequest('Invalid positions format');
-        }
+    const success = await trackingService.updateSinglePosition(
+      icao24,
+      position
+    );
 
-        const aircraftData: Aircraft[] = positions.map(
-          (pos: PositionUpdate) => ({
-            icao24: pos.icao24,
-            latitude: pos.latitude,
-            longitude: pos.longitude,
-            altitude: pos.altitude || 0,
-            velocity: pos.velocity || 0,
-            heading: pos.heading || 0,
-            on_ground: pos.on_ground || false,
-            last_contact: pos.last_contact || Math.floor(Date.now() / 1000),
-            manufacturer: pos.manufacturer || '',
-            isTracked: true,
-            'N-NUMBER': '',
-            model: '',
-            TYPE_AIRCRAFT: '',
-            OWNER_TYPE: '',
-            NAME: '',
-            CITY: '',
-            STATE: '',
-          })
-        );
-
-        const updated =
-          await trackingDb.upsertActiveAircraftBatch(aircraftData);
-
-        return res.status(200).json({
-          success: true,
-          message: `Updated ${updated} aircraft positions`,
-          data: { updated },
-        });
-      }
-
-      case 'getTrackedAircraft': {
-        // ✅ FIXED CASE STATEMENT
-        const { manufacturer } = req.body;
-        if (!manufacturer) {
-          throw APIErrors.BadRequest('Manufacturer is required');
-        }
-
-        console.log(
-          `[TrackingAPI] Fetching tracked aircraft for: ${manufacturer}`
-        );
-
-        const aircraft = await trackingDb.getTrackedAircraft(manufacturer);
-
-        return res.status(200).json({
-          success: true,
-          message: `Found ${aircraft.length} tracked aircraft`,
-          data: { aircraft },
-        });
-      }
-
-      case 'initializeMap': {
-        // Return empty success for initial map load
-        return res.status(200).json({
-          success: true,
-          message: 'Map initialized',
-          data: {
-            aircraft: [], // Empty initial state
-          },
-        });
-      }
-
-      case 'getTrackedAircraft': {
-        const { manufacturer } = req.body;
-        // Allow empty manufacturer for initial state
-        if (!manufacturer) {
-          return res.status(200).json({
-            success: true,
-            message: 'No manufacturer selected',
-            data: {
-              aircraft: [],
-            },
-          });
-        }
-
-        return res.status(200).json({
-          success: true,
-          message: 'No manufacturer selected',
-          data: {
-            aircraft: [],
-          },
-        });
-      }
-
-      default:
-        throw APIErrors.BadRequest(`Invalid action: ${action}`);
+    if (success) {
+      return res.status(200).json({
+        success: true,
+        message: `Updated position for ${icao24}`,
+      });
+    } else {
+      return res.status(404).json({
+        success: false,
+        message: `Aircraft ${icao24} not found`,
+      });
     }
   } catch (error) {
-    console.error('[TrackingAPI] Error processing request:', error);
+    console.error('[TrackingAPI] Error updating position:', error);
     throw APIErrors.Internal(
       error instanceof Error ? error : new Error('Unknown error')
     );

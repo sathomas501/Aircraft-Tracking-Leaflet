@@ -70,11 +70,18 @@ export abstract class BaseDatabaseManager {
     }
   }
 
+  /**
+   * Check if database is fully initialized and ready
+   */
   public get isReady(): boolean {
     return this._isInitialized && this.db !== null;
   }
 
-  protected async ensureInitialized(): Promise<
+  /**
+   * Ensure database is initialized before performing operations
+   * Making this public so repositories can use it directly
+   */
+  public async ensureInitialized(): Promise<
     SQLiteDatabaseDriver<sqlite3.Database>
   > {
     if (!this.isReady) {
@@ -88,6 +95,9 @@ export abstract class BaseDatabaseManager {
     return this.db;
   }
 
+  /**
+   * Initialize the database
+   */
   public async initializeDatabase(): Promise<void> {
     if (this.isReady) return;
 
@@ -104,6 +114,9 @@ export abstract class BaseDatabaseManager {
     }
   }
 
+  /**
+   * Perform the actual initialization work
+   */
   protected async performInitialization(): Promise<void> {
     try {
       if (!sqlite3Instance?.Database || !sqlite) {
@@ -146,8 +159,25 @@ export abstract class BaseDatabaseManager {
     }
   }
 
+  /**
+   * Abstract method to create tables, must be implemented by derived classes
+   */
   protected abstract createTables(): Promise<void>;
 
+  /**
+   * Get database instance - public so repositories can access if needed
+   */
+  public async getDatabase(): Promise<SQLiteDatabaseDriver<sqlite3.Database>> {
+    await this.ensureInitialized();
+    if (!this.db) {
+      throw new Error('[BaseDatabaseManager] Database not initialized');
+    }
+    return this.db;
+  }
+
+  /**
+   * Execute a SQL query with optional parameters
+   */
   public async executeQuery<T>(
     sql: string,
     params: unknown[] = []
@@ -162,6 +192,9 @@ export abstract class BaseDatabaseManager {
     }
   }
 
+  /**
+   * Close the database connection
+   */
   public async close(): Promise<void> {
     if (this.db) {
       try {

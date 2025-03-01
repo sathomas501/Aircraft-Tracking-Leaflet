@@ -35,6 +35,11 @@ export default async function handler(
     });
   }
 
+  console.warn(
+    `[OpenSky Proxy] 🛑 Duplicate request detected for OpenSky API:`,
+    req.url
+  );
+
   // Get ICAO24s from either query params (GET) or body (POST)
   let icao24List: string[] = [];
 
@@ -109,7 +114,11 @@ export default async function handler(
     });
 
     console.log('[OpenSky Proxy] Making request to OpenSky:', {
-      url: `${openSkyUrl}?${params}`,
+      url: `https://opensky-network.org/api/states/all?icao24=${
+        icao24List.length > 10
+          ? `${icao24List.slice(0, 5).join(',')} ... ${icao24List.slice(-5).join(',')}`
+          : icao24List.join(',')
+      }`,
       icaoCount: icao24List.length,
       sample: icao24List.slice(0, 3),
     });

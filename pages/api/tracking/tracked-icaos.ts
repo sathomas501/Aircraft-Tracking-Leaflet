@@ -47,6 +47,23 @@ async function handler(
       }
     }
 
+    try {
+      const trackingDb = TrackingDatabaseManager.getInstance();
+
+      // Initialize the database
+      await trackingDb.ensureInitialized();
+
+      // Get all tracked ICAO24 codes
+      const trackedIcaos = await trackingDb.getTrackedICAOs();
+
+      console.log(
+        `[TrackedIcaosAPI] Found ${trackedIcaos.length} tracked ICAO24 codes`
+      );
+
+      // Rest of your code...
+    } catch (error) {
+      // Error handling...
+    }
     return res.status(200).json({
       success: true,
       data: trackedICAOs,

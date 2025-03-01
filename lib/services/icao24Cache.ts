@@ -6,41 +6,54 @@ class Icao24CacheService {
   async getIcao24s(manufacturer: string): Promise<string[]> {
     if (!manufacturer) return [];
 
-    // ✅ Step 1: Check cache
+    return this.cache.get(manufacturer) ?? [];
+  }
+
+  /**
+   * ✅ Stores ICAO24s in the cache
+   */
+  cacheIcaos(manufacturer: string, icao24s: string[]): void {
+    if (!manufacturer || !icao24s.length) return;
+
+    const existing = this.cache.get(manufacturer) ?? [];
+    this.cache.set(manufacturer, [...new Set([...existing, ...icao24s])]);
+
+    // Expire cache after `CACHE_DURATION`
+    setTimeout(() => this.cache.delete(manufacturer), this.CACHE_DURATION);
+  }
+
+  /**
+   * ✅ Fetch ICAO24s with caching
+   */
+  async fetchAndCacheIcao24s(
+    manufacturer: string,
+    fetchFunction: () => Promise<string[]>
+  ): Promise<string[]> {
+    if (!manufacturer) return [];
+
+    // ✅ Step 1: Check cache first
     if (this.cache.has(manufacturer)) {
       console.log(
         `[Icao24CacheService] ✅ Using cached ICAO24s for ${manufacturer}`
       );
-      return this.cache.get(manufacturer)!;
+      return this.cache.get(manufacturer) ?? [];
     }
 
-    // ✅ Step 2: Check if request is already pending
+    // ✅ Step 2: Prevent duplicate fetches
     if (this.pendingRequests.has(manufacturer)) {
-      console.log(`[Icao24CacheService] 🚧 Waiting for existing request...`);
+      console.log(
+        `[Icao24CacheService] 🚧 Waiting for an existing fetch request...`
+      );
       return this.pendingRequests.get(manufacturer)!;
     }
 
-    // ✅ Step 3: Fetch from API
-    console.log(`[Icao24CacheService] 🔄 Fetching ICAO24s for ${manufacturer}`);
-
-    const fetchPromise = fetch('/api/aircraft/icao24s', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ manufacturer }),
-    })
-      .then(async (response) => {
-        if (!response.ok) {
-          throw new Error(
-            `[Icao24CacheService] ❌ Failed to fetch ICAO24s: ${response.statusText}`
-          );
-        }
-        const data = await response.json();
-        const icaoList = data?.data?.icao24List ?? [];
-
-        // ✅ Cache result
-        this.cache.set(manufacturer, icaoList);
-        setTimeout(() => this.cache.delete(manufacturer), this.CACHE_DURATION);
-
+    // ✅ Step 3: Fetch ICAOs
+    console.log(
+      `[Icao24CacheService] 🔄 Fetching ICAO24s for ${manufacturer}...`
+    );
+    const fetchPromise = fetchFunction()
+      .then((icaoList) => {
+        this.cacheIcaos(manufacturer, icaoList);
         return icaoList;
       })
       .catch((error) => {
@@ -51,7 +64,7 @@ class Icao24CacheService {
         this.pendingRequests.delete(manufacturer);
       });
 
-    // ✅ Store pending request to avoid duplicate fetches
+    // ✅ Store pending request
     this.pendingRequests.set(manufacturer, fetchPromise);
     return fetchPromise;
   }

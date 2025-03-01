@@ -118,8 +118,8 @@ export class ClientTrackingService {
       this.currentManufacturer = manufacturer;
 
       // ✅ Fetch ICAO24s using the optimized function (handles cache & deduplication)
-      const { startTracking } = useOpenSkyData(manufacturer);
-      await startTracking();
+      const openSkyData = useOpenSkyData(manufacturer);
+      await openSkyData.refreshStatus();
 
       console.log(`[Tracking] ✅ ICAOs retrieved. Starting tracking...`);
       await this.pollAircraftData();
