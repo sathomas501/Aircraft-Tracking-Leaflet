@@ -1,4 +1,5 @@
-// lib/utils/aircraft-transform.ts
+//utils/aircraft-transform.ts
+import { modelAssignmentService } from '@/lib/services/model-assignment-service';
 import type {
   Aircraft,
   AircraftPosition,
@@ -81,62 +82,286 @@ export const transformAircraft = (aircraft: Aircraft[]): Aircraft[] => {
 /**
  * OpenSky-specific transformations and validations
  */
+// TypeScript-safe version of OpenSkyTransforms
 export const OpenSkyTransforms = {
-  validateState(state: unknown): state is OpenSkyStateArray {
-    if (!Array.isArray(state)) return false;
+  validateObjectState(state: unknown): boolean {
+    if (!state || typeof state !== 'object') {
+      console.log('[OpenSkyTransforms] State is not an object:', state);
+      return false;
+    }
 
-    return (
-      typeof state[0] === 'string' && // icao24
-      typeof state[4] === 'number' && // last_contact
-      typeof state[5] === 'number' && // longitude
-      typeof state[6] === 'number' && // latitude
-      (state[8] === true || state[8] === false) // on_ground must be boolean
-    );
+    const objState = state as Record<string, any>;
+
+    // Check required fields
+    if (typeof objState.icao24 !== 'string' || !objState.icao24) {
+      console.log('[OpenSkyTransforms] Invalid icao24:', objState.icao24);
+      return false;
+    }
+
+    if (
+      typeof objState.last_contact !== 'number' ||
+      isNaN(objState.last_contact)
+    ) {
+      console.log(
+        '[OpenSkyTransforms] Invalid last_contact:',
+        objState.last_contact
+      );
+      return false;
+    }
+
+    if (typeof objState.longitude !== 'number' || isNaN(objState.longitude)) {
+      console.log('[OpenSkyTransforms] Invalid longitude:', objState.longitude);
+      return false;
+    }
+
+    if (typeof objState.latitude !== 'number' || isNaN(objState.latitude)) {
+      console.log('[OpenSkyTransforms] Invalid latitude:', objState.latitude);
+      return false;
+    }
+
+    // Check on_ground - use proper type checking
+    const onGround = objState.on_ground;
+    const isValidOnGround =
+      typeof onGround === 'boolean' ||
+      (typeof onGround === 'number' && (onGround === 0 || onGround === 1));
+
+    if (!isValidOnGround) {
+      console.log('[OpenSkyTransforms] Invalid on_ground:', objState.on_ground);
+      return false;
+    }
+
+    // Basic validation passed
+    return true;
   },
 
-  toTrackingData(state: OpenSkyStateArray): Aircraft {
-    return BaseTransforms.normalize({
-      icao24: state[0],
-      latitude: state[6],
-      longitude: state[5],
-      altitude: state[7] || 0,
-      velocity: state[9] || 0,
-      heading: state[10] || 0,
-      on_ground: state[8] || false,
-      last_contact: state[4] || Math.floor(Date.now() / 1000),
-      manufacturer: '',
-      'N-NUMBER': '',
-      model: '',
-      NAME: '',
-      CITY: '',
-      STATE: '',
-      TYPE_AIRCRAFT: '',
-      OWNER_TYPE: '',
-      isTracked: true,
-    });
+  /**
+   * Transform object-format state to Aircraft
+   */
+  toExtendedAircraftFromObject(
+    state: Record<string, any>,
+    manufacturer: string
+  ): Aircraft {
+    try {
+      // Add better logging for diagnosis
+      console.log(
+        `[OpenSkyTransforms] Processing object state for ${state.icao24} from manufacturer: "${manufacturer}"`
+      );
+
+      // Check if manufacturer is empty and log a warning
+      if (!manufacturer) {
+        console.warn(
+          '[OpenSkyTransforms] Warning: Empty manufacturer provided for aircraft:',
+          state.icao24
+        );
+      }
+
+      // Convert on_ground to boolean safely
+      const onGround = this.convertToBoolean(state.on_ground);
+
+      // Create the aircraft with the provided manufacturer (even if it's an empty string)
+      const aircraft = BaseTransforms.normalize({
+        icao24: state.icao24,
+        latitude: state.latitude,
+        longitude: state.longitude,
+        altitude: typeof state.altitude === 'number' ? state.altitude : 0,
+        velocity: typeof state.velocity === 'number' ? state.velocity : 0,
+        heading: typeof state.heading === 'number' ? state.heading : 0,
+        on_ground: onGround,
+        last_contact:
+          typeof state.last_contact === 'number'
+            ? state.last_contact
+            : Math.floor(Date.now() / 1000),
+        // Use the provided manufacturer and ensure it's not empty
+        manufacturer: manufacturer || 'Unknown',
+        'N-NUMBER': state['N-NUMBER'] || '',
+        model: state.model || '',
+        NAME: state.NAME || '',
+        CITY: state.CITY || '',
+        STATE: state.STATE || '',
+        TYPE_AIRCRAFT: state.TYPE_AIRCRAFT || '',
+        OWNER_TYPE: state.OWNER_TYPE || '',
+        isTracked: true,
+        lastSeen: state.lastSeen || Date.now(),
+      });
+
+      // Log the final manufacturer value for verification
+      console.log(
+        `[OpenSkyTransforms] Aircraft ${state.icao24} manufacturer set to: "${aircraft.manufacturer}"`
+      );
+
+      return aircraft;
+    } catch (error) {
+      console.error(
+        '[OpenSkyTransforms] Error in toExtendedAircraftFromObject:',
+        error,
+        'for state:',
+        state
+      );
+
+      // Return a minimal valid aircraft object in case of error
+      return BaseTransforms.normalize({
+        icao24: typeof state.icao24 === 'string' ? state.icao24 : 'unknown',
+        latitude: typeof state.latitude === 'number' ? state.latitude : 0,
+        longitude: typeof state.longitude === 'number' ? state.longitude : 0,
+        // Make sure manufacturer is passed here too
+        manufacturer: manufacturer || 'Unknown',
+        isTracked: true,
+      });
+    }
   },
 
   toExtendedAircraft(state: OpenSkyStateArray, manufacturer: string): Aircraft {
-    return BaseTransforms.normalize({
-      icao24: state[0],
-      latitude: state[6],
-      longitude: state[5],
-      altitude: state[7] || 0,
-      velocity: state[9] || 0,
-      heading: state[10] || 0,
-      on_ground: state[8] || false,
-      last_contact: state[4] || Math.floor(Date.now() / 1000),
-      manufacturer,
-      'N-NUMBER': '',
-      model: '',
-      NAME: '',
-      CITY: '',
-      STATE: '',
-      TYPE_AIRCRAFT: '',
-      OWNER_TYPE: '',
-      isTracked: true,
-      lastSeen: Date.now(),
-    });
+    try {
+      console.log(
+        `[OpenSkyTransforms] Processing state for ${state[0]} from ${manufacturer}`
+      );
+
+      // Convert on_ground to boolean safely
+      const onGround = this.convertToBoolean(state[8]);
+
+      // Create base aircraft
+      const aircraft = BaseTransforms.normalize({
+        icao24: state[0],
+        latitude: state[6],
+        longitude: state[5],
+        altitude: typeof state[7] === 'number' ? state[7] : 0,
+        velocity: typeof state[9] === 'number' ? state[9] : 0,
+        heading: typeof state[10] === 'number' ? state[10] : 0,
+        on_ground: onGround,
+        last_contact:
+          typeof state[4] === 'number'
+            ? state[4]
+            : Math.floor(Date.now() / 1000),
+        manufacturer,
+        'N-NUMBER': '',
+        model: '',
+        NAME: '',
+        CITY: '',
+        STATE: '',
+        TYPE_AIRCRAFT: '',
+        OWNER_TYPE: '',
+        isTracked: true,
+        lastSeen: Date.now(),
+      });
+
+      // Assign model based on manufacturer and ICAO24
+      return modelAssignmentService.assignModel(aircraft);
+    } catch (error) {
+      console.error(
+        '[OpenSkyTransforms] Error in toExtendedAircraft:',
+        error,
+        'for state:',
+        state
+      );
+
+      // Return a minimal valid aircraft object in case of error
+      return BaseTransforms.normalize({
+        icao24: typeof state[0] === 'string' ? state[0] : 'unknown',
+        latitude: 0,
+        longitude: 0,
+        manufacturer,
+        isTracked: true,
+      });
+    }
+  },
+
+  /**
+   * Transform object-format state to Aircraft with model assignment
+   */
+
+  validateState(state: unknown): state is OpenSkyStateArray {
+    if (!Array.isArray(state)) {
+      console.log('[OpenSkyTransforms] State is not an array:', state);
+      return false;
+    }
+
+    // Check minimum length
+    if (state.length < 11) {
+      console.log('[OpenSkyTransforms] State array too short:', state.length);
+      return false;
+    }
+
+    // Check icao24 (required)
+    if (typeof state[0] !== 'string' || !state[0]) {
+      console.log('[OpenSkyTransforms] Invalid icao24:', state[0]);
+      return false;
+    }
+
+    // Check last_contact (required)
+    if (typeof state[4] !== 'number' || isNaN(state[4])) {
+      console.log('[OpenSkyTransforms] Invalid last_contact:', state[4]);
+      return false;
+    }
+
+    // Check longitude (required)
+    if (typeof state[5] !== 'number' || isNaN(state[5])) {
+      console.log('[OpenSkyTransforms] Invalid longitude:', state[5]);
+      return false;
+    }
+
+    // Check latitude (required)
+    if (typeof state[6] !== 'number' || isNaN(state[6])) {
+      console.log('[OpenSkyTransforms] Invalid latitude:', state[6]);
+      return false;
+    }
+
+    // Check on_ground - use proper type checking instead of direct comparison
+    const onGround = state[8];
+    const isValidOnGround =
+      typeof onGround === 'boolean' ||
+      (typeof onGround === 'number' && (onGround === 0 || onGround === 1));
+
+    if (!isValidOnGround) {
+      console.log('[OpenSkyTransforms] Invalid on_ground:', state[8]);
+      return false;
+    }
+
+    // Basic validation passed
+    return true;
+  },
+
+  toTrackingData(state: OpenSkyStateArray): Aircraft {
+    try {
+      // Convert on_ground to boolean safely
+      const onGround = this.convertToBoolean(state[8]);
+
+      return BaseTransforms.normalize({
+        icao24: state[0],
+        latitude: state[6],
+        longitude: state[5],
+        altitude: typeof state[7] === 'number' ? state[7] : 0,
+        velocity: typeof state[9] === 'number' ? state[9] : 0,
+        heading: typeof state[10] === 'number' ? state[10] : 0,
+        on_ground: onGround,
+        last_contact:
+          typeof state[4] === 'number'
+            ? state[4]
+            : Math.floor(Date.now() / 1000),
+        manufacturer: '',
+        'N-NUMBER': '',
+        model: '',
+        NAME: '',
+        CITY: '',
+        STATE: '',
+        TYPE_AIRCRAFT: '',
+        OWNER_TYPE: '',
+        isTracked: true,
+      });
+    } catch (error) {
+      console.error('[OpenSkyTransforms] Error in toTrackingData:', error);
+      return BaseTransforms.createBase();
+    }
+  },
+
+  // Helper method to safely convert boolean or number to boolean
+  convertToBoolean(value: unknown): boolean {
+    if (typeof value === 'boolean') {
+      return value;
+    }
+    if (typeof value === 'number') {
+      return value === 1;
+    }
+    return false;
   },
 };
 
@@ -354,6 +579,69 @@ export const transformToExtendedAircraft = (
     type: a.TYPE_AIRCRAFT || 'Unknown', // Ensure 'type' exists
     isGovernment: a.OWNER_TYPE === '5', // Ensure 'isGovernment' exists
   }));
+};
+
+/**
+ * Utility functions to clean and standardize data
+ */
+export const DataCleanupUtils = {
+  /**
+   * Remove duplicate keys from an object
+   * When JSON is malformed or corrupted, sometimes keys can appear multiple times
+   */
+  cleanupDuplicateKeys(obj: Record<string, any>): Record<string, any> {
+    if (!obj || typeof obj !== 'object') return obj;
+
+    // Create a new clean object
+    const cleanObj: Record<string, any> = {};
+
+    // Use a Set to track which keys we've seen
+    const seenKeys = new Set<string>();
+
+    // Get all keys from the object
+    Object.keys(obj).forEach((key) => {
+      // Only process each key once
+      if (!seenKeys.has(key)) {
+        seenKeys.add(key);
+
+        // If the value is an object, recursively clean it
+        if (
+          obj[key] &&
+          typeof obj[key] === 'object' &&
+          !Array.isArray(obj[key])
+        ) {
+          cleanObj[key] = this.cleanupDuplicateKeys(obj[key]);
+        } else {
+          cleanObj[key] = obj[key];
+        }
+      }
+    });
+
+    return cleanObj;
+  },
+
+  /**
+   * Normalize all fields in an aircraft state object
+   */
+  normalizeStateFields(state: Record<string, any>): Record<string, any> {
+    // First clean up any duplicate keys
+    const cleanState = this.cleanupDuplicateKeys(state);
+
+    // Ensure all required fields have proper types
+    return {
+      ...cleanState,
+      icao24: String(cleanState.icao24 || ''),
+      latitude: Number(cleanState.latitude) || 0,
+      longitude: Number(cleanState.longitude) || 0,
+      altitude: Number(cleanState.altitude) || 0,
+      heading: Number(cleanState.heading) || 0,
+      velocity: Number(cleanState.velocity) || 0,
+      on_ground: Boolean(cleanState.on_ground),
+      last_contact:
+        Number(cleanState.last_contact) || Math.floor(Date.now() / 1000),
+      lastSeen: Number(cleanState.lastSeen) || Date.now(),
+    };
+  },
 };
 
 // Convenience exports for backward compatibility

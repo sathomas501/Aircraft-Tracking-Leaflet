@@ -18,10 +18,6 @@ export const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
     models,
     allAircraft,
     filteredAircraft,
-    isLoading,
-    trackingStatus,
-    error,
-    hasLiveData,
     handleManufacturerSelect,
     handleModelSelect,
     aircraftCount,
@@ -30,6 +26,9 @@ export const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
       if (onError) onError(message);
     },
   });
+
+  const [isLoading, setIsLoading] = useState(false);
+  const [trackingStatus, setTrackingStatus] = useState('');
 
   // Simply toggle the minimized state
   const handleToggle = useCallback(() => {
@@ -88,6 +87,10 @@ export const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
           models={models}
           onModelSelect={handleModelSelect}
           isLoading={isLoading}
+          setIsLoading={setIsLoading}
+          trackedAircraftCount={allAircraft.length}
+          selectedManufacturer={selectedManufacturer}
+          setTrackingStatus={setTrackingStatus}
         />
       )}
 

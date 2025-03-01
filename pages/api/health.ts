@@ -37,25 +37,57 @@ async function handler(
 
     // Get tracking database status
     const trackingDb = TrackingDatabaseManager.getInstance();
-    const [trackingDbState, connectionCheck] = await Promise.all([
-      trackingDb.getDatabaseState(),
-      trackingDb.checkConnection(),
-    ]);
+
+    // Initialize the database if needed
+    await trackingDb.ensureInitialized();
+
+    // Check if the database is ready
+    const isDbReady = trackingDb.isReady;
+
+    // Check connection by running a test query
+    let connectionCheck = false;
+    try {
+      const testQuery = await trackingDb.executeQuery('SELECT 1 as test');
+      connectionCheck =
+        (testQuery as { test: number }[]).length > 0 &&
+        (testQuery as { test: number }[])[0].test === 1;
+    } catch (error) {
+      console.error('[HealthAPI] Database connection check failed:', error);
+      connectionCheck = false;
+    }
+
+    // Get the tables in the database
+    let tables: string[] = [];
+    try {
+      const tableQuery = await trackingDb.executeQuery<{ name: string }>(`
+        SELECT name FROM sqlite_master 
+        WHERE type='table' 
+        ORDER BY name
+      `);
+      tables = tableQuery.map((row) => row.name);
+    } catch (error) {
+      console.error('[HealthAPI] Failed to get database tables:', error);
+      tables = [];
+    }
+
+    // Check for cache status - replace with appropriate method if available
+    const cacheStatus = {
+      manufacturersAge: null,
+      icaosAge: null,
+    };
 
     // Determine overall status
-    const hasRequiredTables =
-      trackingDbState.tables.includes('tracked_aircraft');
-    const isHealthy =
-      connectionCheck && hasRequiredTables && trackingDbState.isReady;
+    const hasRequiredTables = tables.includes('tracked_aircraft');
+    const isHealthy = connectionCheck && hasRequiredTables && isDbReady;
 
     const response: HealthResponse = {
       status: isHealthy ? 'healthy' : 'degraded',
       uptime: process.uptime(),
       databases: {
         tracking: {
-          status: trackingDbState.isReady ? 'connected' : 'disconnected',
-          tables: trackingDbState.tables,
-          cacheStatus: trackingDbState.cacheStatus,
+          status: isDbReady ? 'connected' : 'disconnected',
+          tables: tables,
+          cacheStatus: cacheStatus,
           details: {
             hasRequiredTables,
             connectionCheck,

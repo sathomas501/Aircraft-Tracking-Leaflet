@@ -130,29 +130,42 @@ export async function fetchModels(manufacturer: string): Promise<Model[]> {
 
     console.log('[Aircraft Service] 🔄 Fetching models for:', manufacturer);
     const encodedManufacturer = encodeURIComponent(manufacturer.trim());
-    const url = `/api/aircraft/models?manufacturer=${encodedManufacturer}`;
-
-    console.log('[Aircraft Service] 📡 Making request to:', url);
-    const response = await fetch(url, {
-      method: 'GET',
+    const response = await fetch('/api/aircraft/update-models', {
+      method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ manufacturer }),
     });
 
+    // Handle HTTP errors
     if (!response.ok) {
-      throw new Error(`Failed to fetch models: ${response.statusText}`);
+      console.error(
+        `[Aircraft Service] ❌ API responded with ${response.status}: ${response.statusText}`
+      );
+      return [];
     }
 
-    // First, log the raw response text to debug it
+    // Read response as text first for debugging
     const responseText = await response.text();
     console.log(
       '[Aircraft Service] 📦 Raw response text:',
       responseText.substring(0, 300) + '...'
     );
 
-    // Parse the response
-    const data = JSON.parse(responseText);
+    let data;
+    try {
+      data = JSON.parse(responseText);
+    } catch (parseError) {
+      console.error('[Aircraft Service] ❌ Failed to parse JSON:', parseError);
+      return [];
+    }
 
-    if (!data.success || !Array.isArray(data.data)) {
+    // Validate response format
+    if (
+      !data ||
+      typeof data !== 'object' ||
+      !data.success ||
+      !Array.isArray(data.data)
+    ) {
       console.warn('[Aircraft Service] ⚠️ Invalid response format:', data);
       return [];
     }
@@ -162,20 +175,37 @@ export async function fetchModels(manufacturer: string): Promise<Model[]> {
       data.data.slice(0, 2)
     );
 
+    // Ensure every model has valid values before mapping
     return data.data.map((model: any) => ({
-      model: model.model || '',
-      manufacturer: model.manufacturer || '',
-      count: model.count || 0,
-      totalCount: model.totalCount || model.count || 0,
-      activeCount: model.activeCount || 0,
-      inactiveCount:
-        model.inactiveCount || model.totalCount - model.activeCount || 0,
-      label:
-        model.label ||
-        `${model.model} (${model.activeCount || 0} active, ${model.totalCount - model.activeCount || 0} inactive)`,
+      model: model?.model || 'Unknown Model',
+      manufacturer: model?.manufacturer || manufacturer,
+      count: typeof model?.count === 'number' ? model.count : 0,
+      totalCount:
+        typeof model?.totalCount === 'number'
+          ? model.totalCount
+          : model?.count || 0,
+      activeCount:
+        typeof model?.activeCount === 'number' ? model.activeCount : 0,
+      inactiveCount: Math.max(
+        typeof model?.inactiveCount === 'number' ? model.inactiveCount : 0,
+        (typeof model?.totalCount === 'number'
+          ? model.totalCount
+          : model?.count || 0) -
+          (typeof model?.activeCount === 'number' ? model.activeCount : 0)
+      ),
+      label: `${model?.model || 'Unknown Model'} (${model?.activeCount || 0} active, ${Math.max(
+        (typeof model?.totalCount === 'number'
+          ? model.totalCount
+          : model?.count || 0) -
+          (typeof model?.activeCount === 'number' ? model.activeCount : 0),
+        0
+      )} inactive)`,
     }));
   } catch (error) {
-    console.error('[Aircraft Service] ❌ Error fetching models:', error);
+    console.error(
+      '[Aircraft Service] ❌ Unexpected error fetching models:',
+      error
+    );
     return [];
   }
 }

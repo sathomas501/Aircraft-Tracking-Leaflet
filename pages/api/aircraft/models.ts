@@ -1,14 +1,12 @@
 // pages/api/aircraft/models.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
-import databaseManager from '@/lib/db/managers/staticDatabaseManager';
+import staticDatabaseManager from '../../../lib/db/managers/staticDatabaseManager';
 import { withErrorHandler } from '@/lib/middleware/error-handler';
-import trackingDatabaseManager from '@/lib/db/managers/trackingDatabaseManager';
 
 interface StaticModel {
   model: string;
   manufacturer: string;
   count: number;
-  activeCount?: number;
 }
 
 async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -19,101 +17,64 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
     timestamp: new Date().toISOString(),
   });
 
-  if (req.method !== 'GET') {
-    console.log(`[Models API] ⚠️ Invalid method: ${req.method}`);
+  const { method, query } = req;
+  const manufacturer = query.manufacturer as string;
+
+  if (method !== 'GET') {
+    console.log(`[Models API] ⚠️ Invalid method: ${method}`);
     return res
       .status(405)
       .json({ success: false, message: 'Method not allowed' });
   }
 
-  const manufacturer = req.query.manufacturer as string;
   if (!manufacturer) {
     console.log('[Models API] ⚠️ No manufacturer provided');
-    return res
-      .status(400)
-      .json({ success: false, message: 'Manufacturer parameter is required' });
+    return res.status(400).json({
+      success: false,
+      message: 'Manufacturer parameter is required',
+    });
   }
 
   try {
-    if (!databaseManager.isReady) {
+    // Ensure database is initialized
+    if (!staticDatabaseManager.isReady) {
       console.log('[Models API] 🔄 Initializing database');
-      await databaseManager.initializeDatabase();
+      await staticDatabaseManager.initializeDatabase();
     }
 
+    // I noticed you have a getModelsByManufacturer method already in staticDatabaseManager
+    // Let's use that instead of writing a custom query
     console.log(
       `[Models API] 📊 Fetching models for manufacturer: ${manufacturer}`
     );
 
-    // Get all models first
-    const models = await databaseManager.getModelsByManufacturer(manufacturer);
+    const models =
+      await staticDatabaseManager.getModelsByManufacturer(manufacturer);
+
+    // Convert the results to match the StaticModel interface
+    const results: StaticModel[] = models.map((model) => ({
+      model: model.model,
+      manufacturer: model.manufacturer,
+      count: model.count,
+    }));
+
     console.log(
-      `[Models API] Found ${models.length} static models:`,
-      models.slice(0, 2)
+      `[Models API] 📋 Found ${results.length} models for ${manufacturer}`
     );
 
-    // Get active aircraft from tracking database
-    const activeAircraft =
-      await trackingDatabaseManager.getTrackedAircraft(manufacturer);
-    console.log(`[Models API] Found ${activeAircraft.length} active aircraft`);
-
-    // Create a map of model to active count
-    const activeCountsByModel = activeAircraft.reduce((acc, aircraft) => {
-      if (aircraft.model) {
-        acc.set(aircraft.model, (acc.get(aircraft.model) || 0) + 1);
-      }
-      return acc;
-    }, new Map<string, number>());
-
-    // Include ALL models, not just ones with active aircraft
-    const formattedModels = models
-      .filter((item) => item && item.model) // Just check that model exists
-      .map((model) => {
-        // Use actual count values
-        const totalCount = model.totalCount || model.count || 0;
-        const activeCount = activeCountsByModel.get(model.model) || 0;
-        const inactiveCount = totalCount > 0 ? totalCount - activeCount : 0;
-
-        // Create label with appropriate format
-        let label;
-        if (activeCount > 0) {
-          label = `${model.model} (${activeCount} active, ${inactiveCount} inactive)`;
-        } else {
-          label = `${model.model} (${inactiveCount} inactive)`;
-        }
-
-        return {
-          model: model.model,
-          manufacturer: model.manufacturer,
-          count: model.count || 0,
-          totalCount: totalCount,
-          activeCount: activeCount,
-          inactiveCount: inactiveCount,
-          label: label,
-        };
-      })
-      .sort((a, b) => {
-        // First sort by active count (descending)
-        const activeCountDiff = (b.activeCount || 0) - (a.activeCount || 0);
-        if (activeCountDiff !== 0) return activeCountDiff;
-
-        // Then by total count (descending)
-        const totalCountDiff =
-          (b.totalCount || b.count || 0) - (a.totalCount || a.count || 0);
-        if (totalCountDiff !== 0) return totalCountDiff;
-
-        // Finally alphabetically
-        return a.model.localeCompare(b.model);
-      });
+    const formattedModels = results
+      .filter((item) => item && item.model)
+      .map((model) => ({
+        model: model.model,
+        manufacturer: model.manufacturer,
+        count: model.count,
+        label: `${model.model} (${model.count} aircraft)`,
+      }));
 
     const responseTime = Date.now() - start;
-    console.log('[Models API] ✅ Request stats:', {
-      responseTime,
-      modelCount: models.length,
-      activeModelsCount: formattedModels.filter((m) => m.activeCount > 0)
-        .length,
-      totalFormattedModels: formattedModels.length,
-      sample: formattedModels.slice(0, 2),
-    });
+    console.log(
+      `[Models API] ✅ Request completed in ${responseTime}ms, returning ${formattedModels.length} models`
+    );
 
     return res.status(200).json({
       success: true,
@@ -122,8 +83,6 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
         count: formattedModels.length,
         manufacturer,
         responseTime,
-        totalModels: models.length,
-        activeModels: formattedModels.filter((m) => m.activeCount > 0).length,
       },
     });
   } catch (error) {

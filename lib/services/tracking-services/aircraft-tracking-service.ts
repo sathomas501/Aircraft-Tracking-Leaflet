@@ -555,7 +555,7 @@ export class AircraftTrackingService extends BaseTrackingService {
     }
   }
 
-  private async updateAircraftPositions(
+  public async updateAircraftPositions(
     activeAircraft: any[],
     manufacturer: string
   ): Promise<void> {

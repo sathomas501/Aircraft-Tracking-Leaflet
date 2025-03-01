@@ -1,11 +1,12 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { SelectOption } from '@/types/base';
+import { useTrackedAircraft } from '../../customHooks/useTrackedAircraft';
 
 interface ManufacturerSelectorProps {
   manufacturers: SelectOption[];
   selectedManufacturer: string | null;
-  onSelect: (manufacturer: string | null) => void;
-  isLoading?: boolean;
+  onSelect: (manufacturer: string | null) => void; // Accept null
+  isLoading: boolean;
   onError?: (message: string) => void;
 }
 
@@ -20,6 +21,9 @@ export const ManufacturerSelector: React.FC<ManufacturerSelectorProps> = ({
   const [isOpen, setIsOpen] = useState(false);
   const [isSelecting, setIsSelecting] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const { startTracking, loadAircraft } =
+    useTrackedAircraft(selectedManufacturer);
 
   // Update displayed manufacturer in the input when selectedManufacturer changes
   useEffect(() => {
@@ -36,24 +40,16 @@ export const ManufacturerSelector: React.FC<ManufacturerSelectorProps> = ({
   }, [selectedManufacturer, manufacturers]);
 
   // Handler for manufacturer selection
-  const handleManufacturerSelect = async (manufacturer: SelectOption) => {
-    if (!manufacturer.value || manufacturer.value === selectedManufacturer) {
-      console.log('[ManufacturerSelector] Already selected, skipping');
-      return;
-    }
-
-    setIsSelecting(true);
-    setIsOpen(false);
-
+  const handleManufacturerSelect = async (manufacturerValue: string) => {
     try {
-      // Call the parent's handler
-      await onSelect(manufacturer.value);
+      setIsSelecting(true);
+      setIsOpen(false);
+
+      // Call the parent component's onSelect handler
+      await onSelect(manufacturerValue);
     } catch (error) {
-      console.error(
-        '[ManufacturerSelector] Error selecting manufacturer:',
-        error
-      );
-      if (onError) onError('Failed to select manufacturer');
+      console.error(`Error during manufacturer selection:`, error);
+      onError?.('Failed to select manufacturer');
     } finally {
       setIsSelecting(false);
     }
@@ -65,7 +61,7 @@ export const ManufacturerSelector: React.FC<ManufacturerSelectorProps> = ({
       setIsSelecting(true);
       setSearchTerm('');
       setIsOpen(false);
-      await onSelect(null);
+      await onSelect(null); // This is now valid since we updated the type
     } catch (error) {
       console.error('[ManufacturerSelector] Failed to reset:', error);
       if (onError) onError('Failed to reset selection');
@@ -113,10 +109,7 @@ export const ManufacturerSelector: React.FC<ManufacturerSelectorProps> = ({
         className="w-full px-4 py-2 border rounded-md"
         placeholder="Search or select manufacturer..."
         value={searchTerm}
-        onChange={(e) => {
-          setSearchTerm(e.target.value);
-          setIsOpen(true);
-        }}
+        onChange={(e) => setSearchTerm(e.target.value)}
         onFocus={() => setIsOpen(true)}
         disabled={isSelecting || isLoading}
       />
@@ -131,7 +124,7 @@ export const ManufacturerSelector: React.FC<ManufacturerSelectorProps> = ({
               } ${selectedManufacturer === manufacturer.value ? 'bg-blue-100' : ''}`}
               onClick={() =>
                 !(isSelecting || isLoading) &&
-                handleManufacturerSelect(manufacturer)
+                handleManufacturerSelect(manufacturer.value)
               }
             >
               {manufacturer.label}
