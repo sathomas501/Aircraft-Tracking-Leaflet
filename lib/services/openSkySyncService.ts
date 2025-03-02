@@ -1,9 +1,10 @@
-// lib/services/openSkySyncService.ts - Refactored version
+// lib/services/openSkySyncService.ts - Updated integration with new services
 import { Aircraft } from '@/types/base';
 import UnifiedCacheService from '@/lib/services/managers/unified-cache-system';
 import { TrackingDatabaseManager } from '@/lib/db/managers/trackingDatabaseManager';
 import { icao24Service } from './icao-service';
 import { icao24CacheService } from './icao24Cache';
+import { trackingServices } from '../services/tracking-services/tracking-services';
 
 export class OpenSkySyncService {
   private static instance: OpenSkySyncService;
@@ -39,7 +40,7 @@ export class OpenSkySyncService {
   }
 
   /**
-   * Get ICAO24 codes for a manufacturer, now using the centralized service
+   * Get ICAO24 codes for a manufacturer using the new tracking services
    */
   async getManufacturerIcao24s(manufacturer: string): Promise<string[]> {
     if (!manufacturer) {
@@ -53,24 +54,37 @@ export class OpenSkySyncService {
       `[OpenSkySyncService] 🔄 Fetching ICAO24s for manufacturer: ${manufacturer}`
     );
 
-    const response = await fetch(
-      `${process.env.NEXT_PUBLIC_API_URL}/api/aircraft/icao24s`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ manufacturer }),
+    try {
+      // Use the unified tracking services
+      return await trackingServices.getManufacturerIcao24s(manufacturer);
+    } catch (error) {
+      console.error(`[OpenSkySyncService] ❌ Error fetching ICAO24s:`, error);
+
+      // Fallback to direct API call if tracking services fail
+      try {
+        const response = await fetch(
+          `${process.env.NEXT_PUBLIC_API_URL}/api/aircraft/icao24s`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ manufacturer }),
+          }
+        );
+
+        if (!response.ok) {
+          throw new Error(`Fetcher API Error: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        return data?.data?.icao24List ?? [];
+      } catch (fallbackError) {
+        console.error(
+          `[OpenSkySyncService] ❌ Fallback fetch also failed:`,
+          fallbackError
+        );
+        return [];
       }
-    );
-
-    if (!response.ok) {
-      console.error(
-        `[OpenSkySyncService] ❌ Fetcher API Error: ${response.statusText}`
-      );
-      return [];
     }
-
-    const data = await response.json();
-    return data?.data?.icao24List ?? [];
   }
 
   /**
@@ -82,7 +96,7 @@ export class OpenSkySyncService {
       return [];
     }
 
-    // ✅ Step 1: Check which ICAOs are cached
+    // Step 1: Check which ICAOs are cached
     const cachedIcaos: string[] =
       await icao24CacheService.getIcao24s('generic');
     const foundIcaos = new Set(cachedIcaos);
@@ -100,26 +114,11 @@ export class OpenSkySyncService {
     );
 
     try {
-      // ✅ Step 2: Fetch missing ICAO24s from OpenSky
+      // Step 2: Fetch missing ICAO24s from OpenSky
       const newIcao24s: string[] =
         await icao24CacheService.fetchAndCacheIcao24s('generic', async () => {
-          const response = await fetch(
-            `${process.env.NEXT_PUBLIC_API_URL}/api/aircraft/icao24s`,
-            {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ manufacturer: 'all' }),
-            }
-          );
-
-          if (!response.ok) {
-            throw new Error(
-              `[OpenSkySyncService] ❌ Fetcher API Error: ${response.statusText}`
-            );
-          }
-
-          const data = await response.json();
-          return data?.data?.icao24List ?? []; // ✅ Returns only ICAO24s
+          // Use tracking services to get ICAO24s
+          return await trackingServices.getManufacturerIcao24s('all');
         });
 
       if (newIcao24s.length === 0) {
@@ -131,7 +130,7 @@ export class OpenSkySyncService {
         `[OpenSkySyncService] 🔄 Fetching full aircraft details for ${newIcao24s.length} ICAOs...`
       );
 
-      // ✅ Step 3: Fetch full Aircraft data for new ICAOs
+      // Step 3: Fetch full Aircraft data for new ICAOs
       const response = await fetch(
         `${process.env.NEXT_PUBLIC_API_URL}/api/aircraft/icaofetcher`,
         {
@@ -165,7 +164,7 @@ export class OpenSkySyncService {
   }
 
   /**
-   * Sync a manufacturer's aircraft data
+   * Sync a manufacturer's aircraft data using the unified tracking services
    */
   async syncManufacturer(manufacturer: string): Promise<{
     updated: number;
@@ -178,8 +177,12 @@ export class OpenSkySyncService {
     try {
       this.currentManufacturer = manufacturer;
 
-      // Step 1: Get ICAO24 codes for this manufacturer (using centralized service)
-      const icao24s = (await this.getManufacturerIcao24s(manufacturer)) ?? []; // Ensure it's an array
+      // Start tracking for this manufacturer
+      await trackingServices.startTracking(manufacturer);
+
+      // Get ICAO24 codes for this manufacturer
+      const icao24s =
+        await trackingServices.getManufacturerIcao24s(manufacturer);
 
       if (icao24s.length === 0) {
         console.warn(
@@ -192,17 +195,13 @@ export class OpenSkySyncService {
         `[OpenSkySyncService] ✅ Found ${icao24s.length} ICAO24s for ${manufacturer}`
       );
 
-      // Step 2: Fetch live aircraft data
+      // Fetch live aircraft data
       const aircraft = await this.fetchLiveAircraft(icao24s);
 
-      // Step 3: Add pending aircraft to tracking (ensure `icao24Service` exists)
+      // Add pending aircraft to tracking through icao24Service if available
       try {
         if (icao24Service) {
           await icao24Service.addToPendingTracking(icao24s, manufacturer);
-        } else {
-          console.warn(
-            `[OpenSkySyncService] ⚠️ icao24Service is not initialized.`
-          );
         }
       } catch (error) {
         console.error(
@@ -211,7 +210,9 @@ export class OpenSkySyncService {
         );
       }
 
-      // ✅ Return updated and total counts
+      // Get current tracked aircraft for this manufacturer
+      const trackedAircraft = await trackingServices.getAircraft(manufacturer);
+
       return {
         updated: aircraft.length,
         total: icao24s.length,

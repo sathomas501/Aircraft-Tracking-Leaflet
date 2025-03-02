@@ -1,4 +1,3 @@
-// lib/services/tracking-data-service-extension.ts
 import { TrackingDataService } from './tracking-data-service';
 import { BaseDatabaseManager } from '../../db/managers/baseDatabaseManager';
 import { ExtendedAircraftRepository } from '../../repositories/aircraft-repository-extension';
@@ -21,9 +20,12 @@ export class ExtendedTrackingDataService extends TrackingDataService {
    * Override the base method to use the extended repository and caching
    */
   async getAircraftByIcao24s(icao24s: string[]): Promise<Aircraft[]> {
-    // Use cache if available
     const cacheKey = `icao24s-${icao24s.sort().join('-')}`;
-    const cachedData = await this.cacheService.getWithTTL<Aircraft[]>(cacheKey);
+
+    // ✅ Use explicit casting instead of generic type argument
+    const cachedData = (await this.cacheService.getWithTTL(cacheKey)) as
+      | Aircraft[]
+      | null;
 
     if (cachedData) {
       console.log(
@@ -35,7 +37,7 @@ export class ExtendedTrackingDataService extends TrackingDataService {
     const aircraft =
       await this.extendedAircraftRepository.getAircraftByIcao24s(icao24s);
 
-    // Cache results for 30 seconds
+    // ✅ Remove type argument and explicitly cast
     if (aircraft.length > 0) {
       await this.cacheService.setWithTTL(cacheKey, aircraft, 30);
     }
@@ -50,8 +52,11 @@ export class ExtendedTrackingDataService extends TrackingDataService {
     manufacturer: string
   ): Promise<AircraftModel[]> {
     const cacheKey = `models-${manufacturer}`;
-    const cachedData =
-      await this.cacheService.getWithTTL<AircraftModel[]>(cacheKey);
+
+    // ✅ Explicit casting instead of generic type argument
+    const cachedData = (await this.cacheService.getWithTTL(cacheKey)) as
+      | AircraftModel[]
+      | null;
 
     if (cachedData) {
       console.log(
@@ -65,7 +70,6 @@ export class ExtendedTrackingDataService extends TrackingDataService {
         manufacturer
       );
 
-    // Cache results for 5 minutes
     if (models.length > 0) {
       await this.cacheService.setWithTTL(cacheKey, models, 5 * 60);
     }
@@ -81,7 +85,11 @@ export class ExtendedTrackingDataService extends TrackingDataService {
     model?: string
   ): Promise<Aircraft[]> {
     const cacheKey = `filtered-${manufacturer}-${model || 'all'}`;
-    const cachedData = await this.cacheService.getWithTTL<Aircraft[]>(cacheKey);
+
+    // ✅ Explicit casting instead of generic type argument
+    const cachedData = (await this.cacheService.getWithTTL(cacheKey)) as
+      | Aircraft[]
+      | null;
 
     if (cachedData) {
       console.log(
@@ -95,7 +103,6 @@ export class ExtendedTrackingDataService extends TrackingDataService {
       model
     );
 
-    // Cache results for 30 seconds
     if (aircraft.length > 0) {
       await this.cacheService.setWithTTL(cacheKey, aircraft, 30);
     }

@@ -61,6 +61,8 @@ export type OpenSkyStateArray = [
   positionSource: number, // [16]
 ];
 
+export type PartialOpenSkyState = any[];
+
 /**
  * Complete aircraft information including registration and tracking data
  */

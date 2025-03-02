@@ -103,7 +103,11 @@ async function handlePostRequests(
         throw APIErrors.BadRequest('Invalid positions format');
       }
 
-      const updated = await trackingService.updatePositions(positions);
+      const { manufacturer } = req.body;
+      const updated = await trackingService.updatePositions(
+        positions,
+        manufacturer
+      );
 
       return res.status(200).json({
         success: true,

@@ -1,5 +1,5 @@
 // lib/shutdown.ts
-import { CleanupService } from './services/CleanupService';
+import CleanupService from './services/CleanupService';
 import { TrackingDatabaseManager } from './db/managers/trackingDatabaseManager';
 
 let isShuttingDown = false;

@@ -3,15 +3,30 @@ import type { Database as SQLiteDatabaseDriver } from 'sqlite';
 import type sqlite3 from 'sqlite3';
 
 let fs: typeof import('fs') | null = null;
-let sqlite3Instance: typeof sqlite3 | null = null;
+let sqlite3Instance: typeof import('sqlite3') | null = null;
 let sqlite: typeof import('sqlite') | null = null;
 
-// ✅ Load `fs` safely to prevent `fs`-related crashes
-try {
-  fs = require('fs');
-} catch (error) {
-  console.error('[BaseDatabaseManager] ❌ Failed to load `fs` module:', error);
-}
+// ✅ Load modules dynamically to prevent crashes
+(async () => {
+  try {
+    fs = await import('fs');
+  } catch (error) {
+    console.error(
+      '[BaseDatabaseManager] ❌ Failed to load `fs` module:',
+      error
+    );
+  }
+
+  try {
+    sqlite3Instance = (await import('sqlite3')).verbose();
+    sqlite = await import('sqlite');
+    console.log(
+      '[BaseDatabaseManager] ✅ Loaded sqlite and sqlite3 successfully'
+    );
+  } catch (error) {
+    console.error('[BaseDatabaseManager] ❌ Failed to load SQLite:', error);
+  }
+})();
 
 // ✅ Load SQLite modules safely
 if (!sqlite3Instance || !sqlite) {
@@ -34,6 +49,8 @@ export abstract class BaseDatabaseManager {
   protected _isInitialized: boolean = false;
   protected readonly dbPath: string;
   private initializationPromise: Promise<void> | null = null;
+  protected static dbInstance: SQLiteDatabaseDriver<sqlite3.Database> | null =
+    null;
 
   constructor(dbName: string) {
     if (typeof window !== 'undefined') {
@@ -44,8 +61,8 @@ export abstract class BaseDatabaseManager {
 
     const dbDir = path.resolve(process.cwd(), 'lib', 'db');
 
-    // ✅ Ensure `fs` exists before checking paths
-    if (fs) {
+    // ✅ Check if `fs` is available before accessing paths
+    if (typeof fs !== 'undefined' && fs) {
       try {
         if (!fs.existsSync(dbDir)) {
           console.log(
@@ -78,6 +95,15 @@ export abstract class BaseDatabaseManager {
   }
 
   /**
+   * Gets the default instance of the database manager.
+   * This is implemented by concrete subclasses to provide a default instance.
+   * @throws Error if called directly on BaseDatabaseManager
+   * @returns A concrete instance of BaseDatabaseManager
+   */
+  public static getDefaultInstance(): BaseDatabaseManager {
+    throw new Error('getDefaultInstance must be implemented by subclass');
+  }
+  /**
    * Ensure database is initialized before performing operations
    * Making this public so repositories can use it directly
    */
@@ -99,19 +125,70 @@ export abstract class BaseDatabaseManager {
    * Initialize the database
    */
   public async initializeDatabase(): Promise<void> {
-    if (this.isReady) return;
-
+    // Prevent multiple concurrent initializations using a promise
     if (this.initializationPromise) {
-      await this.initializationPromise;
-      return;
+      return this.initializationPromise;
     }
 
-    this.initializationPromise = this.performInitialization();
-    try {
-      await this.initializationPromise;
-    } finally {
-      this.initializationPromise = null;
+    if (this._isInitialized && this.db) {
+      return; // Already initialized
     }
+
+    // Create a promise for initialization that can be reused
+    this.initializationPromise = (async () => {
+      try {
+        if (!sqlite || !sqlite3Instance) {
+          throw new Error('[BaseDatabaseManager] ❌ SQLite modules not loaded');
+        }
+
+        console.log(
+          `[BaseDatabaseManager] 🔄 Initializing database at: ${this.dbPath}`
+        );
+
+        // Check if we already have a shared instance
+        if (BaseDatabaseManager.dbInstance) {
+          this.db = BaseDatabaseManager.dbInstance;
+          console.log(
+            `[BaseDatabaseManager] ✅ Using existing database instance`
+          );
+        } else {
+          // Open a new connection
+          this.db = await sqlite.open({
+            filename: this.dbPath,
+            driver: sqlite3Instance.Database,
+          });
+
+          // Store it as the shared instance
+          BaseDatabaseManager.dbInstance = this.db;
+
+          // Configure the database
+          await this.db.run('PRAGMA journal_mode = WAL;');
+          await this.db.run('PRAGMA busy_timeout = 5000;'); // Increase timeout for locks
+          await this.db.run('PRAGMA synchronous = NORMAL;'); // Slightly faster at small risk
+
+          console.log(
+            `[BaseDatabaseManager] ✅ New database connection opened`
+          );
+        }
+
+        // Create necessary tables
+        await this.createTables();
+        this._isInitialized = true;
+
+        console.log(`[BaseDatabaseManager] ✅ Database fully initialized`);
+      } catch (error) {
+        console.error(`[BaseDatabaseManager] ❌ Initialization failed:`, error);
+        this._isInitialized = false;
+        this.db = null;
+        BaseDatabaseManager.dbInstance = null; // Clear the shared instance on failure
+        throw error;
+      } finally {
+        // Clear the promise when done (whether success or failure)
+        this.initializationPromise = null;
+      }
+    })();
+
+    return this.initializationPromise;
   }
 
   /**
@@ -168,10 +245,22 @@ export abstract class BaseDatabaseManager {
    * Get database instance - public so repositories can access if needed
    */
   public async getDatabase(): Promise<SQLiteDatabaseDriver<sqlite3.Database>> {
-    await this.ensureInitialized();
-    if (!this.db) {
-      throw new Error('[BaseDatabaseManager] Database not initialized');
+    if (this.db) {
+      return this.db; // Return the instance we already have
     }
+
+    if (BaseDatabaseManager.dbInstance) {
+      this.db = BaseDatabaseManager.dbInstance;
+      return this.db;
+    }
+
+    // Initialize the database if needed
+    await this.initializeDatabase();
+
+    if (!this.db) {
+      throw new Error('[BaseDatabaseManager] ❌ Failed to initialize database');
+    }
+
     return this.db;
   }
 
@@ -180,16 +269,81 @@ export abstract class BaseDatabaseManager {
    */
   public async executeQuery<T>(
     sql: string,
-    params: unknown[] = []
+    params: unknown[] = [],
+    retries = 3
   ): Promise<T[]> {
-    const db = await this.ensureInitialized();
+    let currentRetry = 0;
 
-    try {
-      return await db.all(sql, params);
-    } catch (error) {
-      console.error(`[DatabaseManager] ❌ Query failed: ${sql}`, error);
-      throw error;
+    while (true) {
+      try {
+        const db = await this.getDatabase();
+        return await db.all(sql, params);
+      } catch (error: any) {
+        // Check if it's a database lock error
+        if (error.code === 'SQLITE_BUSY' && currentRetry < retries) {
+          // Exponential backoff with random jitter
+          const delay = Math.pow(2, currentRetry) * 100 + Math.random() * 100;
+          console.warn(
+            `[BaseDatabaseManager] ⚠️ Database locked, retrying in ${delay}ms (attempt ${currentRetry + 1}/${retries})`
+          );
+
+          await new Promise((resolve) => setTimeout(resolve, delay));
+          currentRetry++;
+        } else {
+          console.error(`[BaseDatabaseManager] ❌ Query failed: ${sql}`, error);
+          throw error;
+        }
+      }
     }
+  }
+
+  /**
+   * Execute a database query with automatic retries for SQLITE_BUSY errors
+   * @param sql SQL query to execute
+   * @param params Query parameters
+   * @param maxRetries Maximum number of retry attempts (default: a3)
+   * @returns Query results
+   */
+  public async executeQueryWithRetry<T>(
+    sql: string,
+    params: any[] = [],
+    maxRetries = 3
+  ): Promise<T[]> {
+    const db = await this.getDatabase();
+    let retryCount = 0;
+    let lastError: Error | null = null;
+
+    while (retryCount <= maxRetries) {
+      try {
+        // Execute the query
+        return await db.all(sql, params);
+      } catch (error: any) {
+        lastError = error;
+
+        // Check if it's a database lock error that we can retry
+        if (error.code === 'SQLITE_BUSY' && retryCount < maxRetries) {
+          // Exponential backoff with jitter
+          const delay = Math.pow(2, retryCount) * 100 + Math.random() * 100;
+          console.warn(
+            `[DatabaseManager] ⚠️ Database is locked, retrying in ${delay.toFixed(0)}ms (attempt ${retryCount + 1}/${maxRetries})`
+          );
+
+          // Wait before retrying
+          await new Promise((resolve) => setTimeout(resolve, delay));
+          retryCount++;
+        } else {
+          // Not a retryable error or max retries reached
+          console.error(`[DatabaseManager] ❌ Query failed: ${sql}`, error);
+          throw error;
+        }
+      }
+    }
+
+    // If we reach here, we've exhausted all retries
+    console.error(
+      `[DatabaseManager] ❌ Max retries (${maxRetries}) exceeded for query: ${sql}`
+    );
+    throw lastError || new Error('Database query failed after maximum retries');
   }
 
   /**

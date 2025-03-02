@@ -1,58 +1,54 @@
-import React, { useState, useEffect, useRef } from 'react';
-import CacheManager from '@/lib/services/managers/cache-manager';
+// lib/services/client-tracking-service.ts
+import { BaseTrackingService } from './base-tracking-service';
 import { IcaoBatchService } from '../icao-batch-service';
+import { Aircraft } from '@/types/base';
+import CacheManager from '../managers/cache-manager';
 import { getCachedIcao24s } from '../managers/aircraft-cache';
-import { useOpenSkyData } from '@/components/aircraft/customHooks/useOpenSkyData';
 
 interface Subscriber {
   callback: (aircraft: Aircraft[]) => void;
   manufacturer: string;
 }
 
-interface Aircraft {
-  icao24: string;
-  latitude: number;
-  longitude: number;
-  altitude: number;
-  heading: number;
-  velocity: number;
-  on_ground: boolean;
-  last_contact: number;
-  // Add other relevant fields
-}
-
-const [selectedManufacturer, setSelectedManufacturer] = useState<string | null>(
-  null
-);
-
-export async function getClientAircraftIcao24s(manufacturer: string) {
-  return await getCachedIcao24s(manufacturer);
-}
-
-export class ClientTrackingService {
+/**
+ * Client-side implementation of the BaseTrackingService
+ * Handles client-side tracking with React integration, polling, and UI updates
+ */
+export class ClientTrackingService extends BaseTrackingService {
   private static instance: ClientTrackingService;
-  private subscribers: Set<Subscriber>;
-  private pollingInterval: NodeJS.Timeout | null;
-  private currentManufacturer: string | null;
-  private currentIcao24s: string[];
+  private pollingInterval: NodeJS.Timeout | null = null;
+  private currentManufacturer: string | null = null;
+  private currentIcao24s: string[] = [];
   private isPolling: boolean = false;
-  private cache: CacheManager<string[]>;
   private aircraftCache: CacheManager<Aircraft[]>;
   private icaoBatchProcessor: IcaoBatchService;
-  public get isPollingActive(): boolean {
-    return this.isPolling;
-  }
   private cachedIcao24s: Map<string, string[]> = new Map();
   private pendingRequests: Map<string, Promise<string[]>> = new Map();
 
+  public get isPollingActive(): boolean {
+    return this.isPolling;
+  }
+
   private constructor() {
-    this.subscribers = new Set();
-    this.pollingInterval = null;
-    this.currentManufacturer = null;
+    // Pass appropriate rate limiter options to the base class
+    super({
+      interval: 60000, // 1 minute in milliseconds
+      retryAfter: 1000,
+      requestsPerMinute: 60,
+      requestsPerDay: 5000,
+      maxWaitTime: 30000,
+      minPollingInterval: 1000,
+      maxPollingInterval: 10000,
+      maxBatchSize: 100,
+      retryLimit: 3,
+      requireAuthentication: true,
+      maxConcurrentRequests: 5,
+    });
+
     this.icaoBatchProcessor = new IcaoBatchService();
-    this.currentIcao24s = [];
     this.aircraftCache = new CacheManager<Aircraft[]>(30);
-    this.cache = new CacheManager<string[]>(5 * 60);
+
+    // Initialize any additional client-specific properties
   }
 
   public static getInstance(): ClientTrackingService {
@@ -63,102 +59,84 @@ export class ClientTrackingService {
   }
 
   /**
-   * ✅ Notify subscribers when aircraft data updates
+   * Start tracking aircraft for a specific manufacturer
+   * @param manufacturer Manufacturer name
+   * @param pollInterval Optional poll interval in milliseconds (default: 30000)
    */
-  private notifySubscribers(aircraft: Aircraft[]): void {
-    this.subscribers.forEach((subscriber) => {
-      if (subscriber.manufacturer === this.currentManufacturer) {
-        subscriber.callback(aircraft);
-      }
-    });
-  }
-
-  /**
-   * ✅ Start polling aircraft data every 30 seconds
-   */
-  private startPolling(): void {
-    if (this.pollingInterval) return;
-
-    this.pollingInterval = setInterval(async () => {
-      if (this.isPolling) {
-        console.warn(
-          '[Tracking] ⚠️ Skipping poll - previous request still running.'
-        );
-        return;
-      }
-      this.isPolling = true;
-      await this.pollAircraftData();
-      this.isPolling = false;
-    }, 30000);
-  }
-
-  /**
-   * ✅ Compare two aircraft arrays for changes
-   */
-  private areAircraftEqual(a: Aircraft[], b: Aircraft[]): boolean {
-    if (a.length !== b.length) return false;
-    return a.every((aircraft, index) => {
-      return (
-        aircraft.icao24 === b[index].icao24 &&
-        aircraft.latitude === b[index].latitude &&
-        aircraft.longitude === b[index].longitude &&
-        aircraft.altitude === b[index].altitude
-      );
-    });
-  }
-
-  private fetchQueue: Map<string, Promise<string[]>> = new Map();
-
-  public async startTracking(manufacturer: string): Promise<void> {
+  public async startTracking(
+    manufacturer: string,
+    pollInterval: number = 30000
+  ): Promise<void> {
     try {
       this.stopTracking(); // Stop any existing tracking
-      console.log(`[Tracking] 🔍 Validating database schema...`);
+      console.log(`[ClientTracking] 🔍 Validating database schema...`);
       await fetch('/api/database/validate', { method: 'POST' });
 
       this.currentManufacturer = manufacturer;
 
-      // ✅ Fetch ICAO24s using the optimized function (handles cache & deduplication)
-      const openSkyData = useOpenSkyData(manufacturer);
-      await openSkyData.refreshStatus();
+      // Fetch ICAO24s for this manufacturer
+      const icao24s = await this.fetchManufacturerIcao24s(manufacturer);
+      this.currentIcao24s = icao24s;
 
-      console.log(`[Tracking] ✅ ICAOs retrieved. Starting tracking...`);
+      if (this.currentIcao24s.length === 0) {
+        console.warn(`[ClientTracking] No ICAO24s found for ${manufacturer}`);
+        this.notifySubscribers(manufacturer, []);
+        return;
+      }
+
+      console.log(
+        `[ClientTracking] ✅ ${this.currentIcao24s.length} ICAOs retrieved. Starting tracking...`
+      );
+
+      // Initial poll to get data right away
       await this.pollAircraftData();
-      this.startPolling();
+
+      // Start regular polling
+      this.pollingInterval = setInterval(() => {
+        if (!this.isPolling) {
+          this.isPolling = true;
+          this.pollAircraftData().finally(() => {
+            this.isPolling = false;
+          });
+        } else {
+          console.warn(
+            '[ClientTracking] ⚠️ Skipping poll - previous request still running.'
+          );
+        }
+      }, pollInterval);
     } catch (error) {
-      console.error('[Tracking] ❌ Error in startTracking:', error);
-      this.notifySubscribers([]); // Ensure subscribers are notified on failure
+      console.error('[ClientTracking] ❌ Error in startTracking:', error);
+      this.notifySubscribers(manufacturer, []); // Ensure subscribers are notified on failure
+      this.handleError(error);
     }
   }
 
   /**
-   * ✅ Poll aircraft data and update tracking
+   * Poll aircraft data and update tracking
    */
   public async pollAircraftData(): Promise<void> {
     if (!this.currentManufacturer || !this.currentIcao24s.length) {
-      console.warn('[Tracking] No manufacturer or ICAO24s set. Skipping poll.');
+      console.warn(
+        '[ClientTracking] No manufacturer or ICAO24s set. Skipping poll.'
+      );
       return;
     }
 
-    if (this.isPolling) {
-      console.warn('[Tracking] Skipping poll, another poll is in progress.');
-      return;
-    }
-
-    this.isPolling = true;
     let pollSuccess = false;
+    const manufacturer = this.currentManufacturer;
 
     try {
       console.log(
-        `[Tracking] Checking tracking database for ${this.currentManufacturer}...`
+        `[ClientTracking] Checking tracking database for ${manufacturer}...`
       );
 
-      // First try to get tracked aircraft
+      // First try to get tracked aircraft from the database
       const response = await fetch('/api/aircraft/tracking', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'getTrackedAircraft',
-          manufacturer: this.currentManufacturer,
+          manufacturer: manufacturer,
           icao24s: this.currentIcao24s,
         }),
       });
@@ -175,107 +153,105 @@ export class ClientTrackingService {
 
       if (data.success && Array.isArray(data.aircraft)) {
         console.log(
-          `[Tracking] ✅ Found ${data.aircraft.length} aircraft in tracking DB.`
+          `[ClientTracking] ✅ Found ${data.aircraft.length} aircraft in tracking DB.`
         );
 
         if (data.aircraft.length > 0) {
+          // Check if any aircraft has stale position data (older than 60 seconds)
           shouldFetchFromOpenSky = data.aircraft.some(
             (ac: Aircraft) => now - ac.last_contact > 60
           );
-          this.notifySubscribers(data.aircraft);
+
+          this.notifySubscribers(manufacturer, data.aircraft);
           pollSuccess = true;
+        } else {
+          // No aircraft found in tracking DB, try OpenSky
+          shouldFetchFromOpenSky = true;
         }
+      } else {
+        // API returned error or invalid data format, try OpenSky
+        shouldFetchFromOpenSky = true;
       }
 
-      // ✅ Ensure that OpenSky is only called if NO valid aircraft exist
+      // Fetch from OpenSky if needed
       if (shouldFetchFromOpenSky) {
-        console.log(`[Tracking] Fetching aircraft from OpenSky...`);
+        console.log(`[ClientTracking] Fetching aircraft from OpenSky...`);
 
         const aircraftData = await this.icaoBatchProcessor.processBatches(
           this.currentIcao24s,
-          this.currentManufacturer
+          manufacturer
         );
 
         if (aircraftData.length > 0) {
           await this.updateTrackingDatabase(aircraftData);
-          this.notifySubscribers(aircraftData);
+          this.notifySubscribers(manufacturer, aircraftData);
           pollSuccess = true;
         } else {
-          console.log('[Tracking] No active aircraft found in OpenSky.');
+          console.log('[ClientTracking] No active aircraft found in OpenSky.');
         }
       } else {
         console.log(
-          '[Tracking] ✅ Skipping OpenSky fetch. Recent data available.'
+          '[ClientTracking] ✅ Skipping OpenSky fetch. Recent data available.'
         );
       }
     } catch (error) {
-      console.error('[Tracking] ❌ Error polling aircraft data:', error);
-      this.notifySubscribers([]);
+      console.error('[ClientTracking] ❌ Error polling aircraft data:', error);
+      this.notifySubscribers(manufacturer, []);
+      this.handleError(error);
     } finally {
-      this.isPolling = false;
-
       if (!pollSuccess) {
-        this.notifySubscribers([]);
+        this.notifySubscribers(manufacturer, []);
       }
     }
   }
 
   /**
-   * ✅ Fetch tracked aircraft from the API
+   * Compare two aircraft arrays for changes
    */
-  public async getTrackedAircraft(): Promise<Aircraft[]> {
-    try {
-      const response = await fetch('/api/tracking/positions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'getTrackedAircraft',
-          manufacturer: selectedManufacturer, // ✅ Correct! Now inside `body`
-        }),
-      });
+  private areAircraftEqual(a: Aircraft[], b: Aircraft[]): boolean {
+    if (a.length !== b.length) return false;
 
-      const { success, data } = await response.json();
-
-      if (!success || !Array.isArray(data)) {
-        console.error('[TrackingDB] ❌ Failed to fetch active aircraft');
-        return [];
-      }
-
-      console.log(`[TrackingDB] ✅ Found ${data.length} active aircraft.`);
-      return data;
-    } catch (error) {
-      console.error('[TrackingDB] ❌ Error fetching tracked aircraft:', error);
-      return [];
-    }
+    return a.every((aircraft, index) => {
+      return (
+        aircraft.icao24 === b[index].icao24 &&
+        aircraft.latitude === b[index].latitude &&
+        aircraft.longitude === b[index].longitude &&
+        aircraft.altitude === b[index].altitude
+      );
+    });
   }
 
   /**
-   * ✅ Update aircraft in the tracking database
+   * Update aircraft in the tracking database
    */
   private async updateTrackingDatabase(aircraft: Aircraft[]): Promise<void> {
     if (!aircraft.length) {
-      console.log(`[Tracking] No aircraft data to update.`);
+      console.log(`[ClientTracking] No aircraft data to update.`);
       return;
     }
 
     const manufacturer = this.currentManufacturer ?? '';
     const cachedAircraft = this.aircraftCache.get(manufacturer);
 
+    // Check if the data has changed to avoid unnecessary updates
     if (cachedAircraft && this.areAircraftEqual(cachedAircraft, aircraft)) {
-      console.log(`[Tracking] ✅ No change in aircraft data. Skipping update.`);
+      console.log(
+        `[ClientTracking] ✅ No change in aircraft data. Skipping update.`
+      );
       return;
     }
 
     try {
       console.log(
-        `[Tracking] ✅ Updating tracking database with ${aircraft.length} aircraft.`
+        `[ClientTracking] ✅ Updating tracking database with ${aircraft.length} aircraft.`
       );
+
       const response = await fetch('/api/aircraft/tracking', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'upsertActiveAircraftBatch',
-          aircraft: aircraft, // Changed from 'positions' to 'aircraft'
+          aircraft: aircraft,
         }),
       });
 
@@ -287,35 +263,176 @@ export class ClientTrackingService {
 
       const result = await response.json();
       if (result.success) {
-        console.log(`[Tracking] ✅ Successfully updated tracking database`);
+        console.log(
+          `[ClientTracking] ✅ Successfully updated tracking database`
+        );
         this.aircraftCache.set(manufacturer, aircraft);
       } else {
         console.error(
-          `[Tracking] ❌ Failed to update tracking database:`,
+          `[ClientTracking] ❌ Failed to update tracking database:`,
           result.message
         );
       }
     } catch (error) {
-      console.error('[Tracking] ❌ Failed to update tracking database:', error);
-      throw error; // Re-throw to handle in the calling function
+      console.error(
+        '[ClientTracking] ❌ Failed to update tracking database:',
+        error
+      );
+      throw error;
     }
   }
 
   /**
-   * ✅ Stop tracking and clear active state
+   * Fetch aircraft ICAO24 codes for a manufacturer
+   * Uses cached data or fetches new data if needed
+   * Implementation of the protected method from BaseTrackingService
+   */
+  protected async fetchManufacturerIcao24s(
+    manufacturer: string
+  ): Promise<string[]> {
+    // Check cache first
+    if (this.cachedIcao24s.has(manufacturer)) {
+      const cached = this.cachedIcao24s.get(manufacturer);
+      return cached || [];
+    }
+
+    // Check if there's already a pending request for this manufacturer
+    if (this.pendingRequests.has(manufacturer)) {
+      try {
+        const pending = await this.pendingRequests.get(manufacturer);
+        return pending || [];
+      } catch (error) {
+        console.error(
+          `[ClientTracking] Error waiting for pending ICAO24 request:`,
+          error
+        );
+        return [];
+      }
+    }
+
+    // Create a new request
+    try {
+      // Create promise that will resolve to a non-null string array
+      const safeIcao24sPromise = new Promise<string[]>(async (resolve) => {
+        try {
+          const result = await getCachedIcao24s(manufacturer);
+          resolve(result || []);
+        } catch (error) {
+          console.error(`[ClientTracking] Error in getCachedIcao24s:`, error);
+          resolve([]);
+        }
+      });
+
+      this.pendingRequests.set(manufacturer, safeIcao24sPromise);
+
+      // Await the result (now guaranteed to be string[])
+      const icao24s = await safeIcao24sPromise;
+
+      // Cache results
+      this.cachedIcao24s.set(manufacturer, icao24s);
+      this.pendingRequests.delete(manufacturer);
+
+      return icao24s;
+    } catch (error) {
+      console.error(
+        `[ClientTracking] Failed to fetch ICAO24s for ${manufacturer}:`,
+        error
+      );
+      this.pendingRequests.delete(manufacturer);
+      this.handleError(error);
+      return [];
+    }
+  }
+
+  /**
+   * Implement the abstract method from BaseTrackingService
+   * This is needed for the TypeScript interface compatibility
+   */
+  public async getManufacturerIcao24s(manufacturer: string): Promise<string[]> {
+    // Make sure we never return null
+    try {
+      const icao24s = await this.fetchManufacturerIcao24s(manufacturer);
+      return icao24s;
+    } catch (error) {
+      console.error(`[ClientTracking] Error in getManufacturerIcao24s:`, error);
+      return [];
+    }
+  }
+
+  /**
+   * Stop tracking and clear active state
    */
   public stopTracking(): void {
     if (this.pollingInterval) {
       clearInterval(this.pollingInterval);
       this.pollingInterval = null;
     }
+
     this.currentManufacturer = null;
     this.currentIcao24s = [];
   }
+
+  /**
+   * Notify subscribers with updated aircraft data
+   */
+  protected notifySubscribers(manufacturer: string, data: Aircraft[]): void {
+    const subscribers = this.subscriptions.get(manufacturer);
+    if (subscribers) {
+      subscribers.forEach((callback) => {
+        try {
+          callback(data);
+        } catch (error) {
+          console.error(`[ClientTracking] Subscriber callback error:`, error);
+        }
+      });
+    }
+  }
+
+  /**
+   * Get all actively tracked aircraft for the current manufacturer
+   */
+  public async getTrackedAircraft(): Promise<Aircraft[]> {
+    if (!this.currentManufacturer) {
+      return [];
+    }
+
+    try {
+      const response = await fetch('/api/tracking/positions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'getTrackedAircraft',
+          manufacturer: this.currentManufacturer,
+        }),
+      });
+
+      const { success, data } = await response.json();
+
+      if (!success || !Array.isArray(data)) {
+        console.error('[ClientTracking] ❌ Failed to fetch active aircraft');
+        return [];
+      }
+
+      console.log(`[ClientTracking] ✅ Found ${data.length} active aircraft.`);
+      return data;
+    } catch (error) {
+      console.error(
+        '[ClientTracking] ❌ Error fetching tracked aircraft:',
+        error
+      );
+      this.handleError(error);
+      return [];
+    }
+  }
+
+  /**
+   * Clean up resources when the service is destroyed
+   */
+  public destroy(): void {
+    this.stopTracking();
+    // Clean up any other resources
+  }
 }
 
+// Export singleton instance for use in other modules
 export const clientTrackingService = ClientTrackingService.getInstance();
-// Public wrapper
-export async function fetchIcao24s(manufacturer: string): Promise<string[]> {
-  return fetchIcao24s(manufacturer);
-}

@@ -48,10 +48,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse<APIResponse>) {
   }
 
   try {
-    const success = await trackingService.updateSinglePosition(
-      icao24,
-      position
-    );
+    const success = await trackingService.updatePositions(icao24, position);
 
     if (success) {
       return res.status(200).json({

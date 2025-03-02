@@ -8,6 +8,7 @@ import type {
   TrackingData,
   OpenSkyStateArray,
   OpenSkyState,
+  PartialOpenSkyState,
   ExtendedAircraft,
 } from '../types/base';
 
@@ -210,29 +211,64 @@ export const OpenSkyTransforms = {
     }
   },
 
-  toExtendedAircraft(state: OpenSkyStateArray, manufacturer: string): Aircraft {
+  toExtendedAircraft(
+    state: PartialOpenSkyState,
+    manufacturer: string
+  ): Aircraft {
     try {
       console.log(
         `[OpenSkyTransforms] Processing state for ${state[0]} from ${manufacturer}`
       );
 
-      // Convert on_ground to boolean safely
-      const onGround = this.convertToBoolean(state[8]);
+      // First check if we have a valid ICAO24 code
+      if (
+        !state ||
+        !Array.isArray(state) ||
+        typeof state[0] !== 'string' ||
+        !state[0]
+      ) {
+        console.warn(
+          '[OpenSkyTransforms] Invalid or missing ICAO24 code:',
+          state
+        );
+        // Return a minimal valid aircraft
+        return BaseTransforms.normalize({
+          icao24: 'unknown',
+          manufacturer: manufacturer || 'Unknown',
+          isTracked: true,
+          lastSeen: Date.now(),
+        });
+      }
 
-      // Create base aircraft
+      // Extract values with safe fallbacks
+      const icao24 = String(state[0]).toLowerCase();
+      const latitude =
+        typeof state[6] === 'number' && !isNaN(state[6]) ? state[6] : 0;
+      const longitude =
+        typeof state[5] === 'number' && !isNaN(state[5]) ? state[5] : 0;
+      const altitude =
+        typeof state[7] === 'number' && !isNaN(state[7]) ? state[7] : 0;
+      const velocity =
+        typeof state[9] === 'number' && !isNaN(state[9]) ? state[9] : 0;
+      const heading =
+        typeof state[10] === 'number' && !isNaN(state[10]) ? state[10] : 0;
+      const onGround = this.convertToBoolean(state[8]);
+      const lastContact =
+        typeof state[4] === 'number' && !isNaN(state[4])
+          ? state[4]
+          : Math.floor(Date.now() / 1000);
+
+      // Create aircraft
       const aircraft = BaseTransforms.normalize({
-        icao24: state[0],
-        latitude: state[6],
-        longitude: state[5],
-        altitude: typeof state[7] === 'number' ? state[7] : 0,
-        velocity: typeof state[9] === 'number' ? state[9] : 0,
-        heading: typeof state[10] === 'number' ? state[10] : 0,
+        icao24,
+        latitude,
+        longitude,
+        altitude,
+        velocity,
+        heading,
         on_ground: onGround,
-        last_contact:
-          typeof state[4] === 'number'
-            ? state[4]
-            : Math.floor(Date.now() / 1000),
-        manufacturer,
+        last_contact: lastContact,
+        manufacturer: manufacturer || 'Unknown',
         'N-NUMBER': '',
         model: '',
         NAME: '',
@@ -244,81 +280,69 @@ export const OpenSkyTransforms = {
         lastSeen: Date.now(),
       });
 
-      // Assign model based on manufacturer and ICAO24
-      return modelAssignmentService.assignModel(aircraft);
+      console.log(
+        `[OpenSkyTransforms] Successfully transformed aircraft: ${icao24}`
+      );
+      return aircraft;
     } catch (error) {
       console.error(
         '[OpenSkyTransforms] Error in toExtendedAircraft:',
         error,
         'for state:',
-        state
+        state ? state.slice(0, 5) : null
       );
 
       // Return a minimal valid aircraft object in case of error
       return BaseTransforms.normalize({
-        icao24: typeof state[0] === 'string' ? state[0] : 'unknown',
-        latitude: 0,
-        longitude: 0,
-        manufacturer,
+        icao24: typeof state[0] === 'string' ? state[0] : `error-${Date.now()}`,
+        manufacturer: manufacturer || 'Unknown',
         isTracked: true,
+        lastSeen: Date.now(),
       });
     }
   },
 
-  /**
-   * Transform object-format state to Aircraft with model assignment
-   */
-
-  validateState(state: unknown): state is OpenSkyStateArray {
+  // This method checks if a partial state has enough data to be considered valid
+  // It's more forgiving than the strict tuple type validation
+  validatePartialState(state: PartialOpenSkyState): boolean {
     if (!Array.isArray(state)) {
-      console.log('[OpenSkyTransforms] State is not an array:', state);
+      console.warn('[OpenSkyTransforms] State is not an array');
       return false;
     }
 
-    // Check minimum length
-    if (state.length < 11) {
-      console.log('[OpenSkyTransforms] State array too short:', state.length);
-      return false;
-    }
-
-    // Check icao24 (required)
+    // At minimum, we need a valid ICAO24 code
     if (typeof state[0] !== 'string' || !state[0]) {
-      console.log('[OpenSkyTransforms] Invalid icao24:', state[0]);
+      console.warn('[OpenSkyTransforms] Missing valid ICAO24 code');
       return false;
     }
 
-    // Check last_contact (required)
-    if (typeof state[4] !== 'number' || isNaN(state[4])) {
-      console.log('[OpenSkyTransforms] Invalid last_contact:', state[4]);
-      return false;
-    }
-
-    // Check longitude (required)
+    // Log warnings for missing positional data but don't fail validation
     if (typeof state[5] !== 'number' || isNaN(state[5])) {
-      console.log('[OpenSkyTransforms] Invalid longitude:', state[5]);
-      return false;
+      console.warn(`[OpenSkyTransforms] Missing longitude for ${state[0]}`);
     }
 
-    // Check latitude (required)
     if (typeof state[6] !== 'number' || isNaN(state[6])) {
-      console.log('[OpenSkyTransforms] Invalid latitude:', state[6]);
-      return false;
+      console.warn(`[OpenSkyTransforms] Missing latitude for ${state[0]}`);
     }
 
-    // Check on_ground - use proper type checking instead of direct comparison
-    const onGround = state[8];
-    const isValidOnGround =
-      typeof onGround === 'boolean' ||
-      (typeof onGround === 'number' && (onGround === 0 || onGround === 1));
-
-    if (!isValidOnGround) {
-      console.log('[OpenSkyTransforms] Invalid on_ground:', state[8]);
-      return false;
-    }
-
-    // Basic validation passed
+    // We're being permissive here - as long as we have an ICAO24, we consider it valid
     return true;
   },
+
+  // Keep your existing validateState method for when you need strict validation
+  validateState(state: unknown): state is OpenSkyStateArray {
+    if (!Array.isArray(state)) return false;
+    if (state.length < 17) return false;
+    if (typeof state[0] !== 'string' || !state[0]) return false;
+    if (typeof state[4] !== 'number' || isNaN(state[4])) return false;
+    if (typeof state[5] !== 'number' || isNaN(state[5])) return false;
+    if (typeof state[6] !== 'number' || isNaN(state[6])) return false;
+    if (typeof state[8] !== 'boolean' && typeof state[8] !== 'number')
+      return false;
+    return true;
+  },
+
+  // Other methods...
 
   toTrackingData(state: OpenSkyStateArray): Aircraft {
     try {

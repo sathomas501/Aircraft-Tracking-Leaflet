@@ -2,7 +2,11 @@
 
 import { BaseDatabaseManager } from './baseDatabaseManager';
 import { StaticDatabaseManager } from './staticDatabaseManager';
+import CleanupService from '../../services/CleanupService';
 import type { Aircraft } from '@/types/base';
+import sqlite3 from 'sqlite3';
+const { Database } = sqlite3;
+type RunResult = sqlite3.RunResult;
 
 export class TrackingDatabaseManager extends BaseDatabaseManager {
   private static instance: TrackingDatabaseManager;
@@ -19,16 +23,63 @@ export class TrackingDatabaseManager extends BaseDatabaseManager {
     return TrackingDatabaseManager.instance;
   }
 
+  // ✅ Add this function to avoid import errors
+  public static getDefaultInstance(): TrackingDatabaseManager {
+    if (!TrackingDatabaseManager.instance) {
+      TrackingDatabaseManager.instance = new TrackingDatabaseManager();
+    }
+    return TrackingDatabaseManager.instance;
+  }
+
+  async executeWithRetry(
+    query: string,
+    params: any[] = [],
+    retries = 5
+  ): Promise<RunResult> {
+    const db = await this.getDatabase();
+
+    for (let attempt = 0; attempt < retries; attempt++) {
+      try {
+        return await new Promise<RunResult>((resolve, reject) => {
+          db.run(query, params, function (this: RunResult, err: Error | null) {
+            if (err) reject(err);
+            else resolve(this);
+          });
+        });
+      } catch (error: any) {
+        if (error.code === 'SQLITE_BUSY' && attempt < retries - 1) {
+          console.warn(
+            `[TrackingDatabaseManager] ⚠️ Database is locked. Retrying... (${attempt + 1}/${retries})`
+          );
+          await new Promise((resolve) =>
+            setTimeout(resolve, 100 * (attempt + 1))
+          ); // Exponential backoff
+        } else {
+          console.error(`[TrackingDatabaseManager] ❌ Query failed:`, error);
+          throw error;
+        }
+      }
+    }
+    throw new Error(
+      '[TrackingDatabaseManager] Max retries reached. Query failed.'
+    );
+  }
+
   /**
    * Create necessary tables (implements abstract method from BaseDatabaseManager)
    */
   protected async createTables(): Promise<void> {
-    if (!this.db) {
-      throw new Error('Database not initialized');
-    }
+    try {
+      if (!this.db) {
+        throw new Error('Database not initialized');
+      }
 
-    // Create tracked_aircraft table
-    await this.db.exec(`
+      console.log(
+        "[TrackingDatabaseManager] Creating necessary tables if they don't exist"
+      );
+
+      // Create tracked_aircraft table
+      await this.db.exec(`
       CREATE TABLE IF NOT EXISTS tracked_aircraft (
         icao24 TEXT PRIMARY KEY,
         latitude REAL,
@@ -43,9 +94,12 @@ export class TrackingDatabaseManager extends BaseDatabaseManager {
         updated_at INTEGER
       )
     `);
+      console.log(
+        '[TrackingDatabaseManager] ✅ tracked_aircraft table verified'
+      );
 
-    // Create pending_aircraft table
-    await this.db.exec(`
+      // Create pending_aircraft table
+      await this.db.exec(`
       CREATE TABLE IF NOT EXISTS pending_aircraft (
         icao24 TEXT PRIMARY KEY,
         latitude REAL,
@@ -60,8 +114,27 @@ export class TrackingDatabaseManager extends BaseDatabaseManager {
         added_at INTEGER
       )
     `);
+      console.log(
+        '[TrackingDatabaseManager] ✅ pending_aircraft table verified'
+      );
 
-    // Add any other tables or indexes as needed
+      // Create index on manufacturer for faster lookups
+      await this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_tracked_manufacturer ON tracked_aircraft(manufacturer);
+      CREATE INDEX IF NOT EXISTS idx_pending_manufacturer ON pending_aircraft(manufacturer);
+    `);
+      console.log('[TrackingDatabaseManager] ✅ Indices created');
+
+      console.log(
+        '[TrackingDatabaseManager] All tables and indices created successfully'
+      );
+    } catch (error) {
+      console.error(
+        '[TrackingDatabaseManager] ❌ Error creating tables:',
+        error
+      );
+      throw error;
+    }
   }
 
   /**
@@ -567,8 +640,6 @@ export class TrackingDatabaseManager extends BaseDatabaseManager {
    */
   async getTrackedAircraft(manufacturer?: string): Promise<Aircraft[]> {
     try {
-      const db = await this.getDatabase();
-
       const query = manufacturer
         ? `SELECT * FROM tracked_aircraft WHERE manufacturer = ? AND updated_at > ?`
         : `SELECT * FROM tracked_aircraft WHERE updated_at > ?`;
@@ -584,7 +655,8 @@ export class TrackingDatabaseManager extends BaseDatabaseManager {
         `[TrackingDatabaseManager] Query params: ${JSON.stringify(params)}`
       );
 
-      const rows = await db.all(query, params);
+      // Use executeQueryWithRetry instead of direct db.all
+      const rows = await this.executeQueryWithRetry<Aircraft>(query, params);
 
       console.log(
         `[TrackingDatabaseManager] Found ${rows.length} tracked aircraft`
@@ -611,7 +683,7 @@ export class TrackingDatabaseManager extends BaseDatabaseManager {
         );
       }
 
-      return rows as Aircraft[];
+      return rows;
     } catch (error) {
       console.error(
         '[TrackingDatabaseManager] Error getting tracked aircraft:',
@@ -964,15 +1036,24 @@ export class TrackingDatabaseManager extends BaseDatabaseManager {
   /**
    * Get all pending aircraft
    */
-  async getPendingAircraft(): Promise<Aircraft[]> {
+  async getPendingAircraft(manufacturer?: string): Promise<Aircraft[]> {
     try {
       const db = await this.getDatabase();
 
-      const query = `SELECT * FROM pending_aircraft ORDER BY priority DESC, added_at ASC`;
-      const aircraft = await db.all(query);
+      let query = `SELECT * FROM pending_aircraft`;
+      const params: any[] = [];
+
+      if (manufacturer) {
+        query += ` WHERE manufacturer = ?`;
+        params.push(manufacturer);
+      }
+
+      query += ` ORDER BY priority DESC, added_at ASC`;
+
+      const aircraft = await db.all(query, params);
 
       console.log(
-        `[TrackingDatabaseManager] Found ${aircraft.length} pending aircraft`
+        `[TrackingDatabaseManager] Found ${aircraft.length} pending aircraft${manufacturer ? ` for manufacturer ${manufacturer}` : ''}`
       );
 
       return aircraft as Aircraft[];
@@ -1065,6 +1146,31 @@ export class TrackingDatabaseManager extends BaseDatabaseManager {
   }
 
   /**
+   * ✅ Call CleanupService for stale aircraft cleanup.
+   */
+  async cleanupTrackedAircraft(): Promise<number> {
+    try {
+      const cleanupService = CleanupService.getInstance();
+      await cleanupService.initialize();
+
+      console.log(
+        `[TrackingDatabaseManager] 🧹 Running CleanupService cleanup`
+      );
+      const removedCount = await cleanupService.cleanup();
+      console.log(
+        `[TrackingDatabaseManager] ✅ Removed ${removedCount} stale aircraft`
+      );
+
+      return removedCount;
+    } catch (error) {
+      console.error(
+        `[TrackingDatabaseManager] ❌ Error during cleanup:`,
+        error
+      );
+      return 0;
+    }
+  }
+  /**
    * Perform maintenance tasks on the tracking database
    * - Marks aircraft as stale if they haven't been seen recently
    * - Removes very old aircraft data
@@ -1139,32 +1245,26 @@ export class TrackingDatabaseManager extends BaseDatabaseManager {
   // Add a new method to TrackingDatabaseManager
   async cleanupManufacturerAircraft(manufacturer: string): Promise<number> {
     try {
-      const db = await this.getDatabase();
-      const twoHoursAgo = Date.now() - 7200000; // 2 hours in milliseconds
+      console.log(
+        `[TrackingDatabaseManager] 🔄 Cleaning stale aircraft for ${manufacturer}`
+      );
+
+      const cleanupService = CleanupService.getInstance();
+      const { trackedRemoved, pendingRemoved } =
+        await cleanupService.cleanupManufacturer(manufacturer);
+
+      const removedCount = trackedRemoved + pendingRemoved; // ✅ Fix: Sum the removals
 
       console.log(
-        `[TrackingDatabaseManager] Cleaning up stale ${manufacturer} aircraft older than 2 hours`
+        `[TrackingDatabaseManager] ✅ Removed ${removedCount} stale aircraft for ${manufacturer}`
       );
-
-      // Delete stale aircraft for this specific manufacturer
-      const result = await db.run(
-        `DELETE FROM tracked_aircraft 
-       WHERE manufacturer = ? AND updated_at < ?`,
-        [manufacturer, twoHoursAgo]
-      );
-
-      const deletedCount = result?.changes || 0;
-      console.log(
-        `[TrackingDatabaseManager] ✅ Removed ${deletedCount} stale ${manufacturer} aircraft`
-      );
-
-      return deletedCount;
+      return removedCount; // ✅ Returns a single number
     } catch (error) {
       console.error(
-        `[TrackingDatabaseManager] ❌ Error cleaning up ${manufacturer} aircraft:`,
+        `[TrackingDatabaseManager] ❌ Error cleaning up aircraft for ${manufacturer}:`,
         error
       );
-      return 0;
+      return 0; // ✅ Ensure function always returns a number
     }
   }
 

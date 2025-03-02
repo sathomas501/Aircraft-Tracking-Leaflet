@@ -270,53 +270,126 @@ export class IcaoBatchService {
 
           for (const rawState of batchResponse.data.states) {
             try {
-              let aircraft: Aircraft | null = null;
-
-              // Only process if it has valid position data (non-null lat/lon)
-              if (
-                Array.isArray(rawState) &&
-                OpenSkyTransforms.validateState(rawState) &&
-                rawState[5] !== null && // longitude not null
-                rawState[6] !== null // latitude not null
-              ) {
-                // Transform state array to aircraft
-                aircraft = OpenSkyTransforms.toExtendedAircraft(
-                  rawState,
-                  manufacturer
+              // First determine if we're dealing with an array or object
+              if (Array.isArray(rawState)) {
+                console.log(
+                  `[IcaoBatchService] Processing array state for ICAO: ${rawState[0]}`
                 );
 
-                // Ensure model is set
-                if (!aircraft.model || aircraft.model.trim() === '') {
-                  console.warn(
-                    `[IcaoBatchService] ⚠️ No model found for ${aircraft.icao24}. Attempting lookup.`
+                if (
+                  typeof rawState[0] === 'string' &&
+                  rawState[0].trim() !== ''
+                ) {
+                  // Process array format
+                  let aircraft = OpenSkyTransforms.toExtendedAircraft(
+                    rawState,
+                    manufacturer
                   );
-                  if (models && models.length > 0) {
-                    // Use the first model instead of joining all models
-                    aircraft.model = models[0].model;
-                    console.log(
-                      `[IcaoBatchService] ✅ Set model for ${aircraft.icao24}: ${models[0].model}`
-                    );
-                  } else {
+
+                  // Double-check manufacturer was set correctly
+                  if (
+                    !aircraft.manufacturer ||
+                    aircraft.manufacturer === 'Unknown'
+                  ) {
                     console.warn(
-                      `[IcaoBatchService] ❌ No model found in DB for ${aircraft.icao24}`
+                      `[IcaoBatchService] ⚠️ Manufacturer missing for ${aircraft.icao24}. Explicitly setting to: "${manufacturer}"`
                     );
+                    aircraft.manufacturer = manufacturer;
                   }
+
+                  // Ensure model is set
+                  if (!aircraft.model || aircraft.model.trim() === '') {
+                    console.log(
+                      `[IcaoBatchService] ⚠️ No model found for ${aircraft.icao24}. Attempting lookup.`
+                    );
+                    if (models && models.length > 0) {
+                      aircraft.model = models[0].model;
+                      console.log(
+                        `[IcaoBatchService] ✅ Set model for ${aircraft.icao24}: ${models[0].model}`
+                      );
+                    } else {
+                      console.warn(
+                        `[IcaoBatchService] ❌ No model found in DB for ${aircraft.icao24}`
+                      );
+                    }
+                  }
+
+                  aircraft.isTracked = true;
+                  aircraft.lastSeen = Date.now();
+
+                  validAircraft.push(aircraft);
+                  transformedAircraft++;
+                  console.log(
+                    `[IcaoBatchService] ✅ Successfully transformed ${aircraft.icao24}`
+                  );
+                } else {
+                  console.warn(
+                    `[IcaoBatchService] ⚠️ Invalid array state (missing ICAO24):`,
+                    Array.isArray(rawState) ? rawState.slice(0, 5) : rawState
+                  );
                 }
+              }
+              // Handle object format
+              else if (typeof rawState === 'object' && rawState !== null) {
+                console.log(
+                  `[IcaoBatchService] Processing object state for ICAO: ${rawState.icao24}`
+                );
 
-                // Mark the aircraft as active
-                aircraft.isTracked = true;
-                aircraft.lastSeen = Date.now();
+                if (rawState.icao24 && typeof rawState.icao24 === 'string') {
+                  // Create aircraft object from the raw state
+                  let aircraft: Aircraft = {
+                    ...rawState,
+                    manufacturer: manufacturer, // Explicitly set manufacturer
+                    isTracked: true,
+                    lastSeen: Date.now(),
+                  };
 
-                validAircraft.push(aircraft);
-                transformedAircraft++;
+                  // Ensure model is set
+                  if (!aircraft.model || aircraft.model.trim() === '') {
+                    console.log(
+                      `[IcaoBatchService] ⚠️ No model found for ${aircraft.icao24}. Attempting lookup.`
+                    );
+                    if (models && models.length > 0) {
+                      aircraft.model = models[0].model;
+                      console.log(
+                        `[IcaoBatchService] ✅ Set model for ${aircraft.icao24}: ${models[0].model}`
+                      );
+                    } else {
+                      console.warn(
+                        `[IcaoBatchService] ❌ No model found in DB for ${aircraft.icao24}`
+                      );
+                    }
+                  }
+
+                  validAircraft.push(aircraft);
+                  transformedAircraft++;
+                  console.log(
+                    `[IcaoBatchService] ✅ Successfully transformed ${aircraft.icao24}`
+                  );
+                } else {
+                  console.warn(
+                    `[IcaoBatchService] ⚠️ Invalid object state (missing ICAO24):`,
+                    JSON.stringify(rawState).substring(0, 100)
+                  );
+                }
               } else {
-                // Skip this state because it has no valid position
-                continue;
+                console.warn(
+                  `[IcaoBatchService] ⚠️ Invalid state format:`,
+                  typeof rawState === 'object'
+                    ? JSON.stringify(rawState).substring(0, 100)
+                    : rawState
+                );
               }
             } catch (error) {
               console.error(
                 `[IcaoBatchService] ❌ Error processing state:`,
-                error
+                error,
+                'raw state sample:',
+                typeof rawState === 'object'
+                  ? Array.isArray(rawState)
+                    ? rawState.slice(0, 5)
+                    : JSON.stringify(rawState).substring(0, 100)
+                  : rawState
               );
             }
           }
@@ -329,7 +402,7 @@ export class IcaoBatchService {
             );
 
             try {
-              // Only store aircraft with valid positions in tracked_aircraft
+              // Store aircraft in tracked_aircraft table
               await trackingDb.upsertActiveAircraftBatch(validAircraft);
               console.log(
                 `[IcaoBatchService] 💾 Stored ${validAircraft.length} aircraft in tracking DB`

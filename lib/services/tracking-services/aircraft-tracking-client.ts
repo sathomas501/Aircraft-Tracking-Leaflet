@@ -1,16 +1,24 @@
 // lib/services/client/aircraft-tracking-client.ts
 import { Aircraft } from '@/types/base';
-import { getAircraftTrackingService } from './aircraft-tracking-service';
+import CleanupService from '@/lib/services/CleanupService';
 
+/**
+ * Client-side service for interacting with the tracking API
+ * Updated to work with the new tracking services
+ */
 export class AircraftTrackingClient {
   private static instance: AircraftTrackingClient | null = null;
+  private cleanupService: CleanupService;
   private subscribers: Map<string, Set<(data: Aircraft[]) => void>> = new Map();
-  private trackingService = getAircraftTrackingService(); // Use the server-side service
+  private pollingIntervals: Map<string, NodeJS.Timeout> = new Map();
   private cache: Map<string, { data: Aircraft[]; timestamp: number }> =
     new Map();
   private readonly CACHE_DURATION = 5000; // 5 seconds
+  private readonly POLL_INTERVAL = 30000; // 30 seconds
 
-  private constructor() {}
+  constructor() {
+    this.cleanupService = new CleanupService();
+  }
 
   public static getInstance(): AircraftTrackingClient {
     if (!AircraftTrackingClient.instance) {
@@ -26,7 +34,11 @@ export class AircraftTrackingClient {
     // Check cache first
     const cacheKey = `aircraft-${manufacturer}`;
     const cachedData = this.cache.get(cacheKey);
+
     if (cachedData && Date.now() - cachedData.timestamp < this.CACHE_DURATION) {
+      console.log(
+        `[AircraftTrackingClient] Using cached data for ${manufacturer}`
+      );
       return cachedData.data;
     }
 
@@ -34,10 +46,32 @@ export class AircraftTrackingClient {
       console.log(
         `[AircraftTrackingClient] Fetching aircraft for ${manufacturer}`
       );
-      const data = await this.trackingService.processManufacturer(manufacturer); // Use the server-side service
 
-      // Cache the result
-      this.cache.set(cacheKey, { data, timestamp: Date.now() });
+      const response = await fetch(`/api/tracking`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'getTrackedAircraft',
+          manufacturer,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`API error: ${response.status}`);
+      }
+
+      const result = await response.json();
+      const data = result.aircraft || [];
+
+      // Update cache
+      this.cache.set(cacheKey, {
+        data,
+        timestamp: Date.now(),
+      });
+
+      // Notify subscribers
+      this.notifySubscribers(manufacturer, data);
+
       return data;
     } catch (error) {
       console.error('[AircraftTrackingClient] Error fetching aircraft:', error);
@@ -46,39 +80,156 @@ export class AircraftTrackingClient {
   }
 
   /**
-   * Subscribe to aircraft updates
+   * Start tracking aircraft for a manufacturer
+   */
+  public async startTracking(manufacturer: string): Promise<boolean> {
+    if (!manufacturer) return false;
+
+    try {
+      const response = await fetch(`/api/tracking`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'startTracking',
+          manufacturer,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`API error: ${response.status}`);
+      }
+
+      const result = await response.json();
+
+      // Invalidate cache for this manufacturer
+      this.cache.delete(`aircraft-${manufacturer}`);
+
+      return result.success;
+    } catch (error) {
+      console.error('[AircraftTrackingClient] Error starting tracking:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Stop tracking aircraft for a manufacturer
+   */
+  public async stopTracking(manufacturer: string): Promise<boolean> {
+    if (!manufacturer) return false;
+
+    try {
+      const response = await fetch(`/api/tracking`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'stopTracking',
+          manufacturer,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`API error: ${response.status}`);
+      }
+
+      // Stop any polling we're doing
+      this.stopPolling(manufacturer);
+
+      // Invalidate cache
+      this.cache.delete(`aircraft-${manufacturer}`);
+
+      const result = await response.json();
+      return result.success;
+    } catch (error) {
+      console.error('[AircraftTrackingClient] Error stopping tracking:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Subscribe to aircraft updates for a manufacturer
    */
   public subscribe(
     manufacturer: string,
     callback: (data: Aircraft[]) => void
   ): () => void {
+    // Create subscriber set if it doesn't exist
     if (!this.subscribers.has(manufacturer)) {
       this.subscribers.set(manufacturer, new Set());
     }
+
+    // Add callback to subscribers
     this.subscribers.get(manufacturer)!.add(callback);
 
-    // Fetch initial data
-    this.getTrackedAircraft(manufacturer)
-      .then((data) => callback(data))
-      .catch((error) =>
-        console.error('[AircraftTrackingClient] Subscription error:', error)
-      );
+    // Start polling if not already polling for this manufacturer
+    this.startPolling(manufacturer);
 
+    // Return unsubscribe function
     return () => {
       this.unsubscribe(manufacturer, callback);
     };
   }
 
+  /**
+   * Unsubscribe from aircraft updates
+   */
   private unsubscribe(
     manufacturer: string,
     callback: (data: Aircraft[]) => void
   ): void {
     const subscribers = this.subscribers.get(manufacturer);
+
     if (subscribers) {
       subscribers.delete(callback);
+
+      // If no more subscribers, stop polling
       if (subscribers.size === 0) {
         this.subscribers.delete(manufacturer);
+        this.stopPolling(manufacturer);
       }
+    }
+  }
+
+  /**
+   * Start polling for aircraft updates
+   */
+  private startPolling(manufacturer: string): void {
+    // Skip if already polling
+    if (this.pollingIntervals.has(manufacturer)) {
+      return;
+    }
+
+    console.log(
+      `[AircraftTrackingClient] Starting polling for ${manufacturer}`
+    );
+
+    // Create polling interval
+    const intervalId = setInterval(async () => {
+      try {
+        await this.getTrackedAircraft(manufacturer);
+      } catch (error) {
+        console.error(
+          `[AircraftTrackingClient] Polling error for ${manufacturer}:`,
+          error
+        );
+      }
+    }, this.POLL_INTERVAL);
+
+    // Save interval ID
+    this.pollingIntervals.set(manufacturer, intervalId);
+  }
+
+  /**
+   * Stop polling for aircraft updates
+   */
+  private stopPolling(manufacturer: string): void {
+    const intervalId = this.pollingIntervals.get(manufacturer);
+
+    if (intervalId) {
+      console.log(
+        `[AircraftTrackingClient] Stopping polling for ${manufacturer}`
+      );
+      clearInterval(intervalId);
+      this.pollingIntervals.delete(manufacturer);
     }
   }
 
@@ -87,12 +238,13 @@ export class AircraftTrackingClient {
    */
   private notifySubscribers(manufacturer: string, data: Aircraft[]): void {
     const subscribers = this.subscribers.get(manufacturer);
+
     if (subscribers) {
       for (const callback of subscribers) {
         try {
           callback(data);
         } catch (error) {
-          console.error('[AircraftTrackingClient] Callback error:', error);
+          console.error(`[AircraftTrackingClient] Callback error:`, error);
         }
       }
     }
@@ -116,48 +268,159 @@ export class AircraftTrackingClient {
     if (!positions.length) return 0;
 
     try {
-      // Using updateAircraftPositions method which exists in AircraftTrackingService
-      // Convert positions to the format expected by updateAircraftPositions
-      const manufacturer = positions[0].manufacturer || '';
-
-      // Convert positions to OpenSky state array format
-      const openSkyFormat = positions.map((pos) => {
-        // Create an array with minimum required properties for updateAircraftPositions
-        // Format is based on the method's expectation in AircraftTrackingService
-        return [
-          pos.icao24, // icao24 at index 0
-          '', // callsign (empty)
-          '', // origin_country (empty)
-          0, // time_position (not used)
-          Math.floor(Date.now() / 1000), // last_contact
-          pos.longitude, // longitude at index 5
-          pos.latitude, // latitude at index 6
-          pos.altitude || 0, // altitude at index 7
-          pos.on_ground || false, // on_ground at index 8
-          pos.velocity || 0, // velocity at index 9
-          pos.heading || 0, // heading at index 10
-          0, // vertical_rate (not used)
-          [], // sensors (not used)
-          0, // baro_altitude (not used)
-          '', // squawk (not used)
-          false, // spi (not used)
-          0, // position_source (not used)
-        ];
+      const response = await fetch('/api/tracking', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'upsertActiveAircraftBatch',
+          aircraft: positions.map((p) => ({
+            icao24: p.icao24,
+            latitude: p.latitude,
+            longitude: p.longitude,
+            altitude: p.altitude || 0,
+            velocity: p.velocity || 0,
+            heading: p.heading || 0,
+            on_ground: p.on_ground || false,
+            manufacturer: p.manufacturer || '',
+          })),
+        }),
       });
 
-      await this.trackingService.updateAircraftPositions(
-        openSkyFormat,
-        manufacturer
+      if (!response.ok) {
+        throw new Error(`API error: ${response.status}`);
+      }
+
+      const result = await response.json();
+
+      // Clear cache for affected manufacturers
+      const manufacturers = new Set(
+        positions.map((p) => p.manufacturer).filter(Boolean)
       );
 
-      // Return the count of positions updated
-      return positions.length;
+      for (const manufacturer of manufacturers) {
+        this.cache.delete(`aircraft-${manufacturer}`);
+      }
+
+      return result.count || 0;
     } catch (error) {
       console.error(
         '[AircraftTrackingClient] Error updating positions:',
         error
       );
       return 0;
+    }
+  }
+
+  /**
+   * Get tracked ICAO24 codes
+   */
+  public async getTrackedIcao24s(manufacturer?: string): Promise<string[]> {
+    try {
+      let url = '/api/tracking?action=tracked-icaos';
+      if (manufacturer) {
+        url += `&manufacturer=${encodeURIComponent(manufacturer)}`;
+      }
+
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      if (!response.ok) {
+        throw new Error(`API error: ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      if (!data.success) {
+        throw new Error(data.message || 'Failed to get tracked ICAO24 codes');
+      }
+
+      return data.data?.icaos || [];
+    } catch (error) {
+      console.error(
+        '[AircraftTrackingClient] Error fetching tracked ICAO24s:',
+        error
+      );
+      return [];
+    }
+  }
+
+  /**
+   * Sync aircraft for a manufacturer (starts tracking and fetches latest data)
+   */
+  public async syncManufacturer(manufacturer: string): Promise<{
+    success: boolean;
+    count: number;
+  }> {
+    if (!manufacturer) return { success: false, count: 0 };
+
+    try {
+      const response = await fetch('/api/tracking', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'syncManufacturer',
+          manufacturer,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`API error: ${response.status}`);
+      }
+
+      // Invalidate cache
+      this.cache.delete(`aircraft-${manufacturer}`);
+
+      const result = await response.json();
+      return {
+        success: result.success || false,
+        count: result.count || 0,
+      };
+    } catch (error) {
+      console.error(
+        '[AircraftTrackingClient] Error syncing manufacturer:',
+        error
+      );
+      return { success: false, count: 0 };
+    }
+  }
+
+  public async cleanupManufacturer(
+    manufacturer: string,
+    olderThan?: number
+  ): Promise<{
+    success: boolean;
+    trackedRemoved: number;
+    pendingRemoved: number;
+  }> {
+    if (!manufacturer) {
+      return { success: false, trackedRemoved: 0, pendingRemoved: 0 };
+    }
+
+    try {
+      console.log(
+        `[AircraftTrackingClient] 🚀 Running cleanup for manufacturer: ${manufacturer}`
+      );
+
+      // ✅ Invoke CleanupService
+      const { trackedRemoved, pendingRemoved } =
+        await this.cleanupService.cleanupManufacturer(manufacturer, olderThan);
+
+      // ✅ Invalidate cache after successful cleanup
+      this.cache.delete(`aircraft-${manufacturer}`);
+
+      console.log(
+        `[AircraftTrackingClient] ✅ Cleanup complete. Removed ${trackedRemoved} tracked, ${pendingRemoved} pending aircraft.`
+      );
+
+      return { success: true, trackedRemoved, pendingRemoved };
+    } catch (error) {
+      console.error(
+        `[AircraftTrackingClient] ❌ Cleanup failed for ${manufacturer}:`,
+        error
+      );
+      return { success: false, trackedRemoved: 0, pendingRemoved: 0 };
     }
   }
 }

@@ -84,7 +84,7 @@ async function initializeTables(): Promise<void> {
   `;
 
   const activeTrackingTable = `
-    CREATE TABLE IF NOT EXISTS active_tracking (
+    CREATE TABLE IF NOT EXISTS tracked_aircraft (
       icao24 TEXT PRIMARY KEY,
       manufacturer TEXT,
       model TEXT,
@@ -96,7 +96,7 @@ async function initializeTables(): Promise<void> {
       heading REAL DEFAULT 0,
       on_ground INTEGER DEFAULT 0,
       last_contact INTEGER,
-      last_seen INTEGER,
+      last_contact INTEGER,
       TYPE_AIRCRAFT TEXT,
       "N-NUMBER" TEXT,
       OWNER_TYPE TEXT,
@@ -111,12 +111,12 @@ async function initializeTables(): Promise<void> {
       )
     );
 
-    CREATE INDEX IF NOT EXISTS idx_active_tracking_manufacturer 
-      ON active_tracking(manufacturer);
-    CREATE INDEX IF NOT EXISTS idx_active_tracking_last_seen 
-      ON active_tracking(last_seen);
-    CREATE INDEX IF NOT EXISTS idx_active_tracking_coords 
-      ON active_tracking(latitude, longitude);
+    CREATE INDEX IF NOT EXISTS idx_aircraft_tracked_manufacturer 
+      ON aircraft_tracked(manufacturer);
+    CREATE INDEX IF NOT EXISTS idx_aircraft_tracked_last_contact 
+      ON aircraft_tracked(last_contact);
+    CREATE INDEX IF NOT EXISTS idx_aircraft_tracked_coords 
+      ON aircraft_tracked(latitude, longitude);
   `;
 
   try {

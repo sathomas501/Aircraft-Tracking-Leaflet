@@ -9,7 +9,8 @@ export function extrapolatePosition(
   currentTime: number,
   maxExtrapolationTime: number = 300000 // 5 minutes in milliseconds
 ): ExtrapolatedPosition | null {
-  const timeDelta = (currentTime - aircraft.last_contact) / 1000; // Time difference in seconds
+  const lastContact = aircraft.last_contact ?? 0; // ✅ Ensure last_contact is defined
+  const timeDelta = (currentTime - lastContact) / 1000; // Time difference in seconds
 
   // Don't extrapolate if the time difference is too large
   if (timeDelta * 1000 > maxExtrapolationTime) {
@@ -74,8 +75,11 @@ export function shouldUpdatePosition(
   minUpdateDistance: number = 10, // minimum distance in meters
   minUpdateTime: number = 1000 // minimum time in milliseconds
 ): boolean {
+  const lastContactCurrent = currentPosition.last_contact ?? 0; // ✅ Ensure last_contact is defined
+  const lastContactNew = newPosition.last_contact ?? 0; // ✅ Ensure last_contact is defined
+
   // Time-based update - use last_contact instead of timestamp
-  if (newPosition.last_contact - currentPosition.last_contact > minUpdateTime) {
+  if (lastContactNew - lastContactCurrent > minUpdateTime) {
     return true;
   }
 
