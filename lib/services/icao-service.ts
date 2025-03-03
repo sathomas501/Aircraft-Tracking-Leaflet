@@ -160,28 +160,6 @@ export class Icao24Service {
   }
 
   /**
-   * Add ICAO24 codes to pending tracking
-   */
-  async addToPendingTracking(
-    icao24s: string[],
-    manufacturer: string
-  ): Promise<number> {
-    if (!icao24s.length || !manufacturer) {
-      return 0;
-    }
-
-    try {
-      return await this.dbManager.addPendingAircraft(icao24s, manufacturer);
-    } catch (error) {
-      console.error(
-        `[Icao24Service] ❌ Error adding to pending tracking:`,
-        error
-      );
-      return 0;
-    }
-  }
-
-  /**
    * Clear the cache for a specific manufacturer or all manufacturers
    */
   clearCache(manufacturer?: string): void {

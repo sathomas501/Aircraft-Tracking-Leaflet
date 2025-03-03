@@ -5,12 +5,8 @@ import { PollingRateLimiter } from '../services/rate-limiter';
 import { RATE_LIMITS } from '@/config/rate-limits';
 import { TrackingDatabaseManager } from '../db/managers/trackingDatabaseManager';
 import { StaticDatabaseManager } from '../db/managers/staticDatabaseManager';
-import {
-  DataCleanupUtils,
-  OpenSkyTransforms,
-} from '../../utils/aircraft-transform1';
+import { OpenSkyTransforms } from '../../utils/aircraft-transform1';
 import { icao24Service } from './icao-service';
-import { icao24CacheService } from './icao24Cache';
 
 interface IcaoBatchResponse {
   success: boolean;
@@ -23,7 +19,7 @@ interface IcaoBatchResponse {
 }
 
 export class IcaoBatchService {
-  private static readonly DEFAULT_BATCH_SIZE = 100; // Reduced batch size for better control
+  private static readonly DEFAULT_BATCH_SIZE = 100;
   private readonly baseUrl: string;
   private readonly rateLimiter: PollingRateLimiter;
 
@@ -39,7 +35,7 @@ export class IcaoBatchService {
       maxBatchSize: RATE_LIMITS.AUTHENTICATED.BATCH_SIZE,
       retryLimit: API_CONFIG.API.MAX_RETRY_LIMIT,
       requireAuthentication: true,
-      maxConcurrentRequests: 3, // Limit concurrent requests
+      maxConcurrentRequests: 3,
       interval: 60000,
       retryAfter: 1000,
     });
@@ -50,7 +46,6 @@ export class IcaoBatchService {
   }
 
   private formatIcaos(icaos: string[]): string[] {
-    // Deduplicate and clean ICAO codes
     const uniqueIcaos = new Set(icaos.map((code) => code.trim().toLowerCase()));
     return Array.from(uniqueIcaos).filter(this.validateIcao24);
   }
@@ -66,7 +61,6 @@ export class IcaoBatchService {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ icao24s: icaoBatch }),
-          // Add timeout to prevent hanging requests
           signal: AbortSignal.timeout(20000),
         });
 
@@ -75,20 +69,11 @@ export class IcaoBatchService {
         }
 
         const result = await response.json();
-
-        // Log the actual number of states received for tracking
         const statesCount = result.data?.states?.length || 0;
+
         console.log(
           `[IcaoBatchService] ✅ Received ${statesCount} states from OpenSky`
         );
-
-        // Quick check on first state if available for debugging
-        if (statesCount > 0) {
-          console.log(
-            `[IcaoBatchService] Sample state:`,
-            JSON.stringify(result.data.states[0]).substring(0, 200)
-          );
-        }
 
         return result;
       } catch (error) {
@@ -109,70 +94,10 @@ export class IcaoBatchService {
     });
   }
 
-  async processPendingAircraftBatch(batchSize = 100) {
-    // In IcaoBatchService.ts
-    const trackingDbManager = TrackingDatabaseManager.getInstance();
-    const pendingAircraft = await trackingDbManager.getPendingAircraft();
-    console.log(`[DEBUG] Pending aircraft count: ${pendingAircraft.length}`);
-
-    console.log(
-      `[IcaoBatchService] Processing ${pendingAircraft.length} pending aircraft`
-    );
-
-    // Process in batches
-    for (let i = 0; i < pendingAircraft.length; i += batchSize) {
-      const batch = pendingAircraft.slice(i, i + batchSize);
-      console.log(
-        `[IcaoBatchService] Processing batch ${i / batchSize + 1} of ${Math.ceil(pendingAircraft.length / batchSize)}`
-      );
-
-      // Get manufacturers from batch
-      const manufacturers = new Set(
-        batch.map((a) => a.manufacturer).filter(Boolean)
-      );
-
-      for (const manufacturer of manufacturers) {
-        // Get aircraft for this manufacturer
-        const manufacturerAircraft = batch.filter(
-          (a) => a.manufacturer === manufacturer
-        );
-
-        // Add model information
-        const staticDbManager = StaticDatabaseManager.getInstance();
-        const models =
-          await staticDbManager.getModelsByManufacturer(manufacturer);
-
-        if (models && models.length > 0) {
-          // Assign first model to all aircraft of this manufacturer
-          const defaultModel = models[0].model;
-
-          // Assign model
-          for (const aircraft of manufacturerAircraft) {
-            aircraft.model = defaultModel;
-          }
-
-          // Store in tracking database
-          await trackingDbManager.upsertActiveAircraftBatch(
-            manufacturerAircraft
-          );
-
-          // Remove from pending
-          const icao24s = manufacturerAircraft.map((a) => a.icao24);
-          await trackingDbManager.removePendingAircraft(icao24s);
-
-          console.log(
-            `[IcaoBatchService] Processed ${manufacturerAircraft.length} ${manufacturer} aircraft, assigned model: ${defaultModel}`
-          );
-        }
-      }
-    }
-  }
-
   async processBatches(
     icao24List: string[],
     manufacturer: string
   ): Promise<Aircraft[]> {
-    // Add this debug log to check manufacturer value
     console.log(
       `[IcaoBatchService] 🔍 Processing ${icao24List.length} ICAO codes for manufacturer: "${manufacturer}"`
     );
@@ -188,6 +113,10 @@ export class IcaoBatchService {
       );
     }
 
+    console.log(
+      `[IcaoBatchService] 🔍 Checking models for manufacturer: "${manufacturer}"`
+    );
+
     const dbManager = StaticDatabaseManager.getInstance();
     const trackingDb = TrackingDatabaseManager.getInstance();
     const models = await dbManager.getModelsByManufacturer(manufacturer);
@@ -197,18 +126,12 @@ export class IcaoBatchService {
       return [];
     }
 
-    if (icao24List.length > 10) {
-      console.log(
-        `[IcaoBatchService] 📥 Processing ICAOs: { ${icao24List.slice(0, 5).join(', ')} ... ${icao24List.slice(-5).join(', ')} }`
-      );
-    } else {
-      console.log(
-        `[IcaoBatchService] 📥 Processing ICAOs: { ${icao24List.join(', ')} }`
-      );
-    }
-
     const validIcaos = this.formatIcaos(icao24List);
     console.log(`[IcaoBatchService] ✅ Valid ICAO codes: ${validIcaos.length}`);
+    console.log(
+      `[IcaoBatchService] 🔍 Models found: ${models.length}, Sample:`,
+      models.slice(0, 5)
+    );
 
     // Check which ICAO24s are already in the tracking database
     const existingAircraft = await trackingDb.getAircraftByIcao24(validIcaos);
@@ -268,118 +191,82 @@ export class IcaoBatchService {
 
           const validAircraft: Aircraft[] = [];
 
+          // Process each state with proper format handling
           for (const rawState of batchResponse.data.states) {
             try {
-              // First determine if we're dealing with an array or object
+              let aircraft: Aircraft | null = null;
+
+              // Check if state is array or object
               if (Array.isArray(rawState)) {
                 console.log(
                   `[IcaoBatchService] Processing array state for ICAO: ${rawState[0]}`
                 );
-
-                if (
-                  typeof rawState[0] === 'string' &&
-                  rawState[0].trim() !== ''
-                ) {
-                  // Process array format
-                  let aircraft = OpenSkyTransforms.toExtendedAircraft(
-                    rawState,
-                    manufacturer
-                  );
-
-                  // Double-check manufacturer was set correctly
-                  if (
-                    !aircraft.manufacturer ||
-                    aircraft.manufacturer === 'Unknown'
-                  ) {
-                    console.warn(
-                      `[IcaoBatchService] ⚠️ Manufacturer missing for ${aircraft.icao24}. Explicitly setting to: "${manufacturer}"`
-                    );
-                    aircraft.manufacturer = manufacturer;
-                  }
-
-                  // Ensure model is set
-                  if (!aircraft.model || aircraft.model.trim() === '') {
-                    console.log(
-                      `[IcaoBatchService] ⚠️ No model found for ${aircraft.icao24}. Attempting lookup.`
-                    );
-                    if (models && models.length > 0) {
-                      aircraft.model = models[0].model;
-                      console.log(
-                        `[IcaoBatchService] ✅ Set model for ${aircraft.icao24}: ${models[0].model}`
-                      );
-                    } else {
-                      console.warn(
-                        `[IcaoBatchService] ❌ No model found in DB for ${aircraft.icao24}`
-                      );
-                    }
-                  }
-
-                  aircraft.isTracked = true;
-                  aircraft.lastSeen = Date.now();
-
-                  validAircraft.push(aircraft);
-                  transformedAircraft++;
-                  console.log(
-                    `[IcaoBatchService] ✅ Successfully transformed ${aircraft.icao24}`
-                  );
-                } else {
-                  console.warn(
-                    `[IcaoBatchService] ⚠️ Invalid array state (missing ICAO24):`,
-                    Array.isArray(rawState) ? rawState.slice(0, 5) : rawState
-                  );
-                }
-              }
-              // Handle object format
-              else if (typeof rawState === 'object' && rawState !== null) {
+                aircraft = OpenSkyTransforms.toExtendedAircraft(
+                  rawState,
+                  manufacturer
+                );
+              } else if (typeof rawState === 'object' && rawState !== null) {
                 console.log(
                   `[IcaoBatchService] Processing object state for ICAO: ${rawState.icao24}`
                 );
-
-                if (rawState.icao24 && typeof rawState.icao24 === 'string') {
-                  // Create aircraft object from the raw state
-                  let aircraft: Aircraft = {
-                    ...rawState,
-                    manufacturer: manufacturer, // Explicitly set manufacturer
-                    isTracked: true,
-                    lastSeen: Date.now(),
-                  };
-
-                  // Ensure model is set
-                  if (!aircraft.model || aircraft.model.trim() === '') {
-                    console.log(
-                      `[IcaoBatchService] ⚠️ No model found for ${aircraft.icao24}. Attempting lookup.`
-                    );
-                    if (models && models.length > 0) {
-                      aircraft.model = models[0].model;
-                      console.log(
-                        `[IcaoBatchService] ✅ Set model for ${aircraft.icao24}: ${models[0].model}`
-                      );
-                    } else {
-                      console.warn(
-                        `[IcaoBatchService] ❌ No model found in DB for ${aircraft.icao24}`
-                      );
-                    }
-                  }
-
-                  validAircraft.push(aircraft);
-                  transformedAircraft++;
-                  console.log(
-                    `[IcaoBatchService] ✅ Successfully transformed ${aircraft.icao24}`
-                  );
-                } else {
-                  console.warn(
-                    `[IcaoBatchService] ⚠️ Invalid object state (missing ICAO24):`,
-                    JSON.stringify(rawState).substring(0, 100)
-                  );
-                }
+                aircraft = OpenSkyTransforms.toExtendedAircraftFromObject(
+                  rawState,
+                  manufacturer
+                );
               } else {
                 console.warn(
                   `[IcaoBatchService] ⚠️ Invalid state format:`,
-                  typeof rawState === 'object'
-                    ? JSON.stringify(rawState).substring(0, 100)
-                    : rawState
+                  rawState
                 );
+                continue;
               }
+
+              if (!aircraft) {
+                console.warn(
+                  `[IcaoBatchService] ⚠️ Failed to create aircraft from state:`,
+                  rawState
+                );
+                continue;
+              }
+
+              // Ensure manufacturer is set correctly
+              if (
+                !aircraft.manufacturer ||
+                aircraft.manufacturer === 'Unknown'
+              ) {
+                console.warn(
+                  `[IcaoBatchService] ⚠️ Manufacturer missing for ${aircraft.icao24}. Explicitly setting to: "${manufacturer}"`
+                );
+                aircraft.manufacturer = manufacturer;
+              }
+
+              // Ensure model is set
+              if (!aircraft.model || aircraft.model.trim() === '') {
+                console.log(
+                  `[IcaoBatchService] ⚠️ No model found for ${aircraft.icao24}. Attempting lookup.`
+                );
+                if (models && models.length > 0) {
+                  aircraft.model = models[0].model;
+                  console.log(
+                    `[IcaoBatchService] ✅ Set model for ${aircraft.icao24}: ${models[0].model}`
+                  );
+                } else {
+                  console.warn(
+                    `[IcaoBatchService] ❌ No model found in DB for ${aircraft.icao24}`
+                  );
+                }
+              }
+
+              // Mark as active
+              aircraft.isTracked = true;
+              aircraft.lastSeen = Date.now();
+
+              validAircraft.push(aircraft);
+              transformedAircraft++;
+
+              console.log(
+                `[IcaoBatchService] ✅ Successfully transformed ${aircraft.icao24}`
+              );
             } catch (error) {
               console.error(
                 `[IcaoBatchService] ❌ Error processing state:`,
@@ -402,17 +289,10 @@ export class IcaoBatchService {
             );
 
             try {
-              // Store aircraft in tracked_aircraft table
+              // Store in tracking database
               await trackingDb.upsertActiveAircraftBatch(validAircraft);
               console.log(
                 `[IcaoBatchService] 💾 Stored ${validAircraft.length} aircraft in tracking DB`
-              );
-
-              // Remove these from pending since they're now tracked
-              const trackedIcaos = validAircraft.map((a) => a.icao24);
-              await trackingDb.removePendingAircraft(trackedIcaos);
-              console.log(
-                `[IcaoBatchService] 🧹 Removed ${trackedIcaos.length} aircraft from pending`
               );
             } catch (dbError) {
               console.error(
@@ -438,83 +318,10 @@ export class IcaoBatchService {
       }
     }
 
-    // Add any remaining untrackedIcaos to pending_aircraft
-    try {
-      // Get the ICAO24s that weren't processed (those without position data)
-      const processedIcaos = new Set(
-        allAircraft.map((a) => a.icao24.toLowerCase())
-      );
-      const stillUntracked = untracked.filter(
-        (icao) => !processedIcaos.has(icao.toLowerCase())
-      );
-
-      if (stillUntracked.length > 0) {
-        // Add these to pending_aircraft
-        await trackingDb.addPendingAircraft(stillUntracked, manufacturer);
-        console.log(
-          `[IcaoBatchService] 📝 Added ${stillUntracked.length} inactive aircraft to pending_aircraft`
-        );
-      }
-    } catch (error) {
-      console.error(
-        `[IcaoBatchService] ❌ Error adding to pending_aircraft:`,
-        error
-      );
-    }
-
     console.log(
       `[IcaoBatchService] ✅ Total processing complete: ${totalStates} states received, ${transformedAircraft} successfully transformed, ${allAircraft.length} valid aircraft returned`
     );
 
     return allAircraft;
-  }
-
-  // Cache pending requests to prevent duplicate calls
-  private pendingRequests: Set<string> = new Set();
-
-  async fetchAircraftStates(icao24s: string[]): Promise<Aircraft[]> {
-    if (!icao24s.length) {
-      console.warn(`[IcaoBatchService] ⚠️ No ICAO24s provided.`);
-      return [];
-    }
-
-    console.log(
-      `[IcaoBatchService] 🔄 Requesting aircraft states for ${icao24s.length} ICAOs...`
-    );
-
-    try {
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/api/proxy/opensky`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ icao24s }),
-        }
-      );
-
-      if (!response.ok) {
-        console.error(
-          `[IcaoBatchService] ❌ OpenSky API Error: ${response.statusText}`
-        );
-        return [];
-      }
-
-      const data = await response.json();
-      if (!data?.data?.length) {
-        console.warn(
-          `[IcaoBatchService] ⚠️ OpenSky returned 0 states. Retrying in 5s...`
-        );
-        await new Promise((resolve) => setTimeout(resolve, 5000)); // Wait 5 seconds
-        return this.fetchAircraftStates(icao24s);
-      }
-
-      return data.data;
-    } catch (error) {
-      console.error(
-        `[IcaoBatchService] ❌ Error fetching aircraft states:`,
-        error
-      );
-      return [];
-    }
   }
 }

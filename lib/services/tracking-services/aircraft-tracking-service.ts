@@ -26,14 +26,6 @@ export class AircraftTrackingService {
   }
 
   /**
-   * Process a manufacturer - fetch and return all aircraft for a manufacturer
-   * @deprecated Use manufacturerTracking.processManufacturer() instead
-   */
-  public async processManufacturer(manufacturer: string): Promise<Aircraft[]> {
-    return manufacturerTracking.processManufacturer(manufacturer);
-  }
-
-  /**
    * Update positions for multiple aircraft
    * @deprecated Use manufacturerTracking.updateAircraftPositions() instead
    */

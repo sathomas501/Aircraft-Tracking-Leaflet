@@ -329,21 +329,6 @@ export class TrackingDataService extends BaseTrackingService {
   }
 
   /**
-   * Add aircraft for tracking (pending status)
-   */
-  async addAircraftForTracking(
-    icao24s: string[],
-    manufacturer: string
-  ): Promise<number> {
-    const result = await this.trackingRepository.addPendingAircraft(
-      icao24s,
-      manufacturer
-    );
-    this.clearCache(manufacturer);
-    return result;
-  }
-
-  /**
    * Run maintenance tasks (mark stale, cleanup)
    */
   async performMaintenance(
@@ -360,23 +345,6 @@ export class TrackingDataService extends BaseTrackingService {
     }
 
     return result;
-  }
-
-  /**
-   * Get aircraft that need position updates (pending, stale)
-   */
-  async getAircraftForUpdate(manufacturer?: string): Promise<{
-    pending: string[];
-    stale: string[];
-    active: string[];
-  }> {
-    const [pending, stale, active] = await Promise.all([
-      this.trackingRepository.getPendingIcao24s(manufacturer),
-      this.trackingRepository.getStaleIcao24s(manufacturer),
-      this.trackingRepository.getActiveIcao24s(manufacturer),
-    ]);
-
-    return { pending, stale, active };
   }
 
   /**

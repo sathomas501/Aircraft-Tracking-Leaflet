@@ -77,7 +77,6 @@ class CleanupService {
       }
     }, this.CLEANUP_INTERVAL);
 
-    // Allow the interval to not block the event loop in Node.js
     if (this.cleanupInterval.unref) {
       this.cleanupInterval.unref();
     }
@@ -90,13 +89,10 @@ class CleanupService {
     }
 
     console.log('[Cleanup Service] 🧹 Running cleanup...');
-    const staleThreshold = Math.floor(
-      (Date.now() - this.STALE_THRESHOLD) / 1000
-    );
+    const staleThreshold = Date.now() - this.STALE_THRESHOLD;
     let removedCount = 0;
 
     try {
-      // Use a single connection for the entire operation
       const db = await this.dbManager.getDatabase();
 
       // Add a longer timeout for busy operations
@@ -106,7 +102,7 @@ class CleanupService {
         // Begin a transaction
         await db.run('BEGIN TRANSACTION');
 
-        // Clean up tracked_aircraft - use direct db.run instead of executeQuery
+        // ✅ Clean up tracked aircraft only
         const trackedResult = await db.run(
           'DELETE FROM tracked_aircraft WHERE last_contact < ?',
           [staleThreshold]
@@ -118,27 +114,11 @@ class CleanupService {
         );
         removedCount += trackedRemoved;
 
-        // Small delay to reduce contention
-        await new Promise((resolve) => setTimeout(resolve, 100));
-
-        // Clean up pending_aircraft - use direct db.run instead of executeQuery
-        const pendingResult = await db.run(
-          'DELETE FROM pending_aircraft WHERE last_contact < ?',
-          [staleThreshold]
-        );
-
-        const pendingRemoved = pendingResult?.changes || 0;
-        console.log(
-          `[Cleanup Service] ✅ Removed ${pendingRemoved} stale pending aircraft`
-        );
-        removedCount += pendingRemoved;
-
         // Commit the transaction
         await db.run('COMMIT');
 
-        // Only do database optimization occasionally
-        const shouldOptimize = Math.random() < 0.2; // 20% chance
-        if (shouldOptimize) {
+        // Optimize DB occasionally
+        if (Math.random() < 0.2) {
           try {
             await db.run('PRAGMA optimize');
             console.log('[Cleanup Service] ✅ Database optimized');
@@ -149,6 +129,9 @@ class CleanupService {
             );
           }
         }
+        console.log(
+          `[Cleanup Service] Deleting records older than ${new Date(staleThreshold).toISOString()} (timestamp: ${staleThreshold})`
+        );
 
         return removedCount;
       } catch (error) {
@@ -162,7 +145,7 @@ class CleanupService {
           console.error('[Cleanup Service] ❌ Rollback failed:', rollbackError);
         }
 
-        throw error; // Re-throw for outer catch block
+        throw error;
       }
     } catch (error) {
       console.error(
@@ -184,7 +167,7 @@ class CleanupService {
   public async cleanupManufacturer(
     manufacturer: string,
     olderThan?: number
-  ): Promise<{ trackedRemoved: number; pendingRemoved: number }> {
+  ): Promise<{ trackedRemoved: number }> {
     if (!manufacturer) {
       throw new Error(
         '[CleanupService] ❌ Manufacturer is required for cleanup.'
@@ -193,7 +176,7 @@ class CleanupService {
 
     if (!this.dbManager) {
       console.error('[CleanupService] ❌ Database manager is not initialized.');
-      return { trackedRemoved: 0, pendingRemoved: 0 };
+      return { trackedRemoved: 0 };
     }
 
     console.log(
@@ -201,55 +184,33 @@ class CleanupService {
     );
 
     try {
-      // Get a single database connection
       const db = await this.dbManager.getDatabase();
-
-      // Set longer timeout for busy operations
       await db.run('PRAGMA busy_timeout = 10000');
 
       try {
-        // Begin transaction with direct db call
+        // Begin transaction
         await db.run('BEGIN TRANSACTION');
 
-        // ✅ Cleanup tracked aircraft with direct db.run
+        // ✅ Cleanup tracked aircraft only
         const deleteTrackedQuery = `
-        DELETE FROM tracked_aircraft
-        WHERE manufacturer = ? ${olderThan ? 'AND updated_at < ?' : ''}
-      `;
+          DELETE FROM tracked_aircraft
+          WHERE manufacturer = ? ${olderThan ? 'AND updated_at < ?' : ''}
+        `;
 
         const trackedResult = await db.run(
           deleteTrackedQuery,
           olderThan ? [manufacturer, olderThan] : [manufacturer]
         );
 
-        // Small delay to reduce contention
-        await new Promise((resolve) => setTimeout(resolve, 100));
-
-        // ✅ Cleanup pending aircraft with direct db.run
-        const deletePendingQuery = `
-        DELETE FROM pending_aircraft
-        WHERE manufacturer = ? ${olderThan ? 'AND updated_at < ?' : ''}
-      `;
-
-        const pendingResult = await db.run(
-          deletePendingQuery,
-          olderThan ? [manufacturer, olderThan] : [manufacturer]
-        );
-
-        // Extract changes from results
         const trackedRemoved = trackedResult?.changes || 0;
-        const pendingRemoved = pendingResult?.changes || 0;
-
-        // Commit transaction with direct db call
         await db.run('COMMIT');
 
         console.log(
-          `[CleanupService] ✅ Cleanup complete: Removed ${trackedRemoved} tracked, ${pendingRemoved} pending aircraft.`
+          `[CleanupService] ✅ Cleanup complete: Removed ${trackedRemoved} tracked aircraft.`
         );
-
-        return { trackedRemoved, pendingRemoved };
+        return { trackedRemoved };
       } catch (error) {
-        // Rollback on error with direct db call
+        // Rollback on error
         try {
           await db.run('ROLLBACK');
           console.log(
@@ -259,19 +220,18 @@ class CleanupService {
           console.error('[CleanupService] ❌ Rollback failed:', rollbackError);
         }
 
-        throw error; // Re-throw for outer catch block
+        throw error;
       }
     } catch (error) {
       console.error(
         `[CleanupService] ❌ Cleanup failed for ${manufacturer}:`,
         error
       );
-
-      return { trackedRemoved: 0, pendingRemoved: 0 };
+      return { trackedRemoved: 0 };
     }
   }
 
-  // ✅ Add shutdown method
+  // ✅ Shutdown method
   async shutdown(): Promise<void> {
     if (this.isShuttingDown) return;
     this.isShuttingDown = true;
@@ -279,8 +239,6 @@ class CleanupService {
     console.log('[CleanupService] 🚀 Shutting down cleanup operations...');
 
     try {
-      // Perform any necessary cleanup tasks
-      // Example: Closing DB connections, clearing timers, etc.
       console.log('[CleanupService] ✅ CleanupService shutdown complete');
     } catch (error) {
       console.error('[CleanupService] ❌ Error during shutdown:', error);

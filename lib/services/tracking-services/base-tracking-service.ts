@@ -17,13 +17,12 @@ import cacheService from '../managers/cache-manager';
  * @param fallback Fallback value if the require fails
  * @returns Module default export or fallback value
  */
-function safeRequire<T>(modulePath: string, fallback: T): T {
+async function safeImport<T>(modulePath: string, fallback: T): Promise<T> {
   try {
-    // Try to require the module
-    const module = require(modulePath);
+    const module = await import(/* webpackIgnore: true */ modulePath);
     return module.default || module || fallback;
   } catch (error) {
-    console.warn(`Failed to require module: ${modulePath}`, error);
+    console.warn(`Failed to import module: ${modulePath}`, error);
     return fallback;
   }
 }

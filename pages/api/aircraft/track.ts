@@ -74,118 +74,90 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
         activeAircraft.map((a) => a.icao24.toLowerCase())
       );
 
-      const pendingAircraft =
-        await trackingDatabaseManager.getPendingAircraft(manufacturer);
-      const pendingIcao24s = new Set(
-        pendingAircraft.map((a) => a.icao24.toLowerCase())
-      );
-
+      // Filter out aircraft that are already actively tracked
       const newIcao24s = icao24s.filter(
-        (icao) =>
-          !activeIcao24s.has(icao.toLowerCase()) &&
-          !pendingIcao24s.has(icao.toLowerCase())
+        (icao) => !activeIcao24s.has(icao.toLowerCase())
       );
 
       console.log(
-        `[Track API] 📊 Status: ${activeAircraft.length} active, ${pendingAircraft.length} pending, ${newIcao24s.length} new to track`
+        `[Track API] 📊 Status: ${activeAircraft.length} active, ${newIcao24s.length} new to track`
       );
 
-      let addedCount = 0;
-
-      // ✅ Step 1: Process pending aircraft first
-      if (pendingIcao24s.size > 0) {
-        console.log(
-          `[Track API] 🔄 Processing ${pendingIcao24s.size} pending aircraft with IcaoBatchService`
-        );
-        try {
-          const icaoBatchService = new IcaoBatchService();
-          const fetchedPendingAircraft = await icaoBatchService.processBatches(
-            Array.from(pendingIcao24s),
-            manufacturer
-          );
-
-          console.log(
-            `[Track API] ✅ IcaoBatchService processed ${fetchedPendingAircraft.length} pending aircraft`
-          );
-
-          if (fetchedPendingAircraft.length > 0) {
-            await trackingDatabaseManager.upsertActiveAircraftBatch(
-              fetchedPendingAircraft
-            );
-            const trackedIcaos = fetchedPendingAircraft.map((a) => a.icao24);
-            await trackingDatabaseManager.removePendingAircraft(trackedIcaos);
-            console.log(
-              `[Track API] 🧹 Removed ${trackedIcaos.length} processed aircraft from pending`
-            );
-          }
-        } catch (error) {
-          console.error(
-            `[Track API] ❌ Error processing pending aircraft batch:`,
-            error
-          );
-        }
-      }
-
-      // ✅ Step 2: Use CleanupService for stale aircraft
+      // ✅ Step 1: Use CleanupService for stale aircraft
       console.log(`[Track API] 🗑️ Running CleanupService for stale aircraft`);
       const cleanupService = CleanupService.getInstance();
       await cleanupService.initialize();
       await cleanupService.cleanup();
 
-      // ✅ Step 3: Add new aircraft to pending tracking
+      // ✅ Step 2: Add new aircraft to tracking in batches
+      let processedCount = 0;
+      let addedCount = 0;
+      const BATCH_SIZE = 100;
+
       if (newIcao24s.length > 0) {
-        addedCount = await trackingDatabaseManager.addPendingAircraft(
-          newIcao24s,
-          manufacturer
-        );
         console.log(
-          `[Track API] ✅ Added ${addedCount} new aircraft to pending tracking`
+          `[Track API] ✅ Processing ${newIcao24s.length} aircraft in batches of ${BATCH_SIZE}`
         );
 
-        const firstBatch = newIcao24s.slice(
-          0,
-          Math.min(100, newIcao24s.length)
-        );
-        console.log(
-          `[Track API] 🔄 Processing ${firstBatch.length} new aircraft with IcaoBatchService`
-        );
-
-        try {
-          const icaoBatchService = new IcaoBatchService();
-          const fetchedAircraft = await icaoBatchService.processBatches(
-            firstBatch,
-            manufacturer
+        for (let i = 0; i < newIcao24s.length; i += BATCH_SIZE) {
+          const batch = newIcao24s.slice(
+            i,
+            Math.min(i + BATCH_SIZE, newIcao24s.length)
           );
+          const batchNumber = Math.floor(i / BATCH_SIZE) + 1;
+          const totalBatches = Math.ceil(newIcao24s.length / BATCH_SIZE);
 
           console.log(
-            `[Track API] ✅ IcaoBatchService processed ${fetchedAircraft.length} new aircraft`
+            `[Track API] 🔄 Processing batch ${batchNumber}/${totalBatches} (${batch.length} aircraft)`
           );
 
-          if (fetchedAircraft.length > 0) {
-            await trackingDatabaseManager.upsertActiveAircraftBatch(
-              fetchedAircraft
+          try {
+            const icaoBatchService = new IcaoBatchService();
+            const fetchedAircraft = await icaoBatchService.processBatches(
+              batch,
+              manufacturer
             );
-            const trackedIcaos = fetchedAircraft.map((a) => a.icao24);
-            await trackingDatabaseManager.removePendingAircraft(trackedIcaos);
-            console.log(
-              `[Track API] 🧹 Removed ${trackedIcaos.length} processed aircraft from pending`
+
+            processedCount += batch.length;
+
+            if (fetchedAircraft.length > 0) {
+              await trackingDatabaseManager.upsertActiveAircraftBatch(
+                fetchedAircraft
+              );
+              addedCount += fetchedAircraft.length;
+              console.log(
+                `[Track API] ✅ Batch ${batchNumber}: Found ${fetchedAircraft.length} active aircraft out of ${batch.length} processed`
+              );
+            } else {
+              console.log(
+                `[Track API] ℹ️ Batch ${batchNumber}: No active aircraft found in batch of ${batch.length}`
+              );
+            }
+
+            // Add a small delay between batches to avoid overwhelming the API
+            if (i + BATCH_SIZE < newIcao24s.length) {
+              await new Promise((resolve) => setTimeout(resolve, 500));
+            }
+          } catch (error) {
+            console.error(
+              `[Track API] ❌ Error processing batch ${batchNumber}:`,
+              error
             );
           }
-        } catch (error) {
-          console.error(
-            `[Track API] ❌ Error processing batch with IcaoBatchService:`,
-            error
-          );
         }
+
+        console.log(
+          `[Track API] 🏁 Completed processing ${processedCount} aircraft, added ${addedCount} active aircraft to tracking`
+        );
       }
 
       return {
         success: true,
-        message: `Added ${addedCount} aircraft to pending tracking. ${activeAircraft.length} already being tracked.`,
+        message: `Added ${addedCount} aircraft to tracking. ${activeAircraft.length} already being tracked.`,
         count: addedCount,
-        activeCount: activeAircraft.length,
+        activeCount: activeAircraft.length + addedCount,
         totalCount: icao24s.length,
-        modelsCount: icao24s.length,
+        processedCount: processedCount,
       };
     } catch (error) {
       console.error(`[Track API] ❌ Error:`, error);

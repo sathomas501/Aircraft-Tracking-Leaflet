@@ -335,24 +335,22 @@ class StaticDatabaseManager extends BaseDatabaseManager {
   ): Promise<ActiveModel[]> {
     try {
       await this.ensureInitialized();
-      const activeThreshold = Math.floor(Date.now() / 1000) - 2 * 60 * 60; // 2 hours for active tracking
 
       console.log(
         `[StaticDB] 📊 Fetching models for manufacturer: ${manufacturer}`
       );
 
-      // First get the basic model statistics
       const modelQuery = `
-        SELECT 
-          model,
-          manufacturer,
-          COUNT(DISTINCT icao24) as total_count,
-          GROUP_CONCAT(icao24) as icao_list
-        FROM aircraft
-        WHERE manufacturer = ?
-        GROUP BY model, manufacturer
-        ORDER BY total_count DESC;
-      `;
+      SELECT 
+        model,
+        manufacturer,
+        COUNT(DISTINCT icao24) as total_count,
+        GROUP_CONCAT(icao24) as icao_list
+      FROM aircraft
+      WHERE manufacturer = ?
+      GROUP BY model, manufacturer
+      ORDER BY total_count DESC;
+    `;
 
       const modelResults = await this.executeQuery<{
         model: string;
@@ -372,7 +370,6 @@ class StaticDatabaseManager extends BaseDatabaseManager {
 
       // Get active aircraft from tracking database
       try {
-        // Get currently tracked aircraft for this manufacturer
         const trackedAircraft =
           await trackingDatabaseManager.getTrackedAircraft(manufacturer);
 
@@ -384,30 +381,51 @@ class StaticDatabaseManager extends BaseDatabaseManager {
           }
         });
 
-        // Map results with active counts
-        return modelResults.map((result) => {
+        // 🚀 **New: Fetch Additional Static Data for Each Model**
+        for (const result of modelResults) {
           const icaos = result.icao_list
             .split(',')
             .map((icao) => icao.trim().toLowerCase());
+
+          // Fetch additional details from Static DB
+          const aircraftDetails = await this.getAircraftByIcao24s(icaos);
+
+          // Get first aircraft as reference for static data (since all models should belong to same manufacturer)
+          const referenceAircraft =
+            aircraftDetails.length > 0 ? aircraftDetails[0] : null;
+
           const activeCount = icaos.reduce(
             (count, icao) => count + (activeAircraftMap.has(icao) ? 1 : 0),
             0
           );
 
-          return {
-            model: result.model,
-            manufacturer: result.manufacturer,
-            label: `${result.model} (${activeCount} active)`,
-            totalCount: result.total_count,
-            count: result.total_count,
-            activeCount,
-          };
-        });
+          result.city = referenceAircraft?.CITY || 'Unknown';
+          result.state = referenceAircraft?.STATE || 'Unknown';
+          result.ownerType = referenceAircraft?.OWNER_TYPE || 'Unknown';
+          result.name = referenceAircraft?.NAME || 'Unknown';
+
+          // Store in ActiveModel format
+          result.activeCount = activeCount;
+        }
+
+        return modelResults.map((result) => ({
+          model: result.model,
+          manufacturer: result.manufacturer,
+          label: `${result.model} (${result.activeCount} active)`,
+          totalCount: result.total_count,
+          count: result.total_count,
+          activeCount: result.activeCount,
+          city: result.city,
+          state: result.state,
+          ownerType: result.ownerType,
+          name: result.name,
+        }));
       } catch (trackingError) {
         console.warn(
           '[StaticDB] ⚠️ Could not fetch tracking data:',
           trackingError
         );
+
         // Fallback to basic stats without active counts
         return modelResults.map((result) => ({
           model: result.model,
@@ -416,6 +434,10 @@ class StaticDatabaseManager extends BaseDatabaseManager {
           totalCount: result.total_count,
           count: result.total_count,
           activeCount: 0,
+          city: 'Unknown',
+          state: 'Unknown',
+          ownerType: 'Unknown',
+          name: 'Unknown',
         }));
       }
     } catch (error) {

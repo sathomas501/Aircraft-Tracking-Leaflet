@@ -7,7 +7,7 @@ import type {
 } from '../../../../types/base';
 import type { AircraftModel } from '../../../../types/aircraft-models';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
-import { UnifiedSelector } from '../selector/UnifiedSelector';
+import UnifiedSelector from '../selector/UnifiedSelector';
 import { useOpenSkyData } from '../../customHooks/useOpenSkyData';
 import { useFetchModels } from '../../customHooks/useFetchModels';
 import { transformToExtendedAircraft } from '../../../../utils/aircraft-transform1';

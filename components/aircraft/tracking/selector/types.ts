@@ -32,19 +32,27 @@ export interface ModelSelectorProps {
   onModelSelect: (model: string) => void;
 }
 
+// In types.ts
 export interface UnifiedSelectorProps {
+  // Data props
   manufacturers: SelectOption[];
   selectedManufacturer: string;
   selectedModel: string;
-  setSelectedManufacturer: (manufacturer: string | null) => void; // Match the handler signature
-  setSelectedModel: (model: string) => void;
-  onManufacturerSelect: (manufacturer: string | null) => Promise<void>;
-  onModelSelect: (model: string) => void;
-  onAircraftUpdate: (aircraft: Aircraft[]) => void;
-  onModelsUpdate: (models: AircraftModel[]) => void; // Changed to AircraftModel
-  onReset: () => void;
-  onError: (message: string) => void;
-  models: AircraftModel[]; // Changed to AircraftModel
+  models: AircraftModel[];
   modelCounts: Record<string, number>;
   totalActive?: number;
+
+  // Handler props
+  setSelectedManufacturer?: (manufacturer: string | null) => void; // Now optional
+  setSelectedModel?: (model: string) => void; // Now optional
+  onManufacturerSelect: (manufacturer: string | null) => Promise<void> | void; // Allow non-Promise return
+  onModelSelect: (model: string | null) => void; // Allow null
+  onAircraftUpdate?: (aircraft: Aircraft[]) => void; // Now optional
+  onModelsUpdate?: (models: AircraftModel[]) => void; // Now optional
+  onReset: () => void;
+  onError: (message: string) => void;
+
+  // UI state props
+  isLoading?: boolean; // Add this
+  trackingStatus?: string; // Add this
 }

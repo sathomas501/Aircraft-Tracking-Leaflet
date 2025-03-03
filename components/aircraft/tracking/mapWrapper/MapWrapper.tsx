@@ -3,11 +3,12 @@ import dynamic from 'next/dynamic';
 import type {
   Aircraft,
   SelectOption,
-  ActiveModel,
   ExtendedAircraft,
 } from '../../../../types/base';
+import { AircraftModel } from '@/types/aircraft-models';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
-import { UnifiedSelector } from '../selector/UnifiedSelector';
+// Import the component using default import
+import UnifiedSelector from '../selector/UnifiedSelector';
 import { useOpenSkyData } from '../../customHooks/useOpenSkyData';
 import { useFetchModels } from '../../customHooks/useFetchModels';
 import { useFetchManufacturers } from '../../customHooks/useFetchManufactures';
@@ -18,8 +19,8 @@ const DynamicMap = dynamic(() => import('../Map/DynamicMap'), {
 });
 
 export interface MapWrapperProps {
-  initialAircraft: Aircraft[];
-  manufacturers: SelectOption[];
+  initialAircraft?: Aircraft[];
+  manufacturers?: SelectOption[];
   onError: (message: string) => void;
 }
 
@@ -72,7 +73,6 @@ const MapWrapper: React.FC<MapWrapperProps> = ({ onError }) => {
   }, [trackedAircraft, selectedModel, processAircraft]);
 
   // Handle manufacturer selection
-  // Inside MapWrapper.tsx
   const handleManufacturerSelect = useCallback(
     async (manufacturer: string | null) => {
       const manuValue = manufacturer || '';
@@ -84,7 +84,7 @@ const MapWrapper: React.FC<MapWrapperProps> = ({ onError }) => {
         );
         setSelectedManufacturerLabel(manufacturerObj?.label || manufacturer);
 
-        // ✅ Pass `manufacturer` as an argument to fetch ICAO24s
+        // Pass `manufacturer` as an argument to fetch ICAO24s
         await fetchManufacturerIcao24s(manufacturer);
       } else {
         setSelectedManufacturerLabel('');
@@ -92,7 +92,7 @@ const MapWrapper: React.FC<MapWrapperProps> = ({ onError }) => {
 
       setSelectedModel('');
     },
-    [manufacturers, fetchManufacturerIcao24s] // ✅ Include dependencies
+    [manufacturers, fetchManufacturerIcao24s]
   );
 
   // Handle model selection
@@ -107,7 +107,7 @@ const MapWrapper: React.FC<MapWrapperProps> = ({ onError }) => {
       totalCount: (model as any).totalCount || model.count || 0,
       activeCount: model.activeCount || 0,
       label: model.label ?? `${model.model} (${model.activeCount || 0} active)`,
-    }));
+    })) as AircraftModel[];
   }, [models]);
 
   // Handle reset
@@ -145,13 +145,15 @@ const MapWrapper: React.FC<MapWrapperProps> = ({ onError }) => {
           onModelSelect={handleModelSelect}
           models={enhancedModels}
           modelCounts={modelCounts}
-          onModelsUpdate={(newModels: ActiveModel[]) => {
-            console.log('[MapWrapper] Models updated:', newModels.length);
-          }}
           totalActive={trackedAircraft?.length || 0}
-          onAircraftUpdate={processAircraft}
           onReset={handleReset}
           onError={onError}
+          onAircraftUpdate={processAircraft}
+          onModelsUpdate={(updatedModels: AircraftModel[]) => {
+            console.log('[MapWrapper] Models updated:', updatedModels.length);
+          }}
+          isLoading={isLoading}
+          trackingStatus={trackingStatus || ''}
         />
       </div>
 

@@ -2,9 +2,9 @@
 import { Aircraft } from '@/types/base';
 import UnifiedCacheService from '@/lib/services/managers/unified-cache-system';
 import { TrackingDatabaseManager } from '@/lib/db/managers/trackingDatabaseManager';
-import { icao24Service } from './icao-service';
 import { icao24CacheService } from './icao24Cache';
 import { trackingServices } from '../services/tracking-services/tracking-services';
+import getAircraftIcao24s from '../db/managers/staticDatabaseManager';
 
 export class OpenSkySyncService {
   private static instance: OpenSkySyncService;
@@ -198,20 +198,9 @@ export class OpenSkySyncService {
       // Fetch live aircraft data
       const aircraft = await this.fetchLiveAircraft(icao24s);
 
-      // Add pending aircraft to tracking through icao24Service if available
-      try {
-        if (icao24Service) {
-          await icao24Service.addToPendingTracking(icao24s, manufacturer);
-        }
-      } catch (error) {
-        console.error(
-          `[OpenSkySyncService] ❌ Error adding ICAO24s to tracking:`,
-          error
-        );
-      }
-
       // Get current tracked aircraft for this manufacturer
-      const trackedAircraft = await trackingServices.getAircraft(manufacturer);
+      const trackedAircraft =
+        await this.staticDbManager.getAircraftIcao24s(manufacturer);
 
       return {
         updated: aircraft.length,

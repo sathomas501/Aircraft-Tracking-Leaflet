@@ -3,10 +3,14 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 import staticDatabaseManager from '../../../lib/db/managers/staticDatabaseManager';
 import { withErrorHandler } from '@/lib/middleware/error-handler';
 
-interface StaticModel {
+export interface ActiveModel {
   model: string;
   manufacturer: string;
   count: number;
+  city?: string;
+  state?: string;
+  OWNER_TYPE?: string;
+  name?: string;
 }
 
 async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -52,10 +56,14 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
       await staticDatabaseManager.getModelsByManufacturer(manufacturer);
 
     // Convert the results to match the StaticModel interface
-    const results: StaticModel[] = models.map((model) => ({
+    const results: ActiveModel[] = models.map((model) => ({
       model: model.model,
       manufacturer: model.manufacturer,
       count: model.count,
+      CITY: model.city || '',
+      STATE: model.state || '',
+      OWNER_TYPE: model.ownerType || '',
+      NAME: model.name || '',
     }));
 
     console.log(

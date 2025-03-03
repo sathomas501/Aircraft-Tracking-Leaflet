@@ -148,25 +148,6 @@ async function handlePostRequests(
       });
     }
 
-    case 'addPendingAircraft': {
-      // Add aircraft to pending tracking
-      const { icao24s, manufacturer } = req.body;
-      if (!Array.isArray(icao24s) || !manufacturer) {
-        throw APIErrors.BadRequest('Invalid request format');
-      }
-
-      const added = await trackingService.addAircraftForTracking(
-        icao24s,
-        manufacturer
-      );
-
-      return res.status(200).json({
-        success: true,
-        message: `Added ${added} aircraft as pending for ${manufacturer}`,
-        data: { added, total: icao24s.length },
-      });
-    }
-
     case 'maintenance': {
       // Run maintenance tasks
       const result = await trackingService.performMaintenance();

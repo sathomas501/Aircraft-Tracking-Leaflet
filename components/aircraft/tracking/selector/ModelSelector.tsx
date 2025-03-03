@@ -1,19 +1,19 @@
 import React, { useEffect } from 'react'; // Add useEffect here
 import { ActiveModel } from '@/types/base';
 import { useFetchModels } from '../../customHooks/useFetchModels';
+import { AircraftModel } from '@/types/aircraft-models';
 
-interface ModelSelectorProps {
+export interface ModelSelectorProps {
   selectedModel: string;
-  setSelectedModel: (model: string) => void;
-  models: ActiveModel[];
-  totalActive?: number;
-  onModelSelect: (model: string) => void;
-  isLoading?: boolean;
-  disabled?: boolean;
+  setSelectedModel: (model: string | null) => void;
+  models: AircraftModel[];
+  onModelSelect: (model: string | null) => void;
   trackedAircraftCount: number;
-  setIsLoading?: (loading: boolean) => void;
-  selectedManufacturer?: string;
+  selectedManufacturer: string;
+  isLoading: boolean;
+  setIsLoading: (loading: boolean) => void;
   setTrackingStatus?: (status: string) => void;
+  disabled?: boolean;
 }
 
 /**
@@ -125,39 +125,6 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
         Raw models: {models.length}, Active models:{' '}
         {sortedModels.filter((m) => m.activeCount > 0).length}
       </div>
-
-      {/* Single update button */}
-      <button
-        onClick={handleUpdateModels}
-        className="px-2 py-1 bg-blue-500 text-white rounded-md hover:bg-blue-600 text-xs ml-1"
-        disabled={
-          isLoading ||
-          updatingModels ||
-          !setIsLoading ||
-          !setTrackingStatus ||
-          !selectedManufacturer
-        }
-      >
-        Update Models
-      </button>
-
-      <button
-        onClick={async () => {
-          try {
-            const response = await fetch('/api/maintenance/process-pending', {
-              method: 'POST',
-            });
-            const data = await response.json();
-            alert(`Processed ${data.processedCount} pending aircraft`);
-          } catch (error) {
-            console.error('Error processing pending aircraft:', error);
-            alert('Error processing pending aircraft');
-          }
-        }}
-        className="px-3 py-1 bg-red-500 text-white rounded-md hover:bg-red-600 ml-2"
-      >
-        Process Pending Aircraft
-      </button>
 
       <select
         id="model-select"

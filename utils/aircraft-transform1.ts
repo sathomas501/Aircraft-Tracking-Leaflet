@@ -1,5 +1,5 @@
 //utils/aircraft-transform.ts
-import { modelAssignmentService } from '@/lib/services/model-assignment-service';
+
 import type {
   Aircraft,
   AircraftPosition,
@@ -160,6 +160,11 @@ export const OpenSkyTransforms = {
       const onGround = this.convertToBoolean(state.on_ground);
 
       // Create the aircraft with the provided manufacturer (even if it's an empty string)
+
+      console.log(
+        `[OpenSkyTransforms] 🔍 Debugging ICAO24: ${state.icao24}, Manufacturer: "${manufacturer}", Model: "${state.model}"`
+      );
+
       const aircraft = BaseTransforms.normalize({
         icao24: state.icao24,
         latitude: state.latitude,

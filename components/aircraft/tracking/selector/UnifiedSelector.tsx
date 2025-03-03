@@ -1,44 +1,71 @@
 import React, { useState, useCallback } from 'react';
 import { Plus, Minus } from 'lucide-react';
-import { UnifiedSelectorProps } from '../selector/types';
 import ManufacturerSelector from './ManufacturerSelector';
 import ModelSelector from './ModelSelector';
-import { useAircraftSelector } from '../../customHooks/useAircraftSelector';
+import { SelectOption, Aircraft } from '@/types/base';
+import { AircraftModel } from '@/types/aircraft-models';
 
-export const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
+// Define the unified selector props interface
+export interface UnifiedSelectorProps {
+  // Data props
+  manufacturers: SelectOption[];
+  selectedManufacturer: string;
+  selectedModel: string;
+  models: AircraftModel[];
+  modelCounts: Record<string, number>;
+  totalActive: number;
+
+  // Handler props
+  setSelectedManufacturer: (manufacturer: string | null) => void;
+  setSelectedModel: (model: string | null) => void;
+  onManufacturerSelect: (manufacturer: string | null) => Promise<void>;
+  onModelSelect: (model: string | null) => void;
+  onReset: () => void;
+  onError: (message: string) => void;
+  onAircraftUpdate?: (aircraft: Aircraft[]) => void;
+  onModelsUpdate?: (models: AircraftModel[]) => void;
+
+  // UI state props (optional)
+  isLoading?: boolean;
+  trackingStatus?: string;
+}
+
+const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
   manufacturers,
+  selectedManufacturer,
+  selectedModel,
+  setSelectedManufacturer,
+  setSelectedModel,
+  onManufacturerSelect,
+  onModelSelect,
+  models,
+  modelCounts,
+  totalActive,
+  onReset,
   onError,
+  onAircraftUpdate,
+  onModelsUpdate,
+  isLoading = false,
+  trackingStatus = '',
 }) => {
   const [isMinimized, setIsMinimized] = useState(false);
+  const [localIsLoading, setLocalIsLoading] = useState(isLoading);
+  const [localTrackingStatus, setLocalTrackingStatus] =
+    useState(trackingStatus);
 
-  // Use the hook for all data and selection logic
-  const {
-    selectedManufacturer,
-    selectedModel,
-    models,
-    allAircraft,
-    filteredAircraft,
-    handleManufacturerSelect,
-    handleModelSelect,
-    aircraftCount,
-  } = useAircraftSelector({
-    onError: (message) => {
-      if (onError) onError(message);
-    },
-  });
+  // Update local state when props change
+  React.useEffect(() => {
+    setLocalIsLoading(isLoading);
+  }, [isLoading]);
 
-  const [isLoading, setIsLoading] = useState(false);
-  const [trackingStatus, setTrackingStatus] = useState('');
+  React.useEffect(() => {
+    setLocalTrackingStatus(trackingStatus);
+  }, [trackingStatus]);
 
   // Simply toggle the minimized state
   const handleToggle = useCallback(() => {
     setIsMinimized((prev) => !prev);
   }, []);
-
-  // Reset handler - this will clear selections in the hook
-  const handleReset = useCallback(() => {
-    handleManufacturerSelect(null);
-  }, [handleManufacturerSelect]);
 
   // For the minimized state, show just a button
   if (isMinimized) {
@@ -65,7 +92,7 @@ export const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
         </button>
         <h2 className="text-gray-700 text-lg">Select Aircraft</h2>
         <button
-          onClick={handleReset}
+          onClick={onReset}
           className="px-3 py-1 bg-blue-500 text-white rounded-md hover:bg-blue-600"
         >
           Reset
@@ -75,41 +102,48 @@ export const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
       <ManufacturerSelector
         manufacturers={manufacturers}
         selectedManufacturer={selectedManufacturer}
-        onSelect={handleManufacturerSelect}
-        isLoading={isLoading}
+        onSelect={onManufacturerSelect}
+        isLoading={localIsLoading}
         onError={onError}
       />
 
       {selectedManufacturer && (
         <ModelSelector
-          selectedModel={selectedModel || ''}
-          setSelectedModel={handleModelSelect}
+          selectedModel={selectedModel}
+          setSelectedModel={setSelectedModel}
           models={models}
-          onModelSelect={handleModelSelect}
-          isLoading={isLoading}
-          setIsLoading={setIsLoading}
-          trackedAircraftCount={allAircraft.length}
+          onModelSelect={onModelSelect}
+          trackedAircraftCount={totalActive}
           selectedManufacturer={selectedManufacturer}
-          setTrackingStatus={setTrackingStatus}
+          isLoading={localIsLoading}
+          setIsLoading={setLocalIsLoading}
+          setTrackingStatus={setLocalTrackingStatus}
+          disabled={localIsLoading}
         />
       )}
 
       {/* Show tracking status */}
-      {trackingStatus && (
+      {localTrackingStatus && (
         <div className="mt-2 p-2 border rounded bg-gray-50">
           <div className="flex items-center">
-            {isLoading && (
+            {localIsLoading && (
               <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-2"></div>
             )}
-            <span className="text-sm text-gray-700">{trackingStatus}</span>
+            <span className="text-sm text-gray-700">{localTrackingStatus}</span>
           </div>
         </div>
       )}
 
       {/* Show aircraft count if available */}
-      {aircraftCount > 0 && (
+      {totalActive > 0 && (
         <div className="mt-2 text-sm text-gray-600">
-          Found {filteredAircraft.length} of {aircraftCount} aircraft
+          <div className="flex items-center">
+            <span>Tracking</span>
+            <span className="ml-1 font-medium text-blue-600">
+              {totalActive}
+            </span>
+            <span className="ml-1">aircraft</span>
+          </div>
         </div>
       )}
     </div>

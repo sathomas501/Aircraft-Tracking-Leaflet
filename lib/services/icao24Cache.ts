@@ -6,7 +6,38 @@ class Icao24CacheService {
   async getIcao24s(manufacturer: string): Promise<string[]> {
     if (!manufacturer) return [];
 
-    return this.cache.get(manufacturer) ?? [];
+    // If we have it in cache, return it
+    if (this.cache.has(manufacturer)) {
+      console.log(
+        `[Icao24CacheService] Using cached ICAO24s for ${manufacturer}`
+      );
+      return this.cache.get(manufacturer) ?? [];
+    }
+
+    // Otherwise, fetch it from the server
+    console.log(
+      `[Icao24CacheService] Need to fetch ICAO24s for ${manufacturer}`
+    );
+    return this.fetchAndCacheIcao24s(manufacturer, async () => {
+      try {
+        // Call your API to get the ICAO24s for this manufacturer
+        const response = await fetch('/api/aircraft/icao24s', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ manufacturer }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`Failed to fetch ICAO24s: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        return data.icao24List || [];
+      } catch (error) {
+        console.error('[Icao24CacheService] Error fetching ICAO24s:', error);
+        return [];
+      }
+    });
   }
 
   /**

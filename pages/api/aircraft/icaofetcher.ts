@@ -82,51 +82,64 @@ async function processRequest(icao24s: string[], manufacturer: string) {
   );
 
   try {
-    // Check if any of these ICAOs are already in our tracking database first
     const trackingDb = TrackingDatabaseManager.getInstance();
 
-    // Try to get fresh data from tracking DB first (much faster)
+    // Get existing aircraft from the tracking DB
     const existingAircraft = await trackingDb.getAircraftByIcao24(uniqueIcaos);
     console.log(
       `[ICAOFetcher] ✅ Found ${existingAircraft.length} aircraft in tracking DB`
     );
 
-    // If we have data for all requested ICAOs, we can return it directly
-    if (existingAircraft.length === uniqueIcaos.length) {
-      console.log(
-        '[ICAOFetcher] ✅ All requested aircraft found in tracking DB'
-      );
-      return {
-        success: true,
-        data: existingAircraft,
-        source: 'database',
-      };
-    }
+    // Define what "active" means - updated in the last hour
+    const activeTimeThreshold = Date.now() - 60 * 60 * 1000; // 1 hour ago
 
-    // For missing aircraft, use the batch service to fetch from OpenSky
-    // Filter out ICAOs we already have
+    // Filter existing aircraft to find which ones are active
+    const activeAircraft = existingAircraft.filter(
+      (aircraft) => aircraft.last_contact * 1000 > activeTimeThreshold
+    );
+
+    // Create sets for quick lookups
     const existingIcaos = new Set(
       existingAircraft.map((a) => a.icao24.toLowerCase())
     );
-    const missingIcaos = uniqueIcaos.filter((icao) => !existingIcaos.has(icao));
-
-    console.log(
-      `[ICAOFetcher] 🔍 Found ${existingAircraft.length} in DB, fetching ${missingIcaos.length} from OpenSky`
+    const activeIcaos = new Set(
+      activeAircraft.map((a) => a.icao24.toLowerCase())
     );
 
-    if (missingIcaos.length === 0) {
-      // This shouldn't happen given our previous check, but just in case
+    // STRATEGY:
+    // 1. Track all currently active aircraft (no matter how many)
+    // 2. Add up to 50 new aircraft we haven't seen before
+
+    // First, include all active aircraft
+    let icaosToFetch = uniqueIcaos.filter((icao) => activeIcaos.has(icao));
+
+    // Then add up to 50 new aircraft
+    const NEW_AIRCRAFT_LIMIT = 50;
+    const newIcaos = uniqueIcaos
+      .filter((icao) => !existingIcaos.has(icao)) // Not in DB yet
+      .slice(0, NEW_AIRCRAFT_LIMIT); // Take only up to 50 new ones
+
+    icaosToFetch = [...icaosToFetch, ...newIcaos];
+
+    console.log(
+      `[ICAOFetcher] ✈️ Tracking ${icaosToFetch.length} aircraft: ` +
+        `${activeAircraft.length} active, ${newIcaos.length} new ` +
+        `(new aircraft limit: ${NEW_AIRCRAFT_LIMIT})`
+    );
+
+    // Skip OpenSky fetch if we have nothing to fetch
+    if (icaosToFetch.length === 0) {
       return {
         success: true,
-        data: existingAircraft,
+        data: activeAircraft,
         source: 'database',
       };
     }
 
-    // Use the ICAO batch service for missing aircraft
+    // Use the ICAO batch service with our limited list
     const batchService = new IcaoBatchService();
     const openSkyAircraft = await batchService.processBatches(
-      missingIcaos,
+      icaosToFetch,
       manufacturer
     );
 

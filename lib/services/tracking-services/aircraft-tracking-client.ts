@@ -385,44 +385,6 @@ export class AircraftTrackingClient {
       return { success: false, count: 0 };
     }
   }
-
-  public async cleanupManufacturer(
-    manufacturer: string,
-    olderThan?: number
-  ): Promise<{
-    success: boolean;
-    trackedRemoved: number;
-    pendingRemoved: number;
-  }> {
-    if (!manufacturer) {
-      return { success: false, trackedRemoved: 0, pendingRemoved: 0 };
-    }
-
-    try {
-      console.log(
-        `[AircraftTrackingClient] 🚀 Running cleanup for manufacturer: ${manufacturer}`
-      );
-
-      // ✅ Invoke CleanupService
-      const { trackedRemoved, pendingRemoved } =
-        await this.cleanupService.cleanupManufacturer(manufacturer, olderThan);
-
-      // ✅ Invalidate cache after successful cleanup
-      this.cache.delete(`aircraft-${manufacturer}`);
-
-      console.log(
-        `[AircraftTrackingClient] ✅ Cleanup complete. Removed ${trackedRemoved} tracked, ${pendingRemoved} pending aircraft.`
-      );
-
-      return { success: true, trackedRemoved, pendingRemoved };
-    } catch (error) {
-      console.error(
-        `[AircraftTrackingClient] ❌ Cleanup failed for ${manufacturer}:`,
-        error
-      );
-      return { success: false, trackedRemoved: 0, pendingRemoved: 0 };
-    }
-  }
 }
 
 // Export singleton instance

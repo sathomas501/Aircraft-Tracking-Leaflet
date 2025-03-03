@@ -11,9 +11,9 @@ import {
   createTrackingDataService,
 } from './tracking-data-service';
 import { aircraftPositionService, Position } from './aircraft-position-service';
-import { manufacturerTracking } from './manufacturer-tracking-service';
 import type { Aircraft, OpenSkyStateArray } from '@/types/base';
 import { TrackingDatabaseManager } from '@/lib/db/managers/trackingDatabaseManager';
+import { manufacturerTracking } from '../tracking-services/manufacturer-tracking-service';
 
 /**
  * Tracking Services provides a simplified interface to access all aircraft tracking functionality
@@ -99,19 +99,6 @@ export class TrackingServices {
   }
 
   /**
-   * Process a manufacturer and get all currently tracked aircraft
-   * @param manufacturer Manufacturer name
-   */
-  public async getAircraft(manufacturer: string): Promise<Aircraft[]> {
-    // Use position service for latest positions
-    if (this.isServer && this.dataService) {
-      return this.dataService.getTrackedAircraft(manufacturer);
-    } else {
-      return manufacturerTracking.processManufacturer(manufacturer);
-    }
-  }
-
-  /**
    * Get position for a specific aircraft
    * @param icao24 ICAO24 code for the aircraft
    */
@@ -138,32 +125,6 @@ export class TrackingServices {
   ): Promise<number> {
     const service = this.getActiveService(manufacturer);
     return service.updatePositions(positions, manufacturer);
-  }
-
-  /**
-   * Clean up stale aircraft for a manufacturer
-   * @param manufacturer Manufacturer name
-   * @param olderThan Remove aircraft older than this time (in ms, default: 1 hour)
-   */
-  public async cleanupManufacturer(
-    manufacturer: string,
-    olderThan?: number
-  ): Promise<{
-    trackedRemoved: number;
-    pendingRemoved: number;
-  }> {
-    if (this.isServer && this.dataService) {
-      const result = await this.dataService.performMaintenance(
-        manufacturer,
-        olderThan
-      );
-      return {
-        trackedRemoved: result.cleaned,
-        pendingRemoved: result.marked,
-      };
-    } else {
-      return manufacturerTracking.cleanupManufacturer(manufacturer, olderThan);
-    }
   }
 
   /**
