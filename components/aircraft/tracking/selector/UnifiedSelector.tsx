@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { Plus, Minus } from 'lucide-react';
 import ManufacturerSelector from './ManufacturerSelector';
 import ModelSelector from './ModelSelector';
@@ -53,6 +53,16 @@ const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
   const [localTrackingStatus, setLocalTrackingStatus] =
     useState(trackingStatus);
 
+  useEffect(() => {
+    console.log(
+      `[UnifiedSelector] Manufacturer selected: ${selectedManufacturer}`
+    );
+  }, [selectedManufacturer]);
+
+  useEffect(() => {
+    console.log(`[UnifiedSelector] Model selected: ${selectedModel}`);
+  }, [selectedModel]);
+
   // Update local state when props change
   React.useEffect(() => {
     setLocalIsLoading(isLoading);
@@ -61,6 +71,13 @@ const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
   React.useEffect(() => {
     setLocalTrackingStatus(trackingStatus);
   }, [trackingStatus]);
+
+  const [updatedModels, setModels] = useState<AircraftModel[]>([]);
+
+  const handleModelsUpdate = (updatedModels: AircraftModel[]) => {
+    console.log(`[Parent] Updating models:`, updatedModels);
+    setModels(updatedModels); // Ensure models update in state
+  };
 
   // Simply toggle the minimized state
   const handleToggle = useCallback(() => {
@@ -107,11 +124,11 @@ const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
         onError={onError}
       />
 
-      {selectedManufacturer && (
+      {selectedManufacturer && models.length > 0 ? (
         <ModelSelector
           selectedModel={selectedModel}
           setSelectedModel={setSelectedModel}
-          models={models}
+          models={models} // Ensure models are being passed here
           onModelSelect={onModelSelect}
           trackedAircraftCount={totalActive}
           selectedManufacturer={selectedManufacturer}
@@ -120,6 +137,10 @@ const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
           setTrackingStatus={setLocalTrackingStatus}
           disabled={localIsLoading}
         />
+      ) : (
+        <p className="text-gray-500 text-sm mt-2">
+          No models found for this manufacturer.
+        </p>
       )}
 
       {/* Show tracking status */}

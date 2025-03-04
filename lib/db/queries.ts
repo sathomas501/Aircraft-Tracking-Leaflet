@@ -39,21 +39,3 @@ export const getActiveIcao24ByManufacturer = async (
     return [];
   }
 };
-
-export const getModelsByManufacturer = async (
-  manufacturer: string
-): Promise<SelectOption[]> => {
-  try {
-    const response = await fetch(
-      `/api/db/queries?action=getModelsByManufacturer&manufacturer=${encodeURIComponent(manufacturer)}`
-    );
-    if (!response.ok) {
-      throw new Error(`API request failed: ${response.statusText}`);
-    }
-    const data = await response.json();
-    return data.models || [];
-  } catch (error) {
-    console.error('Error fetching models by manufacturer:', error);
-    return [];
-  }
-};

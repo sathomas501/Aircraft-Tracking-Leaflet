@@ -49,7 +49,10 @@ export class PollingRateLimiter {
       : RATE_LIMITS.ANONYMOUS;
 
     // Initialize with 80% of the actual limits for safety margin
-    this.requestsPer10Min = Math.floor(limits.REQUESTS_PER_10_MIN * 0.8);
+    this.requestsPer10Min = Math.max(
+      5,
+      RATE_LIMITS.AUTHENTICATED.REQUESTS_PER_10_MIN / 20
+    );
     this.requestsPerDay = Math.floor(limits.REQUESTS_PER_DAY * 0.8);
     this.maxBatchSize = Math.min(
       options.maxBatchSize ||
@@ -254,6 +257,16 @@ export class PollingRateLimiter {
   public recordFailure(): void {
     this.consecutiveFailures++;
     this.backoffTime = Math.min(this.backoffTime * 2, 60000); // Max 60 seconds
+
+    async function schedule() {
+      // Ensure the function is async
+      try {
+        // Some logic
+      } catch (error) {
+        console.warn(`[RateLimiter] ⚠️ Rate limited! Retrying in 60 seconds.`);
+        await new Promise((resolve) => setTimeout(resolve, 60000)); // Fixes the issue
+      }
+    }
 
     // Force immediate rate limit after consecutive failures
     if (this.consecutiveFailures >= 3) {

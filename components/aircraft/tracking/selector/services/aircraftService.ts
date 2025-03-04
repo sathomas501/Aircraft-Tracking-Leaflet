@@ -130,7 +130,7 @@ export async function fetchModels(manufacturer: string): Promise<Model[]> {
 
     console.log('[Aircraft Service] 🔄 Fetching models for:', manufacturer);
     const encodedManufacturer = encodeURIComponent(manufacturer.trim());
-    const response = await fetch('/api/aircraft/update-models', {
+    const response = await fetch('/api/aircraft/models', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ manufacturer }),

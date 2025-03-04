@@ -26,6 +26,10 @@ interface ActiveModel {
   count: number;
   activeCount: number;
   totalCount: number;
+  city?: string;
+  state?: string;
+  ownerType?: string;
+  name?: string;
 }
 
 interface DatabaseConfig {
@@ -342,14 +346,19 @@ class StaticDatabaseManager extends BaseDatabaseManager {
 
       const modelQuery = `
       SELECT 
-        model,
-        manufacturer,
-        COUNT(DISTINCT icao24) as total_count,
-        GROUP_CONCAT(icao24) as icao_list
-      FROM aircraft
-      WHERE manufacturer = ?
-      GROUP BY model, manufacturer
-      ORDER BY total_count DESC;
+  model,
+  manufacturer,
+  COUNT(DISTINCT icao24) as total_count,
+  GROUP_CONCAT(icao24) as icao_list,
+  MAX(NAME) as name,  -- Assuming all aircraft in a model share the same name
+  MAX(CITY) as city,
+  MAX(STATE) as state,
+  MAX(OWNER_TYPE) as ownerType
+FROM aircraft
+WHERE manufacturer = ?
+GROUP BY model, manufacturer
+ORDER BY total_count DESC;
+
     `;
 
       const modelResults = await this.executeQuery<{
@@ -357,6 +366,11 @@ class StaticDatabaseManager extends BaseDatabaseManager {
         manufacturer: string;
         total_count: number;
         icao_list: string;
+        city: string;
+        ownerType: string;
+        state: string;
+        name: string;
+        activeCount: number;
       }>(modelQuery, [manufacturer]);
 
       if (modelResults.length === 0) {
@@ -399,10 +413,10 @@ class StaticDatabaseManager extends BaseDatabaseManager {
             0
           );
 
-          result.city = referenceAircraft?.CITY || 'Unknown';
-          result.state = referenceAircraft?.STATE || 'Unknown';
-          result.ownerType = referenceAircraft?.OWNER_TYPE || 'Unknown';
-          result.name = referenceAircraft?.NAME || 'Unknown';
+          result.city = referenceAircraft?.city || 'Unknown';
+          result.state = referenceAircraft?.state || 'Unknown';
+          result.ownerType = referenceAircraft?.ownerType || 'Unknown';
+          result.name = referenceAircraft?.name || 'Unknown';
 
           // Store in ActiveModel format
           result.activeCount = activeCount;

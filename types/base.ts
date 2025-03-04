@@ -114,6 +114,7 @@ export interface AircraftRecord {
   manufacturer: string;
   model: string;
   operator: string | null;
+  ownerType?: string;
   name: string | null;
   city: string | null;
   state: string | null;
@@ -312,6 +313,10 @@ export interface ActiveModel extends BaseModel {
   activeCount: number;
   totalCount: number;
   count?: number;
+  city?: string;
+  state?: string;
+  ownerType?: string;
+  name?: string;
 }
 
 // Props interface for ModelSelector component

@@ -2,11 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Model } from '@/types/base';
 import { useRequestDeduplication } from './useRequestDeduplication';
 
-// In-memory cache keyed by manufacturer value.
-const modelsCache: {
-  [manufacturer: string]: { models: Model[]; timestamp: number };
-} = {};
-const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+const modelCache: Record<string, any> = {}; // Global cache
 
 /**
  * Sorts models by descending activeCount and alphabetically by model name.
@@ -54,7 +50,7 @@ export const useFetchModels = (
     try {
       console.log(`[useFetchModels] 🔄 Updating models for: ${manufacturer}`);
 
-      const response = await fetch('/api/aircraft/update-models', {
+      const response = await fetch('/api/aircraft/models', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ manufacturer }),
@@ -70,7 +66,7 @@ export const useFetchModels = (
       // If models were updated, refresh the list
       if (data.updated > 0) {
         // Invalidate cache for this manufacturer
-        delete modelsCache[manufacturer];
+        delete modelCache[manufacturer];
         // Reload models to get fresh data
         await loadModels();
       }

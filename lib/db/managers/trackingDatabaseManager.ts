@@ -544,6 +544,14 @@ export class TrackingDatabaseManager extends BaseDatabaseManager {
           `[TrackingDatabaseManager] Sample result: ${JSON.stringify(rows[0])}`
         );
 
+        const trackedAircraft = await this.executeQuery(
+          `SELECT * FROM tracked_aircraft WHERE manufacturer = ? AND updated_at > ?`,
+          [manufacturer, Date.now() - 60000] // Ensure correct timestamp filtering
+        );
+        console.log(
+          `[TrackingDatabaseManager] Found ${trackedAircraft.length} aircraft`
+        );
+
         // Count manufacturers in results
         const manufacturerCounts = rows.reduce(
           (acc, row) => {

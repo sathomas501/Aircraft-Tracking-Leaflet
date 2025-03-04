@@ -1,7 +1,7 @@
-// pages/api/aircraft/models.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
 import staticDatabaseManager from '../../../lib/db/managers/staticDatabaseManager';
 import { withErrorHandler } from '@/lib/middleware/error-handler';
+import CacheManager from '../../../lib/services/managers/cache-manager'; // ✅ Use the correct cache manager import
 
 export interface ActiveModel {
   model: string;
@@ -23,6 +23,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
 
   const { method, query } = req;
   const manufacturer = query.manufacturer as string;
+  const cache = new CacheManager<ActiveModel[]>(300); // Cache expires in 300 seconds
 
   if (method !== 'GET') {
     console.log(`[Models API] ⚠️ Invalid method: ${method}`);
@@ -40,22 +41,32 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
   }
 
   try {
-    // Ensure database is initialized
+    // ✅ Define cache key for the manufacturer
+    const cacheKey = `models:${manufacturer}`;
+
+    // ✅ Check if models are already cached
+    const cachedData = cache.get(cacheKey); // ✅ Now it's an instance method
+    if (cachedData) {
+      console.log('[Models API] ✅ Returning cached data');
+      return res.status(200).json({
+        success: true,
+        data: cachedData,
+      });
+    }
+
+    // ✅ Ensure database is initialized
     if (!staticDatabaseManager.isReady) {
       console.log('[Models API] 🔄 Initializing database');
       await staticDatabaseManager.initializeDatabase();
     }
 
-    // I noticed you have a getModelsByManufacturer method already in staticDatabaseManager
-    // Let's use that instead of writing a custom query
+    // ✅ Fetch models from the database
     console.log(
       `[Models API] 📊 Fetching models for manufacturer: ${manufacturer}`
     );
-
     const models =
       await staticDatabaseManager.getModelsByManufacturer(manufacturer);
 
-    // Convert the results to match the StaticModel interface
     const results: ActiveModel[] = models.map((model) => ({
       model: model.model,
       manufacturer: model.manufacturer,
@@ -78,6 +89,9 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
         count: model.count,
         label: `${model.model} (${model.count} aircraft)`,
       }));
+
+    // ✅ Cache the fetched models for future requests
+    cache.set(cacheKey, formattedModels); // ✅ Use the instance
 
     const responseTime = Date.now() - start;
     console.log(

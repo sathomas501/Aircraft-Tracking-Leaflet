@@ -1,6 +1,7 @@
 // lib/services/icao-batch-service.ts - Updated version
 import { API_CONFIG } from '@/config/api';
 import type { Aircraft } from '@/types/base';
+import { AircraftModel } from '@/types/aircraft-models';
 import { PollingRateLimiter } from '../services/rate-limiter';
 import { RATE_LIMITS } from '@/config/rate-limits';
 import { TrackingDatabaseManager } from '../db/managers/trackingDatabaseManager';
@@ -22,6 +23,7 @@ export class IcaoBatchService {
   private static readonly DEFAULT_BATCH_SIZE = 100;
   private readonly baseUrl: string;
   private readonly rateLimiter: PollingRateLimiter;
+  private modelCache: Record<string, any[]> = {}; // Local cache for batch processing
 
   constructor() {
     this.baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
@@ -56,6 +58,20 @@ export class IcaoBatchService {
         console.log(
           `[IcaoBatchService] 📦 Sending batch of ${icaoBatch.length} ICAOs to OpenSky proxy...`
         );
+
+        const seenRequests = new Set<string>();
+
+        if (seenRequests.has(JSON.stringify(icaoBatch))) {
+          console.warn(
+            `[IcaoBatchService] 🚫 Duplicate ICAO batch detected! Skipping.`
+          );
+          return {
+            success: false,
+            data: { states: [], timestamp: Date.now() },
+          };
+        }
+
+        seenRequests.add(JSON.stringify(icaoBatch));
 
         const response = await fetch(`${this.baseUrl}/api/proxy/opensky`, {
           method: 'POST',
@@ -119,7 +135,7 @@ export class IcaoBatchService {
 
     const dbManager = StaticDatabaseManager.getInstance();
     const trackingDb = TrackingDatabaseManager.getInstance();
-    const models = await dbManager.getModelsByManufacturer(manufacturer);
+    const models = await this.fetchModelsFromAPI(manufacturer);
 
     if (!icao24List.length) {
       console.log(`[IcaoBatchService] ⚠️ No valid ICAO24s to process`);
@@ -156,13 +172,44 @@ export class IcaoBatchService {
       return existingAircraft;
     }
 
+    // Add after this line in your processBatches method:
+    // const untracked = validIcaos.filter((icao) => !existingIcaos.has(icao.toLowerCase()));
+
     const batchSize =
       this.rateLimiter.maxAllowedBatchSize ||
       IcaoBatchService.DEFAULT_BATCH_SIZE;
 
+    // Create batches properly
     const batches: string[][] = [];
-    for (let i = 0; i < untracked.length; i += batchSize) {
-      batches.push(untracked.slice(i, i + batchSize));
+    const seenIcaos = new Set<string>();
+
+    // Current batch
+    let currentBatch: string[] = [];
+
+    for (let i = 0; i < untracked.length; i++) {
+      const icao = untracked[i];
+
+      // Skip duplicates
+      if (seenIcaos.has(icao)) {
+        console.warn(
+          `[IcaoBatchService] ⚠️ Skipping duplicate ICAO24: ${icao}`
+        );
+        continue;
+      }
+
+      seenIcaos.add(icao);
+      currentBatch.push(icao);
+
+      // When current batch reaches max size, add to batches and reset
+      if (currentBatch.length >= batchSize) {
+        batches.push([...currentBatch]);
+        currentBatch = [];
+      }
+    }
+
+    // Add the last batch if it has any items
+    if (currentBatch.length > 0) {
+      batches.push(currentBatch);
     }
 
     console.log(`[IcaoBatchService] 📦 Split into ${batches.length} batches`);
@@ -170,6 +217,20 @@ export class IcaoBatchService {
     let allAircraft: Aircraft[] = [...existingAircraft]; // Start with existing aircraft
     let totalStates = 0;
     let transformedAircraft = 0;
+
+    console.log(
+      `[IcaoBatchService] 🚀 Processing ${icao24List.length} ICAOs for manufacturer: "${manufacturer}"`
+    );
+    console.log(
+      `[IcaoBatchService] 🔍 ICAO24 List: ${JSON.stringify(icao24List)}`
+    );
+
+    const uniqueIcaos = Array.from(new Set(icao24List));
+    if (uniqueIcaos.length !== icao24List.length) {
+      console.warn(
+        `[IcaoBatchService] ⚠️ Duplicate ICAOs detected in request! Removing duplicates.`
+      );
+    }
 
     for (let i = 0; i < batches.length; i++) {
       console.log(
@@ -323,5 +384,42 @@ export class IcaoBatchService {
     );
 
     return allAircraft;
+  }
+
+  // Cache to store models per manufacturer
+  private async fetchModelsFromAPI(manufacturer: string): Promise<any[]> {
+    if (this.modelCache[manufacturer]) {
+      console.log(
+        `[IcaoBatchService] 🔁 Using cached models for ${manufacturer}`
+      );
+      return this.modelCache[manufacturer];
+    }
+
+    try {
+      console.log(
+        `[IcaoBatchService] 🔍 Fetching models from API for: ${manufacturer}`
+      );
+
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/api/aircraft/models?manufacturer=${encodeURIComponent(manufacturer)}`
+      );
+
+      if (!response.ok) {
+        throw new Error(
+          `Models API error: ${response.status} ${response.statusText}`
+        );
+      }
+
+      const result = await response.json();
+      if (result.success && Array.isArray(result.data)) {
+        this.modelCache[manufacturer] = result.data; // ✅ Cache the response
+        return result.data;
+      }
+
+      return [];
+    } catch (error) {
+      console.error(`[IcaoBatchService] ❌ Error fetching models:`, error);
+      return [];
+    }
   }
 }
