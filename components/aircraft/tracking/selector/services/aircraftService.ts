@@ -1,6 +1,6 @@
 // components/aircraft/selector/services/aircraftService.ts
 import { Aircraft, Model } from '@/types/base';
-import { useFetchManufacturers } from '../../../customHooks/useFetchManufactures';
+import { useFetchManufacturers } from '../../../../../hooks/useFetchManufactures';
 import { PollingRateLimiter } from '@/lib/services/rate-limiter';
 import { getCachedIcao24s } from '../../../../../lib/services/managers/aircraft-cache';
 

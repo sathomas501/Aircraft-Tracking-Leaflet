@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react'; // Add useEffect here
 import { ActiveModel } from '@/types/base';
-import { useFetchModels } from '../../customHooks/useFetchModels';
+import { useFetchModels } from '../../../../hooks/useFetchModels';
 import { AircraftModel } from '@/types/aircraft-models';
 
 export interface ModelSelectorProps {

@@ -1,7 +1,6 @@
 // lib/hooks/useTrackedAircraft.ts
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Aircraft } from '@/types/base';
-import { aircraftTrackingClient } from '../../../lib/services/tracking-services/aircraft-tracking-client';
 
 /**
  * Hook for accessing tracked aircraft data from the client
