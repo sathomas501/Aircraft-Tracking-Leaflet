@@ -27,6 +27,19 @@ export class AircraftTrackingClient {
     return AircraftTrackingClient.instance;
   }
 
+  // Add this method to your AircraftTrackingClient class
+  public async manualRefresh(manufacturer: string): Promise<Aircraft[]> {
+    console.log(
+      `[AircraftTrackingClient] Manual refresh triggered for ${manufacturer}`
+    );
+
+    // Clear the cache for this manufacturer to force a fresh API call
+    this.cache.delete(`aircraft-${manufacturer}`);
+
+    // Make the API call and return the aircraft data
+    return this.getTrackedAircraft(manufacturer);
+  }
+
   /**
    * Get tracked aircraft for a manufacturer
    */

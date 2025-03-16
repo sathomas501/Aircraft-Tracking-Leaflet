@@ -5,6 +5,9 @@ import { Aircraft } from '@/types/base';
  * Client-side service for interacting with the tracking API
  */
 export class AircraftTrackingClient {
+  static manualRefresh(selectedManufacturer: string) {
+    throw new Error('Method not implemented.');
+  }
   private static instance: AircraftTrackingClient | null = null;
   private subscribers: Map<string, Set<(data: Aircraft[]) => void>> = new Map();
   private pollingIntervals: Map<string, NodeJS.Timeout> = new Map();
@@ -20,6 +23,23 @@ export class AircraftTrackingClient {
       AircraftTrackingClient.instance = new AircraftTrackingClient();
     }
     return AircraftTrackingClient.instance;
+  }
+
+  public async manualRefresh(manufacturer: string): Promise<Aircraft[]> {
+    console.log(
+      `[AircraftTrackingClient] Manual refresh triggered for ${manufacturer}`
+    );
+
+    // Clear the cache for this manufacturer to force a fresh API call
+    this.cache.delete(`aircraft-${manufacturer}`);
+
+    // Make the API call
+    const results = await this.getTrackedAircraft(manufacturer);
+
+    // Notify subscribers
+    this.notifySubscribers(manufacturer, results);
+
+    return results;
   }
 
   /**
@@ -89,8 +109,13 @@ export class AircraftTrackingClient {
     // Add callback to subscribers
     this.subscribers.get(manufacturer)!.add(callback);
 
-    // Start polling if not already polling for this manufacturer
-    this.startPolling(manufacturer);
+    // Don't start automatic polling
+    // this.startPolling(manufacturer);
+
+    // Instead, do an initial fetch
+    this.getTrackedAircraft(manufacturer).catch((error) => {
+      console.error(`[AircraftTrackingClient] Initial fetch error:`, error);
+    });
 
     // Return unsubscribe function
     return () => {

@@ -24,6 +24,7 @@ export class IcaoBatchService {
   private readonly baseUrl: string;
   private readonly rateLimiter: PollingRateLimiter;
   private modelCache: Record<string, any[]> = {}; // Local cache for batch processing
+  private seenRequests = new Set<string>();
 
   constructor() {
     this.baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
@@ -59,9 +60,7 @@ export class IcaoBatchService {
           `[IcaoBatchService] 📦 Sending batch of ${icaoBatch.length} ICAOs to OpenSky proxy...`
         );
 
-        const seenRequests = new Set<string>();
-
-        if (seenRequests.has(JSON.stringify(icaoBatch))) {
+        if (this.seenRequests.has(JSON.stringify(icaoBatch))) {
           console.warn(
             `[IcaoBatchService] 🚫 Duplicate ICAO batch detected! Skipping.`
           );
@@ -71,8 +70,11 @@ export class IcaoBatchService {
           };
         }
 
-        seenRequests.add(JSON.stringify(icaoBatch));
+        this.seenRequests.add(JSON.stringify(icaoBatch));
 
+        console.log(
+          `[IcaoBatchService] 🚀 Sending batch request to OpenSky from ${new Error().stack}`
+        );
         const response = await fetch(`${this.baseUrl}/api/proxy/opensky`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -384,6 +386,18 @@ export class IcaoBatchService {
     );
 
     return allAircraft;
+  }
+
+  public triggerManualPoll(
+    icao24List: string[],
+    manufacturer: string
+  ): Promise<Aircraft[]> {
+    // Clear the seen requests cache to allow a fresh poll
+    this.seenRequests.clear();
+    console.log(
+      `[IcaoBatchService] 🔄 Manual polling triggered for ${manufacturer}`
+    );
+    return this.processBatches(icao24List, manufacturer);
   }
 
   // Cache to store models per manufacturer

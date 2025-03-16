@@ -13,6 +13,7 @@ interface AircraftSelectorProps {
   onError?: (error: string) => void;
   autoPolling?: boolean; // Whether to use automatic polling
   pollInterval?: number; // Optional custom poll interval
+  onManualRefresh?: () => Promise<void>;
 
   // Optional data override props for using with existing data sources
   externalManufacturers?: SelectOption[];
@@ -35,6 +36,7 @@ const AircraftSelector: React.FC<AircraftSelectorProps> = ({
   externalAircraft,
   onManufacturerSelect,
   onModelSelect,
+  onManualRefresh, // Remove the default value here
 }) => {
   // Debug render counts
   const renderCount = useRef(0);

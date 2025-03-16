@@ -91,6 +91,9 @@ export abstract class BaseTrackingService {
         });
       }
 
+      console.log(
+        `[BaseTrackingService] 📡 Tracking service request to OpenSky from ${new Error().stack}`
+      );
       const response = await fetch(`${this.baseUrl}/api/proxy/opensky`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

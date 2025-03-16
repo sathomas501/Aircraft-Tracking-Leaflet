@@ -23,6 +23,9 @@ const rateLimiter = new PollingRateLimiter({
   retryAfter: 1000, // Add appropriate retryAfter value
 });
 
+const recentRequests = new Map<string, { timestamp: number; response: any }>();
+const CACHE_TTL = 60000; // 1 minute cache time
+
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse
@@ -35,13 +38,26 @@ export default async function handler(
     });
   }
 
-  console.warn(
-    `[OpenSky Proxy] 🛑 Duplicate request detected for OpenSky API:`,
-    req.url
-  );
-
   // Get ICAO24s from either query params (GET) or body (POST)
   let icao24List: string[] = [];
+
+  const requestKey = JSON.stringify(icao24List.sort());
+  const now = Date.now();
+
+  // Clean expired cache entries
+  for (const [key, entry] of recentRequests.entries()) {
+    if (now - entry.timestamp > CACHE_TTL) {
+      recentRequests.delete(key);
+    }
+  }
+
+  // Check if this is a duplicate request
+  if (recentRequests.has(requestKey)) {
+    console.warn(
+      `[OpenSky Proxy] 🛑 Actual duplicate request detected, using cached response`
+    );
+    return res.status(200).json(recentRequests.get(requestKey)!.response);
+  }
 
   if (req.method === 'POST') {
     const { icao24s, action } = req.body;
@@ -113,6 +129,15 @@ export default async function handler(
       extended: '1',
     });
 
+    console.log(
+      `[OpenSky Proxy] 🔍 Preparing to send request to OpenSky API:`,
+      {
+        URL,
+        icaoCount: icao24List.length,
+        sample: icao24List.slice(0, 5), // Log only a few ICAOs to avoid clutter
+      }
+    );
+
     console.log('[OpenSky Proxy] Making request to OpenSky:', {
       url: `https://opensky-network.org/api/states/all?icao24=${
         icao24List.length > 10
@@ -153,6 +178,22 @@ export default async function handler(
       .map((state: OpenSkyStateArray) =>
         OpenSkyTransforms.toTrackingData(state)
       );
+
+    // Cache the successful response
+    recentRequests.set(requestKey, {
+      timestamp: now,
+      response: {
+        success: true,
+        data: {
+          states,
+          timestamp: responseData.time || Date.now(),
+          meta: {
+            total: states.length,
+            requestedIcaos: icao24List.length,
+          },
+        },
+      },
+    });
 
     return res.status(200).json({
       success: true,

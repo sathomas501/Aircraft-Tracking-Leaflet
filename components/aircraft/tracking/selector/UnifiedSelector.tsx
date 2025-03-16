@@ -25,6 +25,7 @@ export interface UnifiedSelectorProps {
   onError: (message: string) => void;
   onAircraftUpdate?: (aircraft: Aircraft[]) => void;
   onModelsUpdate?: (models: AircraftModel[]) => void;
+  onManualRefresh?: (manufacturer: string) => Promise<void>;
 
   // UI state props (optional)
   isLoading?: boolean;
