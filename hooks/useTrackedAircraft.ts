@@ -41,7 +41,7 @@ export function useTrackedAircraft(manufacturer: string | null) {
       const response = await fetch(
         `/api/tracking?action=tracked-aircraft&manufacturer=${encodeURIComponent(manufacturer)}`,
         {
-          method: 'GET',
+          method: 'POST',
           headers: { 'Content-Type': 'application/json' },
         }
       );

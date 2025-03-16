@@ -1,32 +1,92 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { SelectOption } from '@/types/base';
-import { icao24CacheService } from '@/lib/services/icao24Cache';
 
 export const useFetchManufacturers = () => {
   const [manufacturers, setManufacturers] = useState<SelectOption[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true); // Start with loading true
   const [error, setError] = useState<string | null>(null);
+  const isMounted = useRef(true);
+  const fetchAttempts = useRef(0);
+  const MAX_ATTEMPTS = 3;
 
   useEffect(() => {
+    // Set up the mount ref
+    isMounted.current = true;
+
     const fetchManufacturers = async () => {
-      setLoading(true);
+      // Don't retry too many times
+      if (fetchAttempts.current >= MAX_ATTEMPTS) {
+        console.error('[useFetchManufacturers] ❌ Max retry attempts reached');
+        if (isMounted.current) {
+          setLoading(false);
+          setError('Failed to load manufacturers after multiple attempts');
+        }
+        return;
+      }
+
+      fetchAttempts.current += 1;
+
       try {
-        const response = await fetch('/api/aircraft/manufacturers');
-        if (!response.ok) throw new Error('Failed to fetch manufacturers');
+        console.log('[useFetchManufacturers] 🔍 Fetching manufacturers...');
+
+        // API Call
+        const response = await fetch('/api/aircraft/manufacturers', {
+          method: 'POST', // ✅ Change to POST if required
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'fetch-manufacturers' }), // ✅ Ensure API expects this
+        });
+
+        if (!isMounted.current) return;
+
+        // Check for failed request
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error(
+            `[useFetchManufacturers] ❌ API error: ${response.status} - ${errorText}`
+          );
+          throw new Error(
+            `Failed to fetch manufacturers: ${response.statusText}`
+          );
+        }
 
         const data = await response.json();
+
+        if (!isMounted.current) return;
+
+        console.log(
+          `[useFetchManufacturers] ✅ Fetched ${data.manufacturers?.length || 0} manufacturers`
+        );
         setManufacturers(data.manufacturers || []);
+        setError(null);
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Unknown error');
+        if (!isMounted.current) return;
+
+        let errorMessage = 'Unknown error';
+        if (err instanceof Error) {
+          errorMessage = err.message;
+        }
+
+        console.error(
+          '[useFetchManufacturers] ❌ Error fetching manufacturers:',
+          err
+        );
+
+        setError(errorMessage);
       } finally {
-        setLoading(false);
+        if (isMounted.current) {
+          setLoading(false);
+        }
       }
     };
 
     fetchManufacturers();
+
+    // Cleanup function
+    return () => {
+      isMounted.current = false;
+    };
   }, []);
 
-  // ✅ Pass `manufacturer` as an argument instead of using an undefined variable
   const fetchManufacturerIcao24s = async (
     manufacturer: string
   ): Promise<string[]> => {
@@ -40,7 +100,6 @@ export const useFetchManufacturers = () => {
         `[useFetchManufacturers] 🔍 Fetching ICAO24s for ${manufacturer}`
       );
 
-      // ✅ Ensure no direct recursion
       const response = await fetch('/api/aircraft/icao24s', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -55,7 +114,7 @@ export const useFetchManufacturers = () => {
       }
 
       const data = await response.json();
-      return data?.data?.icao24List ?? []; // ✅ Proper data extraction
+      return data?.data?.icao24List ?? [];
     } catch (error) {
       console.error(
         `[useFetchManufacturers] ❌ Error fetching ICAO24s:`,
@@ -65,6 +124,5 @@ export const useFetchManufacturers = () => {
     }
   };
 
-  // ✅ Ensure this function is correctly returned
   return { manufacturers, fetchManufacturerIcao24s, loading, error };
 };

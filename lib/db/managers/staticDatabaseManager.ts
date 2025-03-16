@@ -54,8 +54,18 @@ class StaticDatabaseManager extends BaseDatabaseManager {
   private readonly aircraftCache = new CacheManager<AircraftRecord[]>(5 * 60);
   private readonly ICAO24_CACHE_PREFIX = 'aircraft_icao24_';
 
+  // In staticDatabaseManager.ts, modify the constructor
   private constructor() {
-    super('static.db');
+    // If you have a fixed path, use that directly
+    if (process.env.STATIC_DB_PATH) {
+      super(process.env.STATIC_DB_PATH);
+    } else {
+      // Otherwise, use the default path but log a warning
+      super('static.db');
+      console.warn(
+        '[StaticDB] ⚠️ No STATIC_DB_PATH environment variable found, using default path'
+      );
+    }
   }
 
   public setConfig(config: Partial<DatabaseConfig>) {
@@ -69,6 +79,54 @@ class StaticDatabaseManager extends BaseDatabaseManager {
     return StaticDatabaseManager.instance;
   }
 
+  // Add this method to StaticDatabaseManager class
+  public async loadManufacturersCache(limit: number = 50): Promise<boolean> {
+    try {
+      console.log(
+        `[StaticDB] 🔄 Loading top ${limit} manufacturers by aircraft count...`
+      );
+
+      // More explicit query that focuses on getting top manufacturers by count
+      const result = await this.executeQuery<ManufacturerInfo>(
+        `SELECT 
+        TRIM(manufacturer) AS name,
+        COUNT(*) AS count
+      FROM aircraft
+      WHERE manufacturer IS NOT NULL AND TRIM(manufacturer) != ''
+      GROUP BY TRIM(manufacturer)
+      ORDER BY count DESC
+      LIMIT ?`,
+        [limit]
+      );
+
+      // Log the results for debugging
+      console.log(`[StaticDB] Query returned ${result.length} manufacturers`);
+      if (result.length > 0) {
+        console.log(
+          `[StaticDB] Top manufacturer: ${result[0].name} with ${result[0].count} aircraft`
+        );
+      }
+
+      // Only cache if we have results
+      if (result.length > 0) {
+        await this.manufacturerListCache.set(
+          this.MANUFACTURER_LIST_CACHE_KEY,
+          result
+        );
+        console.log(
+          `[StaticDB] ✅ Cached top ${result.length} manufacturers by aircraft count`
+        );
+        return true;
+      } else {
+        console.log('[StaticDB] ⚠️ No manufacturers found to cache');
+        return false;
+      }
+    } catch (error) {
+      console.error('[StaticDB] ❌ Error loading manufacturers cache:', error);
+      return false;
+    }
+  }
+
   protected async createTables(): Promise<void> {
     if (!this.db) {
       throw new Error('Database not initialized');
@@ -77,12 +135,11 @@ class StaticDatabaseManager extends BaseDatabaseManager {
     await this.db.exec(`
       CREATE TABLE IF NOT EXISTS aircraft (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        "N-NUMBER" TEXT,
         icao24 TEXT UNIQUE,
-        registration TEXT,
         manufacturer TEXT,
         model TEXT,
         owner TEXT,
-        "N-NUMBER" TEXT,
         NAME TEXT,
         CITY TEXT,
         STATE TEXT,
@@ -98,6 +155,31 @@ class StaticDatabaseManager extends BaseDatabaseManager {
     `);
 
     console.log('[StaticDB] Tables and indices created');
+
+    // Check the row count first
+    const countResult = await this.executeQuery<{ count: number }>(
+      'SELECT COUNT(*) as count FROM aircraft'
+    );
+    const rowCount = countResult[0]?.count || 0;
+    console.log(`[StaticDB] Aircraft table has ${rowCount} rows`);
+
+    if (rowCount > 0) {
+      // Force load the manufacturers cache if we have data
+      const success = await this.loadManufacturersCache(50);
+      if (success) {
+        console.log(
+          '[StaticDB] ✅ Top 50 manufacturers cached successfully during initialization'
+        );
+      } else {
+        console.warn(
+          '[StaticDB] ⚠️ Failed to cache manufacturers during initialization'
+        );
+      }
+    } else {
+      console.warn(
+        '[StaticDB] ⚠️ Skipping manufacturer cache - no aircraft data found'
+      );
+    }
   }
 
   private async getValidManufacturers(
@@ -267,6 +349,33 @@ class StaticDatabaseManager extends BaseDatabaseManager {
     }
 
     console.log('[StaticDB] Fetching manufacturers from database');
+
+    // Add this to your getManufacturersWithCount method just before executing the query
+    console.log('[StaticDB] Checking database tables...');
+    const tablesQuery = await this.executeQuery<{ name: string }>(
+      "SELECT name FROM sqlite_master WHERE type='table'"
+    );
+    console.log(
+      `[StaticDB] Available tables: ${tablesQuery.map((t) => t.name).join(', ')}`
+    );
+
+    // Add a row count check
+    console.log('[StaticDB] Checking aircraft table row count...');
+    const countQuery = await this.executeQuery<{ count: number }>(
+      'SELECT COUNT(*) as count FROM aircraft'
+    );
+    console.log(
+      `[StaticDB] Aircraft table has ${countQuery[0]?.count || 0} rows`
+    );
+
+    // Check if manufacturers exist
+    console.log('[StaticDB] Checking for manufacturers...');
+    const manufacturerQuery = await this.executeQuery<{ count: number }>(
+      'SELECT COUNT(DISTINCT manufacturer) as count FROM aircraft WHERE manufacturer IS NOT NULL'
+    );
+    console.log(
+      `[StaticDB] Found ${manufacturerQuery[0]?.count || 0} distinct manufacturers`
+    );
 
     try {
       const result = await this.executeQuery<ManufacturerInfo>(

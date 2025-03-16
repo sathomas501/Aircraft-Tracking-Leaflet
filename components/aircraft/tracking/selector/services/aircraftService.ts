@@ -221,7 +221,7 @@ export async function trackManufacturer(
     const response = await handleFetchWithRetry(
       `/api/aircraft/track?manufacturer=${encodeURIComponent(manufacturer)}`,
       {
-        method: 'GET',
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
       }
     );

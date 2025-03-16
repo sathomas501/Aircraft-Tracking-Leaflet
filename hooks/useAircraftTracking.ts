@@ -216,6 +216,14 @@ export class AircraftTrackingClient {
       });
 
       if (!response.ok) {
+        const errorText = await response.text(); // Capture response body
+        console.error(
+          `[Tracking] ❌ API call failed: ${response.status} - ${errorText}`
+        );
+        throw new Error(`Tracking API failed: ${response.statusText}`);
+      }
+
+      if (!response.ok) {
         throw new Error(`API error: ${response.status}`);
       }
 
@@ -245,9 +253,10 @@ export class AircraftTrackingClient {
    */
   public async getTrackedIcao24s(): Promise<string[]> {
     try {
-      const response = await fetch('/api/tracking/index?action=tracked-icaos', {
-        method: 'GET',
+      const response = await fetch('/api/tracking/index', {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'tracked-icaos' }), // ✅ Move action into body
       });
 
       if (!response.ok) {

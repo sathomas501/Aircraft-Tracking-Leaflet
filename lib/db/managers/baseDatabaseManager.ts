@@ -85,6 +85,11 @@ export abstract class BaseDatabaseManager {
     } else {
       this.dbPath = path.resolve(dbDir, dbName); // Resolve relative path correctly
     }
+
+    // Add this to the constructor
+    console.log(
+      `[BaseDatabaseManager] 🔍 Database path resolved to: ${this.dbPath}`
+    );
   }
 
   /**

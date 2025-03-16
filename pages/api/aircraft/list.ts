@@ -5,7 +5,7 @@ import { APIErrors } from '@/lib/services/error-handler/api-error';
 import { withErrorHandler } from '@/lib/middleware/error-handler';
 
 async function handler(req: NextApiRequest, res: NextApiResponse) {
-  if (req.method !== 'GET') {
+  if (req.method !== 'POST') {
     throw APIErrors.BadRequest('Method not allowed');
   }
 

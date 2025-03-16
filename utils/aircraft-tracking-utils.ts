@@ -87,7 +87,7 @@ export async function trackManufacturer(
     const response = await fetch(
       `/api/aircraft/tracking?manufacturer=${encodeURIComponent(manufacturer)}`,
       {
-        method: 'GET',
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
       }
     );

@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
-import { useFetchManufacturers } from '../components/aircraft/customHooks/useFetchManufactures';
+import { useFetchManufacturers } from '../hooks/useFetchManufactures';
 import type { MapWrapperProps } from '../components/aircraft/tracking/mapWrapper/MapWrapper';
 
 // Type the dynamic import

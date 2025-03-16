@@ -28,7 +28,7 @@ async function handler(
   req: NextApiRequest,
   res: NextApiResponse<HealthResponse>
 ) {
-  if (req.method !== 'GET') {
+  if (req.method !== 'POST') {
     throw APIErrors.BadRequest('Method not allowed');
   }
 

@@ -316,18 +316,18 @@ export class AircraftTrackingClient {
    */
   public async getTrackedIcao24s(manufacturer?: string): Promise<string[]> {
     try {
-      let url = '/api/tracking?action=tracked-icaos';
-      if (manufacturer) {
-        url += `&manufacturer=${encodeURIComponent(manufacturer)}`;
-      }
-
-      const response = await fetch(url, {
-        method: 'GET',
+      const response = await fetch('/api/tracking', {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'tracked-icaos',
+          manufacturer: manufacturer || null,
+        }),
       });
 
       if (!response.ok) {
-        throw new Error(`API error: ${response.status}`);
+        const errorText = await response.text();
+        throw new Error(`API error: ${response.status} - ${errorText}`);
       }
 
       const data = await response.json();
@@ -339,7 +339,7 @@ export class AircraftTrackingClient {
       return data.data?.icaos || [];
     } catch (error) {
       console.error(
-        '[AircraftTrackingClient] Error fetching tracked ICAO24s:',
+        '[AircraftTrackingClient] ❌ Error fetching tracked ICAO24s:',
         error
       );
       return [];

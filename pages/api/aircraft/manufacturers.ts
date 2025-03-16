@@ -22,12 +22,12 @@ async function manufacturersHandler(
   req: NextApiRequest,
   res: NextApiResponse<ManufacturersResponse>
 ) {
-  if (req.method !== 'GET') {
+  if (req.method !== 'POST') {
+    console.log(`[Manufacturers API] ⚠️ Invalid method: ${req.method}`);
     return res.status(405).json({
       success: false,
       manufacturers: [],
-      error: 'Method not allowed',
-      message: 'Only GET requests are allowed',
+      message: 'Method not allowed. Use POST instead.',
     });
   }
 
@@ -43,7 +43,24 @@ async function manufacturersHandler(
     console.log('[Manufacturers API] ✅ Database connection verified');
 
     // Set query timeout
+    console.log('[Manufacturers API] 🔍 Checking aircraft table row count...');
+    const aircraftCount = await db.executeQuery(
+      'SELECT COUNT(*) AS count FROM aircraft'
+    );
+    console.log(
+      `[Manufacturers API] 📊 Aircraft table row count: ${(aircraftCount as { count: number }[])[0].count}`
+    );
+
+    console.log('[Manufacturers API] 🔍 Checking manufacturers count...');
+    const manufacturersCount = await db.executeQuery(
+      'SELECT COUNT(DISTINCT manufacturer) AS count FROM aircraft WHERE manufacturer IS NOT NULL AND TRIM(manufacturer) <> ""'
+    );
+    console.log(
+      `[Manufacturers API] 📊 Manufacturers count: ${(manufacturersCount as { count: number }[])[0].count}`
+    );
+
     console.log('[Manufacturers API] 🔍 Fetching manufacturers...');
+
     const timeoutPromise = new Promise<never>((_, reject) =>
       setTimeout(() => reject(new Error('Query timeout')), QUERY_TIMEOUT)
     );

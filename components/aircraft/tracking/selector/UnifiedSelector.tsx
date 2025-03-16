@@ -4,6 +4,7 @@ import ManufacturerSelector from './ManufacturerSelector';
 import ModelSelector from './ModelSelector';
 import { SelectOption, Aircraft } from '@/types/base';
 import { AircraftModel } from '@/types/aircraft-models';
+import { useResetState } from '../../../../hooks/useResetState'; // Update path as needed
 
 // Define the unified selector props interface
 export interface UnifiedSelectorProps {
@@ -84,6 +85,24 @@ const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
     setIsMinimized((prev) => !prev);
   }, []);
 
+  // Reset local state function for the reset hook
+  const resetLocalState = useCallback(() => {
+    // Reset any local state in UnifiedSelector if needed
+    console.log('[UnifiedSelector] Resetting local state');
+  }, []);
+
+  // Use our reset hook to handle the reset
+  const resetParentState = useCallback(async () => {
+    console.log('[UnifiedSelector] Calling parent reset');
+    onReset();
+  }, [onReset]);
+
+  const { handleReset, isResetting } = useResetState({
+    resetLocalState,
+    resetParentState,
+    onError: (error) => onError('Reset operation failed: ' + error.message),
+  });
+
   // For the minimized state, show just a button
   if (isMinimized) {
     return (
@@ -109,10 +128,11 @@ const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
         </button>
         <h2 className="text-gray-700 text-lg">Select Aircraft</h2>
         <button
-          onClick={onReset}
-          className="px-3 py-1 bg-blue-500 text-white rounded-md hover:bg-blue-600"
+          onClick={handleReset}
+          className="px-3 py-1 bg-blue-500 text-white rounded-md hover:bg-blue-600 disabled:opacity-50"
+          disabled={localIsLoading || isResetting}
         >
-          Reset
+          {isResetting ? 'Resetting...' : 'Reset'}
         </button>
       </div>
 
@@ -120,7 +140,7 @@ const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
         manufacturers={manufacturers}
         selectedManufacturer={selectedManufacturer}
         onSelect={onManufacturerSelect}
-        isLoading={localIsLoading}
+        isLoading={localIsLoading || isResetting}
         onError={onError}
       />
 
@@ -132,10 +152,10 @@ const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
           onModelSelect={onModelSelect}
           trackedAircraftCount={totalActive}
           selectedManufacturer={selectedManufacturer}
-          isLoading={localIsLoading}
+          isLoading={localIsLoading || isResetting}
           setIsLoading={setLocalIsLoading}
           setTrackingStatus={setLocalTrackingStatus}
-          disabled={localIsLoading}
+          disabled={localIsLoading || isResetting}
         />
       ) : (
         <p className="text-gray-500 text-sm mt-2">
@@ -147,7 +167,7 @@ const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
       {localTrackingStatus && (
         <div className="mt-2 p-2 border rounded bg-gray-50">
           <div className="flex items-center">
-            {localIsLoading && (
+            {(localIsLoading || isResetting) && (
               <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-2"></div>
             )}
             <span className="text-sm text-gray-700">{localTrackingStatus}</span>

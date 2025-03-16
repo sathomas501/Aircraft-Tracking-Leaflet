@@ -1,6 +1,12 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, {
+  useState,
+  useRef,
+  useEffect,
+  useMemo,
+  useCallback,
+} from 'react';
 import { SelectOption } from '@/types/base';
-import { useTrackedAircraft } from '../../customHooks/useTrackedAircraft';
+import { useTrackedAircraft } from '../../../../hooks/useTrackedAircraft';
 
 interface ManufacturerSelectorProps {
   manufacturers: SelectOption[];
@@ -21,6 +27,7 @@ export const ManufacturerSelector: React.FC<ManufacturerSelectorProps> = ({
   const [isOpen, setIsOpen] = useState(false);
   const [isSelecting, setIsSelecting] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const [isResetting, setIsResetting] = useState(false);
 
   const { startTracking, loadAircraft } =
     useTrackedAircraft(selectedManufacturer);
@@ -55,13 +62,25 @@ export const ManufacturerSelector: React.FC<ManufacturerSelectorProps> = ({
     }
   };
 
-  // Handler for reset button
+  const resetLocalState = useCallback(() => {
+    setSearchTerm('');
+    setIsOpen(false);
+  }, []);
+
+  const resetParentState = useCallback(async () => {
+    return await onSelect(null);
+  }, [onSelect]);
+
   const handleReset = async () => {
     try {
+      console.log('[ManufacturerSelector] Resetting manufacturer selection...');
       setIsSelecting(true);
       setSearchTerm('');
       setIsOpen(false);
-      await onSelect(null); // This is now valid since we updated the type
+
+      // Call the parent onSelect with null to reset
+      await onSelect(null);
+      console.log('[ManufacturerSelector] Reset completed');
     } catch (error) {
       console.error('[ManufacturerSelector] Failed to reset:', error);
       if (onError) onError('Failed to reset selection');
@@ -138,9 +157,9 @@ export const ManufacturerSelector: React.FC<ManufacturerSelectorProps> = ({
           onClick={handleReset}
           className="mt-2 px-3 py-1 bg-red-500 text-white rounded-md hover:bg-red-600 disabled:opacity-50"
           type="button"
-          disabled={isSelecting || isLoading}
+          disabled={isSelecting || isLoading || isResetting}
         >
-          Reset
+          {isResetting ? 'Resetting...' : 'Reset'}
         </button>
       )}
     </div>

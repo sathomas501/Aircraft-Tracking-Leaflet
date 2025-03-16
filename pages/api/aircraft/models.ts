@@ -1,7 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import staticDatabaseManager from '../../../lib/db/managers/staticDatabaseManager';
+import staticDatabaseManager from '@/lib/db/managers/staticDatabaseManager';
 import { withErrorHandler } from '@/lib/middleware/error-handler';
-import CacheManager from '../../../lib/services/managers/cache-manager'; // ✅ Use the correct cache manager import
+import CacheManager from '@/lib/services/managers/cache-manager';
 
 export interface ActiveModel {
   model: string;
@@ -18,22 +18,35 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
   console.log(`[Models API] 📩 Request received:`, {
     method: req.method,
     query: req.query,
+    body: req.body,
     timestamp: new Date().toISOString(),
   });
 
-  const { method, query } = req;
-  const manufacturer = query.manufacturer as string;
+  const { method } = req;
   const cache = new CacheManager<ActiveModel[]>(300); // Cache expires in 300 seconds
 
-  if (method !== 'GET') {
+  // Handle both GET and POST methods
+  if (method !== 'GET' && method !== 'POST') {
     console.log(`[Models API] ⚠️ Invalid method: ${method}`);
     return res
       .status(405)
       .json({ success: false, message: 'Method not allowed' });
   }
 
+  // Extract manufacturer from either query params (GET) or request body (POST)
+  let manufacturer: string | undefined;
+
+  if (method === 'GET') {
+    manufacturer = req.query.manufacturer as string;
+  } else if (method === 'POST') {
+    manufacturer = req.body.manufacturer;
+  }
+
   if (!manufacturer) {
-    console.log('[Models API] ⚠️ No manufacturer provided');
+    console.log(
+      '[Models API] ⚠️ No manufacturer provided:',
+      method === 'GET' ? req.query : req.body
+    );
     return res.status(400).json({
       success: false,
       message: 'Manufacturer parameter is required',
@@ -41,11 +54,11 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
   }
 
   try {
-    // ✅ Define cache key for the manufacturer
+    // Define cache key for the manufacturer
     const cacheKey = `models:${manufacturer}`;
 
-    // ✅ Check if models are already cached
-    const cachedData = cache.get(cacheKey); // ✅ Now it's an instance method
+    // Check if models are already cached
+    const cachedData = cache.get(cacheKey);
     if (cachedData) {
       console.log('[Models API] ✅ Returning cached data');
       return res.status(200).json({
@@ -54,13 +67,13 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
       });
     }
 
-    // ✅ Ensure database is initialized
+    // Ensure database is initialized
     if (!staticDatabaseManager.isReady) {
       console.log('[Models API] 🔄 Initializing database');
       await staticDatabaseManager.initializeDatabase();
     }
 
-    // ✅ Fetch models from the database
+    // Fetch models from the database
     console.log(
       `[Models API] 📊 Fetching models for manufacturer: ${manufacturer}`
     );
@@ -90,8 +103,8 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
         label: `${model.model} (${model.count} aircraft)`,
       }));
 
-    // ✅ Cache the fetched models for future requests
-    cache.set(cacheKey, formattedModels); // ✅ Use the instance
+    // Cache the fetched models for future requests
+    cache.set(cacheKey, formattedModels);
 
     const responseTime = Date.now() - start;
     console.log(
