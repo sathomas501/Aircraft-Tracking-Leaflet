@@ -74,3 +74,13 @@ module.exports = {
 module.exports = {
   productionBrowserSourceMaps: false, // Disable source maps in production
 };
+
+require('dotenv').config(); // ✅ Load .env at the top
+
+module.exports = {
+  reactStrictMode: true,
+  env: {
+    STATIC_DB_PATH: process.env.STATIC_DB_PATH,
+    TRACKING_DB_PATH: process.env.TRACKING_DB_PATH,
+  },
+};

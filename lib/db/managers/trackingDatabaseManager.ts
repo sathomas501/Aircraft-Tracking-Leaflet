@@ -5,6 +5,7 @@ import { StaticDatabaseManager } from './staticDatabaseManager';
 import CleanupService from '../../services/CleanupService';
 import type { Aircraft } from '@/types/base';
 import sqlite3 from 'sqlite3';
+import { promisify } from 'util';
 const { Database } = sqlite3;
 type RunResult = sqlite3.RunResult;
 
@@ -12,14 +13,30 @@ export class TrackingDatabaseManager extends BaseDatabaseManager {
   private static instance: TrackingDatabaseManager;
 
   private constructor() {
-    // Call the parent constructor with the database name
-    super('tracking.db');
+    const trackingDbPath = process.env.TRACKING_DB_PATH || 'tracking.db';
+
+    if (!trackingDbPath.endsWith('tracking.db')) {
+      throw new Error(
+        `[TrackingDB] 🚨 Invalid database path: ${trackingDbPath}`
+      );
+    }
+
+    super(trackingDbPath);
   }
 
   public static getInstance(): TrackingDatabaseManager {
     if (!TrackingDatabaseManager.instance) {
       TrackingDatabaseManager.instance = new TrackingDatabaseManager();
     }
+
+    // Ensure database is initialized before returning the instance
+    if (!TrackingDatabaseManager.instance.isReady) {
+      console.warn('[TrackingDB] ⚠️ Database not ready, initializing...');
+      TrackingDatabaseManager.instance.initializeDatabase().catch((err) => {
+        console.error('[TrackingDB] ❌ Failed to initialize database:', err);
+      });
+    }
+
     return TrackingDatabaseManager.instance;
   }
 
@@ -35,33 +52,52 @@ export class TrackingDatabaseManager extends BaseDatabaseManager {
     query: string,
     params: any[] = [],
     retries = 5
-  ): Promise<RunResult> {
+  ): Promise<sqlite3.RunResult> {
     const db = await this.getDatabase();
 
     for (let attempt = 0; attempt < retries; attempt++) {
       try {
-        return await new Promise<RunResult>((resolve, reject) => {
-          db.run(query, params, function (this: RunResult, err: Error | null) {
-            if (err) reject(err);
-            else resolve(this);
-          });
-        });
+        console.log(
+          `[TrackingDatabaseManager] 🚀 Executing query (Attempt ${attempt + 1}/${retries}): ${query}`
+        );
+
+        // ✅ Correctly promisify `db.run()` while ensuring TypeScript recognizes it as `RunResult`
+        const result = await new Promise<sqlite3.RunResult>(
+          (resolve, reject) => {
+            db.run(
+              query,
+              params,
+              function (this: sqlite3.RunResult, err: Error | null) {
+                if (err) reject(err);
+                else resolve(this);
+              }
+            );
+          }
+        );
+
+        return result; // ✅ Ensures TypeScript recognizes the correct return type
       } catch (error: any) {
         if (error.code === 'SQLITE_BUSY' && attempt < retries - 1) {
+          const delay = 100 * (attempt + 1);
           console.warn(
-            `[TrackingDatabaseManager] ⚠️ Database is locked. Retrying... (${attempt + 1}/${retries})`
+            `[TrackingDatabaseManager] ⚠️ Database is locked. Retrying in ${delay}ms... (${attempt + 1}/${retries})`
           );
-          await new Promise((resolve) =>
-            setTimeout(resolve, 100 * (attempt + 1))
-          ); // Exponential backoff
+          await new Promise((resolve) => setTimeout(resolve, delay)); // Exponential backoff
         } else {
-          console.error(`[TrackingDatabaseManager] ❌ Query failed:`, error);
-          throw error;
+          console.error(
+            `[TrackingDatabaseManager] ❌ Query failed after ${attempt + 1} attempts:\n Query: ${query}\n Params: ${JSON.stringify(params)}\n Error:`,
+            error
+          );
+          throw new Error(
+            `[TrackingDatabaseManager] Max retries reached. Query failed: ${query}`
+          );
         }
       }
     }
+
+    // If all retries fail, throw an explicit error (should never reach here)
     throw new Error(
-      '[TrackingDatabaseManager] Max retries reached. Query failed.'
+      `[TrackingDatabaseManager] Query permanently failed: ${query}`
     );
   }
 
@@ -71,14 +107,11 @@ export class TrackingDatabaseManager extends BaseDatabaseManager {
   protected async createTables(): Promise<void> {
     try {
       if (!this.db) {
-        throw new Error('Database not initialized');
+        throw new Error('[TrackingDB] ❌ Database not initialized');
       }
 
-      console.log(
-        "[TrackingDatabaseManager] Creating necessary tables if they don't exist"
-      );
+      console.log('[TrackingDB] 🛠️ Creating necessary tables...');
 
-      // Create tracked_aircraft table
       await this.db.exec(`
       CREATE TABLE IF NOT EXISTS tracked_aircraft (
         icao24 TEXT PRIMARY KEY,
@@ -91,14 +124,16 @@ export class TrackingDatabaseManager extends BaseDatabaseManager {
         last_contact INTEGER,
         manufacturer TEXT,
         model TEXT,
-        updated_at INTEGER
-      )
-    `);
-      console.log(
-        '[TrackingDatabaseManager] ✅ tracked_aircraft table verified'
+        updated_at INTEGER DEFAULT (strftime('%s', 'now')) -- Unix timestamp
       );
+
+      CREATE INDEX IF NOT EXISTS idx_tracked_icao24 ON tracked_aircraft(icao24);
+      CREATE INDEX IF NOT EXISTS idx_tracked_manufacturer ON tracked_aircraft(manufacturer);
+    `);
+
+      console.log('[TrackingDB] ✅ Tables and indices created');
     } catch (error) {
-      console.error('[TrackingDatabaseManager] Error creating tables:', error);
+      console.error('[TrackingDB] ❌ Error creating tables:', error);
       throw error;
     }
   }
@@ -186,42 +221,34 @@ export class TrackingDatabaseManager extends BaseDatabaseManager {
     altitude: number = 0,
     velocity: number = 0,
     on_ground: boolean = false
-  ): Promise<boolean> {
+  ): Promise<{ success: boolean; message: string }> {
     try {
       if (!icao24) {
-        console.warn(
-          '[TrackingDatabaseManager] Missing ICAO24 for position update'
-        );
-        return false;
+        return { success: false, message: 'Missing ICAO24' };
       }
 
       const db = await this.getDatabase();
 
-      // Validate coordinates
       if (isNaN(latitude) || isNaN(longitude)) {
-        console.warn(
-          `[TrackingDatabaseManager] Invalid coordinates for ${icao24}: ${latitude}, ${longitude}`
-        );
-        return false;
+        return { success: false, message: 'Invalid coordinates' };
       }
 
       console.log(
-        `[TrackingDatabaseManager] Updating position for ${icao24}: LAT=${latitude}, LON=${longitude}, HDG=${heading}`
+        `[TrackingDB] Updating ${icao24}: LAT=${latitude}, LON=${longitude}, HDG=${heading}`
       );
 
-      // Update the position
       const sql = `
-      UPDATE tracked_aircraft 
-      SET 
-        latitude = ?, 
-        longitude = ?, 
-        heading = ?, 
-        altitude = ?, 
-        velocity = ?, 
-        on_ground = ?,
-        last_contact = ?,
-        updated_at = ?
-      WHERE icao24 = ?
+    UPDATE tracked_aircraft 
+    SET 
+      latitude = ?, 
+      longitude = ?, 
+      heading = ?, 
+      altitude = ?, 
+      velocity = ?, 
+      on_ground = ?,
+      last_contact = ?,
+      updated_at = ?
+    WHERE icao24 = ?
     `;
 
       const result = await db.run(sql, [
@@ -231,30 +258,24 @@ export class TrackingDatabaseManager extends BaseDatabaseManager {
         altitude,
         velocity,
         on_ground ? 1 : 0,
-        Math.floor(Date.now() / 1000), // Current time as Unix timestamp
-        Date.now(), // Current time as milliseconds
+        Math.floor(Date.now() / 1000),
+        Date.now(),
         icao24,
       ]);
 
-      const success = result?.changes ? result.changes > 0 : false;
+      const success = (result?.changes ?? 0) > 0; // ✅ Ensures `changes` is never undefined
 
       if (success) {
-        console.log(
-          `[TrackingDatabaseManager] ✅ Position updated for ${icao24}`
-        );
+        return { success: true, message: `Updated ${icao24} successfully` };
       } else {
-        console.log(
-          `[TrackingDatabaseManager] ⚠️ No aircraft found for ${icao24}, position not updated`
-        );
+        return {
+          success: false,
+          message: `No aircraft found with ICAO24 ${icao24}`,
+        };
       }
-
-      return success;
     } catch (error) {
-      console.error(
-        `[TrackingDatabaseManager] ❌ Error updating position for ${icao24}:`,
-        error
-      );
-      return false;
+      console.error(`[TrackingDB] ❌ Error updating ${icao24}:`, error);
+      return { success: false, message: 'Database error' };
     }
   }
 

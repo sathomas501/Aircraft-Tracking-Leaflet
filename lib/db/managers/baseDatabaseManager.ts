@@ -59,37 +59,32 @@ export abstract class BaseDatabaseManager {
       );
     }
 
+    // ✅ Get database directory once
     const dbDir = path.resolve(process.cwd(), 'lib', 'db');
 
-    // ✅ Check if `fs` is available before accessing paths
-    if (typeof fs !== 'undefined' && fs) {
-      try {
-        if (!fs.existsSync(dbDir)) {
-          console.log(
-            `[BaseDatabaseManager] 📁 Creating database directory at: ${dbDir}`
-          );
-          fs.mkdirSync(dbDir, { recursive: true });
-        }
-      } catch (error) {
-        console.error(
-          `[BaseDatabaseManager] ❌ Failed to create database directory:`,
-          error
-        );
-        throw error;
-      }
-    }
+    // ✅ Prevent duplicate directory in the path
+    this.dbPath = path.isAbsolute(dbName) ? dbName : path.join(dbDir, dbName);
 
-    // ✅ Ensure correct database path resolution
-    if (path.isAbsolute(dbName)) {
-      this.dbPath = dbName; // Use absolute path directly
-    } else {
-      this.dbPath = path.resolve(dbDir, dbName); // Resolve relative path correctly
-    }
-
-    // Add this to the constructor
+    // ✅ Log the resolved database path
     console.log(
       `[BaseDatabaseManager] 🔍 Database path resolved to: ${this.dbPath}`
     );
+
+    // ✅ Ensure database directory exists before opening SQLite
+    if (fs && !fs.existsSync(dbDir)) {
+      console.warn(
+        `[BaseDatabaseManager] 📁 Creating missing database directory: ${dbDir}`
+      );
+      fs.mkdirSync(dbDir, { recursive: true });
+    }
+
+    // ✅ Ensure database file exists before opening (prevents `SQLITE_CANTOPEN`)
+    if (fs && !fs.existsSync(this.dbPath)) {
+      console.warn(
+        `[BaseDatabaseManager] ⚠️ Database file not found, creating: ${this.dbPath}`
+      );
+      fs.writeFileSync(this.dbPath, ''); // Create an empty file
+    }
   }
 
   /**
@@ -130,16 +125,14 @@ export abstract class BaseDatabaseManager {
    * Initialize the database
    */
   public async initializeDatabase(): Promise<void> {
-    // Prevent multiple concurrent initializations using a promise
     if (this.initializationPromise) {
       return this.initializationPromise;
     }
 
     if (this._isInitialized && this.db) {
-      return; // Already initialized
+      return;
     }
 
-    // Create a promise for initialization that can be reused
     this.initializationPromise = (async () => {
       try {
         if (!sqlite || !sqlite3Instance) {
@@ -150,45 +143,33 @@ export abstract class BaseDatabaseManager {
           `[BaseDatabaseManager] 🔄 Initializing database at: ${this.dbPath}`
         );
 
-        // Check if we already have a shared instance
-        if (BaseDatabaseManager.dbInstance) {
-          this.db = BaseDatabaseManager.dbInstance;
-          console.log(
-            `[BaseDatabaseManager] ✅ Using existing database instance`
-          );
-        } else {
-          // Open a new connection
-          this.db = await sqlite.open({
-            filename: this.dbPath,
-            driver: sqlite3Instance.Database,
-          });
+        this.db = await sqlite.open({
+          filename: this.dbPath,
+          driver: sqlite3Instance.Database,
+        });
 
-          // Store it as the shared instance
-          BaseDatabaseManager.dbInstance = this.db;
+        // ✅ Ensure SQLite is ready
+        await this.db.run('PRAGMA journal_mode = WAL;');
+        await this.db.run('PRAGMA busy_timeout = 5000;');
 
-          // Configure the database
-          await this.db.run('PRAGMA journal_mode = WAL;');
-          await this.db.run('PRAGMA busy_timeout = 5000;'); // Increase timeout for locks
-          await this.db.run('PRAGMA synchronous = NORMAL;'); // Slightly faster at small risk
+        console.log(
+          `[BaseDatabaseManager] ✅ Database initialized at: ${this.dbPath}`
+        );
+        this._isInitialized = true;
+      } catch (error) {
+        console.error(`[BaseDatabaseManager] ❌ Initialization failed:`, error);
 
-          console.log(
-            `[BaseDatabaseManager] ✅ New database connection opened`
+        if ((error as any).code === 'SQLITE_CANTOPEN') {
+          console.error(
+            `[BaseDatabaseManager] 🚨 Unable to open database file: ${this.dbPath}. 
+           Make sure the path is correct and accessible.`
           );
         }
 
-        // Create necessary tables
-        await this.createTables();
-        this._isInitialized = true;
-
-        console.log(`[BaseDatabaseManager] ✅ Database fully initialized`);
-      } catch (error) {
-        console.error(`[BaseDatabaseManager] ❌ Initialization failed:`, error);
         this._isInitialized = false;
         this.db = null;
-        BaseDatabaseManager.dbInstance = null; // Clear the shared instance on failure
         throw error;
       } finally {
-        // Clear the promise when done (whether success or failure)
         this.initializationPromise = null;
       }
     })();

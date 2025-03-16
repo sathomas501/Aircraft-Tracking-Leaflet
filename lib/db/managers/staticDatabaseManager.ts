@@ -38,13 +38,10 @@ interface DatabaseConfig {
 
 class StaticDatabaseManager extends BaseDatabaseManager {
   private static instance: StaticDatabaseManager | null = null;
-  private config: DatabaseConfig = {
-    trackingDbPath: process.env.TRACKING_DB_PATH || './tracking.db',
-  };
 
   private readonly manufacturerListCache = new CacheManager<ManufacturerInfo[]>(
-    5 * 60
-  );
+    10 * 60
+  ); // ⬆️ Increase to 10 minutes
   private readonly manufacturerValidationCache = new CacheManager<Set<string>>(
     60 * 60
   ); // 1 hour cache
@@ -56,20 +53,19 @@ class StaticDatabaseManager extends BaseDatabaseManager {
 
   // In staticDatabaseManager.ts, modify the constructor
   private constructor() {
-    // If you have a fixed path, use that directly
-    if (process.env.STATIC_DB_PATH) {
-      super(process.env.STATIC_DB_PATH);
-    } else {
-      // Otherwise, use the default path but log a warning
-      super('static.db');
-      console.warn(
-        '[StaticDB] ⚠️ No STATIC_DB_PATH environment variable found, using default path'
+    // Ensure a valid STATIC_DB_PATH is used
+    const staticDbPath = process.env.STATIC_DB_PATH || 'static.db';
+
+    if (!staticDbPath.includes('static.db')) {
+      throw new Error(
+        `[StaticDB] 🚨 Invalid static database path detected: ${staticDbPath}`
       );
     }
-  }
 
-  public setConfig(config: Partial<DatabaseConfig>) {
-    this.config = { ...this.config, ...config };
+    super(staticDbPath);
+    // this.dbPath = staticDbPath; // Removed assignment to read-only property
+
+    console.log(`[StaticDB] ✅ Using database path: ${this.dbPath}`);
   }
 
   public static getInstance(): StaticDatabaseManager {
@@ -344,11 +340,11 @@ class StaticDatabaseManager extends BaseDatabaseManager {
       this.MANUFACTURER_LIST_CACHE_KEY
     );
     if (cached) {
-      console.log('[StaticDB] Using cached manufacturers list');
+      console.log('[StaticDB] ✅ Using cached manufacturers list'); // ✅ Keep single log
       return cached.slice(0, limit);
     }
 
-    console.log('[StaticDB] Fetching manufacturers from database');
+    console.log('[StaticDB] 🔍 Fetching manufacturers from database'); // ✅ Only log if a DB query is needed
 
     // Add this to your getManufacturersWithCount method just before executing the query
     console.log('[StaticDB] Checking database tables...');
