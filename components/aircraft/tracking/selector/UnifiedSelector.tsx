@@ -1,19 +1,18 @@
+// UnifiedSelector.tsx
 import React, { useState, useCallback, useEffect } from 'react';
 import { Plus, Minus } from 'lucide-react';
 import ManufacturerSelector from './ManufacturerSelector';
 import ModelSelector from './ModelSelector';
+import { ModelProvider } from '../ModelContext';
 import { SelectOption, Aircraft } from '@/types/base';
 import { AircraftModel } from '@/types/aircraft-models';
-import { useResetState } from '../../../../hooks/useResetState'; // Update path as needed
+import { useResetState } from '../../../../hooks/useResetState';
 
-// Define the unified selector props interface
 export interface UnifiedSelectorProps {
   // Data props
   manufacturers: SelectOption[];
   selectedManufacturer: string;
   selectedModel: string;
-  models: AircraftModel[];
-  modelCounts: Record<string, number>;
   totalActive: number;
 
   // Handler props
@@ -24,8 +23,6 @@ export interface UnifiedSelectorProps {
   onReset: () => void;
   onError: (message: string) => void;
   onAircraftUpdate?: (aircraft: Aircraft[]) => void;
-  onModelsUpdate?: (models: AircraftModel[]) => void;
-  onManualRefresh?: (manufacturer: string) => Promise<void>;
 
   // UI state props (optional)
   isLoading?: boolean;
@@ -40,13 +37,10 @@ const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
   setSelectedModel,
   onManufacturerSelect,
   onModelSelect,
-  models,
-  modelCounts,
   totalActive,
   onReset,
   onError,
   onAircraftUpdate,
-  onModelsUpdate,
   isLoading = false,
   trackingStatus = '',
 }) => {
@@ -55,31 +49,14 @@ const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
   const [localTrackingStatus, setLocalTrackingStatus] =
     useState(trackingStatus);
 
-  useEffect(() => {
-    console.log(
-      `[UnifiedSelector] Manufacturer selected: ${selectedManufacturer}`
-    );
-  }, [selectedManufacturer]);
-
-  useEffect(() => {
-    console.log(`[UnifiedSelector] Model selected: ${selectedModel}`);
-  }, [selectedModel]);
-
   // Update local state when props change
-  React.useEffect(() => {
+  useEffect(() => {
     setLocalIsLoading(isLoading);
   }, [isLoading]);
 
-  React.useEffect(() => {
+  useEffect(() => {
     setLocalTrackingStatus(trackingStatus);
   }, [trackingStatus]);
-
-  const [updatedModels, setModels] = useState<AircraftModel[]>([]);
-
-  const handleModelsUpdate = (updatedModels: AircraftModel[]) => {
-    console.log(`[Parent] Updating models:`, updatedModels);
-    setModels(updatedModels); // Ensure models update in state
-  };
 
   // Simply toggle the minimized state
   const handleToggle = useCallback(() => {
@@ -145,23 +122,16 @@ const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
         onError={onError}
       />
 
-      {selectedManufacturer && models.length > 0 ? (
-        <ModelSelector
-          selectedModel={selectedModel}
-          setSelectedModel={setSelectedModel}
-          models={models} // Ensure models are being passed here
-          onModelSelect={onModelSelect}
-          trackedAircraftCount={totalActive}
-          selectedManufacturer={selectedManufacturer}
-          isLoading={localIsLoading || isResetting}
-          setIsLoading={setLocalIsLoading}
-          setTrackingStatus={setLocalTrackingStatus}
-          disabled={localIsLoading || isResetting}
-        />
-      ) : (
-        <p className="text-gray-500 text-sm mt-2">
-          No models found for this manufacturer.
-        </p>
+      {selectedManufacturer && (
+        <ModelProvider
+          manufacturer={selectedManufacturer}
+          onStatusChange={setLocalTrackingStatus}
+        >
+          <ModelSelector
+            onModelSelect={onModelSelect}
+            disabled={localIsLoading || isResetting}
+          />
+        </ModelProvider>
       )}
 
       {/* Show tracking status */}

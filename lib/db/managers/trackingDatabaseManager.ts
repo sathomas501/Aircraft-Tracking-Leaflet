@@ -1,16 +1,13 @@
-// Updated TrackingDatabaseManager.ts properly extending BaseDatabaseManager
+// lib/db/managers/trackingDatabaseManager.ts
 
 import { BaseDatabaseManager } from './baseDatabaseManager';
-import { StaticDatabaseManager } from './staticDatabaseManager';
 import CleanupService from '../../services/CleanupService';
 import type { Aircraft } from '@/types/base';
 import sqlite3 from 'sqlite3';
-import { promisify } from 'util';
-const { Database } = sqlite3;
-type RunResult = sqlite3.RunResult;
 
 export class TrackingDatabaseManager extends BaseDatabaseManager {
-  private static instance: TrackingDatabaseManager;
+  private static instance: TrackingDatabaseManager | null = null;
+  private static initializing: Promise<void> | null = null; // Track initialization state
 
   private constructor() {
     const trackingDbPath = process.env.TRACKING_DB_PATH || 'tracking.db';
@@ -24,23 +21,58 @@ export class TrackingDatabaseManager extends BaseDatabaseManager {
     super(trackingDbPath);
   }
 
-  public static getInstance(): TrackingDatabaseManager {
+  /**
+   * Get the singleton instance of TrackingDatabaseManager
+   */
+  public static async getInstance(): Promise<TrackingDatabaseManager> {
     if (!TrackingDatabaseManager.instance) {
+      console.warn(
+        '[TrackingDB] ⚠️ Database not initialized, creating new instance...'
+      );
       TrackingDatabaseManager.instance = new TrackingDatabaseManager();
     }
 
-    // Ensure database is initialized before returning the instance
     if (!TrackingDatabaseManager.instance.isReady) {
-      console.warn('[TrackingDB] ⚠️ Database not ready, initializing...');
-      TrackingDatabaseManager.instance.initializeDatabase().catch((err) => {
-        console.error('[TrackingDB] ❌ Failed to initialize database:', err);
-      });
+      if (!TrackingDatabaseManager.initializing) {
+        console.warn('[TrackingDB] ⚠️ Database not ready, initializing...');
+        TrackingDatabaseManager.initializing = TrackingDatabaseManager.instance
+          .initializeDatabase()
+          .then(() => {
+            console.log('[TrackingDB] ✅ Database initialized successfully.');
+          })
+          .catch((err) => {
+            console.error(
+              '[TrackingDB] ❌ Failed to initialize database:',
+              err
+            );
+            throw err; // Ensure the error propagates
+          })
+          .finally(() => {
+            TrackingDatabaseManager.initializing = null;
+          });
+      }
+
+      await TrackingDatabaseManager.initializing; // Wait for initialization to finish
+    }
+
+    // Final check: ensure database is fully ready before returning
+    if (!TrackingDatabaseManager.instance.isReady) {
+      throw new Error(
+        '[TrackingDB] ❌ Database failed to initialize properly.'
+      );
     }
 
     return TrackingDatabaseManager.instance;
   }
 
-  // ✅ Add this function to avoid import errors
+  /**
+   * Check if database is fully initialized and ready
+   */
+  public get isReady(): boolean {
+    return this._isInitialized && this.db !== null;
+  }
+
+  // Add this function to avoid import errors
   public static getDefaultInstance(): TrackingDatabaseManager {
     if (!TrackingDatabaseManager.instance) {
       TrackingDatabaseManager.instance = new TrackingDatabaseManager();
@@ -61,7 +93,7 @@ export class TrackingDatabaseManager extends BaseDatabaseManager {
           `[TrackingDatabaseManager] 🚀 Executing query (Attempt ${attempt + 1}/${retries}): ${query}`
         );
 
-        // ✅ Correctly promisify `db.run()` while ensuring TypeScript recognizes it as `RunResult`
+        // Correctly promisify `db.run()` while ensuring TypeScript recognizes it as `RunResult`
         const result = await new Promise<sqlite3.RunResult>(
           (resolve, reject) => {
             db.run(
@@ -75,7 +107,7 @@ export class TrackingDatabaseManager extends BaseDatabaseManager {
           }
         );
 
-        return result; // ✅ Ensures TypeScript recognizes the correct return type
+        return result; // Ensures TypeScript recognizes the correct return type
       } catch (error: any) {
         if (error.code === 'SQLITE_BUSY' && attempt < retries - 1) {
           const delay = 100 * (attempt + 1);
@@ -201,7 +233,6 @@ export class TrackingDatabaseManager extends BaseDatabaseManager {
     }
   }
 
-  /*
   /**
    * Update the position of a single aircraft
    * @param icao24 The ICAO24 code of the aircraft
@@ -263,7 +294,7 @@ export class TrackingDatabaseManager extends BaseDatabaseManager {
         icao24,
       ]);
 
-      const success = (result?.changes ?? 0) > 0; // ✅ Ensures `changes` is never undefined
+      const success = (result?.changes ?? 0) > 0; // Ensures `changes` is never undefined
 
       if (success) {
         return { success: true, message: `Updated ${icao24} successfully` };
@@ -305,9 +336,8 @@ export class TrackingDatabaseManager extends BaseDatabaseManager {
   }
 
   /**
- /**
- * Upsert a batch of aircraft
- */
+   * Upsert a batch of aircraft
+   */
   async upsertActiveAircraftBatch(aircraft: Aircraft[]): Promise<number> {
     if (!Array.isArray(aircraft) || aircraft.length === 0) {
       console.log('[TrackingDatabaseManager] No aircraft to upsert');
@@ -470,31 +500,44 @@ export class TrackingDatabaseManager extends BaseDatabaseManager {
 
     for (const aircraft of aircraftList) {
       try {
-        // 🚀 Ensure model is set
+        // Ensure model is set
         if (!aircraft.model || aircraft.model.trim() === '') {
           console.warn(
             `[TrackingDatabaseManager] ⚠️ Aircraft ${aircraft.icao24} has no model. Attempting lookup.`
           );
 
-          const dbManager = StaticDatabaseManager.getInstance();
-          const dbModel = await dbManager.getAircraftByIcao24s([
-            aircraft.icao24,
-          ]);
+          // Dynamically import the staticDatabaseManager here to avoid circular dependency
+          try {
+            const { StaticDatabaseManager } = await import(
+              './staticDatabaseManager'
+            );
+            const dbManager = await StaticDatabaseManager.getInstance();
+            const dbModel = await dbManager.getAircraftByIcao24s([
+              aircraft.icao24,
+            ]);
 
-          if (dbModel) {
-            aircraft.model = dbModel.length > 0 ? dbModel[0].model : '';
-            console.log(
-              `[TrackingDatabaseManager] ✅ Set model for ${aircraft.icao24}: ${dbModel}`
+            if (dbModel && dbModel.length > 0) {
+              aircraft.model = dbModel[0].model || '';
+              console.log(
+                `[TrackingDatabaseManager] ✅ Set model for ${aircraft.icao24}: ${aircraft.model}`
+              );
+            } else {
+              console.warn(
+                `[TrackingDatabaseManager] ❌ No model found in DB for ${aircraft.icao24}. Using manufacturer name.`
+              );
+              aircraft.model = aircraft.manufacturer || ''; // Fallback to manufacturer name
+            }
+          } catch (error) {
+            console.error(
+              `[TrackingDatabaseManager] ❌ Error getting model from StaticDB:`,
+              error
             );
-          } else {
-            console.warn(
-              `[TrackingDatabaseManager] ❌ No model found in DB for ${aircraft.icao24}. Using manufacturer name.`
-            );
-            aircraft.model = aircraft.manufacturer; // Fallback to manufacturer name
+            // Continue with empty model
+            aircraft.model = aircraft.manufacturer || '';
           }
         }
 
-        // 🔄 Upsert into database, replacing old entries
+        // Upsert into database, replacing old entries
         await db.run(
           `INSERT INTO tracked_aircraft (icao24, manufacturer, model, latitude, longitude, altitude, velocity, heading, on_ground, last_contact, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -563,14 +606,6 @@ export class TrackingDatabaseManager extends BaseDatabaseManager {
         // Log sample results
         console.log(
           `[TrackingDatabaseManager] Sample result: ${JSON.stringify(rows[0])}`
-        );
-
-        const trackedAircraft = await this.executeQuery(
-          `SELECT * FROM tracked_aircraft WHERE manufacturer = ? AND updated_at > ?`,
-          [manufacturer, Date.now() - 60000] // Ensure correct timestamp filtering
-        );
-        console.log(
-          `[TrackingDatabaseManager] Found ${trackedAircraft.length} aircraft`
         );
 
         // Count manufacturers in results
@@ -682,18 +717,38 @@ export class TrackingDatabaseManager extends BaseDatabaseManager {
     }
   }
 
+  public async getAll<T>(query: string): Promise<T[]> {
+    const db = await this.getDatabase();
+    return new Promise((resolve, reject) => {
+      db.all(query, [], (err: Error | null, rows: T[]) => {
+        if (err) reject(err);
+        else resolve(rows);
+      });
+    });
+  }
+
   /**
-   * ✅ Call CleanupService for stale aircraft cleanup.
+   * Call CleanupService for stale aircraft cleanup.
    */
   async cleanupTrackedAircraft(): Promise<number> {
     try {
-      const cleanupService = CleanupService.getInstance();
+      // Get the CleanupService instance and await it if it returns a Promise
+      const cleanupServicePromise = CleanupService.getInstance();
+
+      // Check if the result is a Promise or an actual instance
+      const cleanupService =
+        cleanupServicePromise instanceof Promise
+          ? await cleanupServicePromise
+          : cleanupServicePromise;
+
       await cleanupService.initialize();
 
       console.log(
         `[TrackingDatabaseManager] 🧹 Running CleanupService cleanup`
       );
+
       const removedCount = await cleanupService.cleanup();
+
       console.log(
         `[TrackingDatabaseManager] ✅ Removed ${removedCount} stale aircraft`
       );
@@ -707,6 +762,7 @@ export class TrackingDatabaseManager extends BaseDatabaseManager {
       return 0;
     }
   }
+
   /**
    * Perform maintenance tasks on the tracking database
    * - Marks aircraft as stale if they haven't been seen recently
@@ -797,6 +853,9 @@ export class TrackingDatabaseManager extends BaseDatabaseManager {
   }
 }
 
-// Export default instance for backward compatibility
-const trackingDatabaseManager = TrackingDatabaseManager.getInstance();
-export default trackingDatabaseManager;
+// Export a promise-based instance to ensure initialization completes before use
+const trackingDatabaseManagerPromise: Promise<TrackingDatabaseManager> =
+  TrackingDatabaseManager.getInstance();
+
+// Default export for backward compatibility, but consumers should await this promise
+export default trackingDatabaseManagerPromise;

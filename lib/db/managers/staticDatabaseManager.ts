@@ -1,9 +1,8 @@
 // lib/db/managers/staticDatabaseManager.ts
 import path from 'path';
-import { BaseDatabaseManager } from '../managers/baseDatabaseManager';
-import CacheManager from '@/lib/services/managers/cache-manager';
+import { BaseDatabaseManager } from './baseDatabaseManager';
+import { CacheManager } from '@/lib/services/managers/cache-manager';
 import { AircraftRecord, Aircraft } from '../../../types/base';
-import trackingDatabaseManager from './trackingDatabaseManager'; // ✅ Import TrackingDB
 
 // Define interfaces at the top
 interface ManufacturerInfo {
@@ -38,10 +37,16 @@ interface DatabaseConfig {
 
 class StaticDatabaseManager extends BaseDatabaseManager {
   private static instance: StaticDatabaseManager | null = null;
+  // Use a different property name to avoid conflict with BaseDatabaseManager
+  private static initializationPromise: Promise<void> | null = null; // Track initialization state
+
+  private config: DatabaseConfig = {
+    trackingDbPath: process.env.TRACKING_DB_PATH || './tracking.db',
+  };
 
   private readonly manufacturerListCache = new CacheManager<ManufacturerInfo[]>(
-    10 * 60
-  ); // ⬆️ Increase to 10 minutes
+    5 * 60
+  );
   private readonly manufacturerValidationCache = new CacheManager<Set<string>>(
     60 * 60
   ); // 1 hour cache
@@ -53,22 +58,61 @@ class StaticDatabaseManager extends BaseDatabaseManager {
 
   // In staticDatabaseManager.ts, modify the constructor
   private constructor() {
-    // Ensure a valid STATIC_DB_PATH is used
-    const staticDbPath = process.env.STATIC_DB_PATH || 'static.db';
-
-    if (!staticDbPath.includes('static.db')) {
-      throw new Error(
-        `[StaticDB] 🚨 Invalid static database path detected: ${staticDbPath}`
+    // If you have a fixed path, use that directly
+    if (process.env.STATIC_DB_PATH) {
+      super(process.env.STATIC_DB_PATH);
+    } else {
+      // Otherwise, use the default path but log a warning
+      super('static.db');
+      console.warn(
+        '[StaticDB] ⚠️ No STATIC_DB_PATH environment variable found, using default path'
       );
     }
-
-    super(staticDbPath);
-    // this.dbPath = staticDbPath; // Removed assignment to read-only property
-
-    console.log(`[StaticDB] ✅ Using database path: ${this.dbPath}`);
   }
 
-  public static getInstance(): StaticDatabaseManager {
+  public setConfig(config: Partial<DatabaseConfig>) {
+    this.config = { ...this.config, ...config };
+  }
+
+  /**
+   * Get the singleton instance of StaticDatabaseManager
+   */
+  public static async getInstance(): Promise<StaticDatabaseManager> {
+    if (!StaticDatabaseManager.instance) {
+      console.warn(
+        '[StaticDB] ⚠️ Database not initialized, creating new instance...'
+      );
+      StaticDatabaseManager.instance = new StaticDatabaseManager();
+    }
+
+    if (!StaticDatabaseManager.instance.isReady) {
+      if (!StaticDatabaseManager.initializationPromise) {
+        console.warn('[StaticDB] ⚠️ Database not ready, initializing...');
+        StaticDatabaseManager.initializationPromise =
+          StaticDatabaseManager.instance
+            .initializeDatabase()
+            .then(() => {
+              console.log('[StaticDB] ✅ Database initialized successfully.');
+            })
+            .catch((err) => {
+              console.error(
+                '[StaticDB] ❌ Failed to initialize database:',
+                err
+              );
+              throw err; // Ensure the error propagates
+            })
+            .finally(() => {
+              StaticDatabaseManager.initializationPromise = null;
+            });
+      }
+
+      await StaticDatabaseManager.initializationPromise; // Wait for initialization to finish
+    }
+
+    return StaticDatabaseManager.instance;
+  }
+
+  public static getDefaultInstance(): StaticDatabaseManager {
     if (!StaticDatabaseManager.instance) {
       StaticDatabaseManager.instance = new StaticDatabaseManager();
     }
@@ -340,11 +384,11 @@ class StaticDatabaseManager extends BaseDatabaseManager {
       this.MANUFACTURER_LIST_CACHE_KEY
     );
     if (cached) {
-      console.log('[StaticDB] ✅ Using cached manufacturers list'); // ✅ Keep single log
+      console.log('[StaticDB] Using cached manufacturers list');
       return cached.slice(0, limit);
     }
 
-    console.log('[StaticDB] 🔍 Fetching manufacturers from database'); // ✅ Only log if a DB query is needed
+    console.log('[StaticDB] Fetching manufacturers from database');
 
     // Add this to your getManufacturersWithCount method just before executing the query
     console.log('[StaticDB] Checking database tables...');
@@ -451,20 +495,19 @@ class StaticDatabaseManager extends BaseDatabaseManager {
 
       const modelQuery = `
       SELECT 
-  model,
-  manufacturer,
-  COUNT(DISTINCT icao24) as total_count,
-  GROUP_CONCAT(icao24) as icao_list,
-  MAX(NAME) as name,  -- Assuming all aircraft in a model share the same name
-  MAX(CITY) as city,
-  MAX(STATE) as state,
-  MAX(OWNER_TYPE) as ownerType
-FROM aircraft
-WHERE manufacturer = ?
-GROUP BY model, manufacturer
-ORDER BY total_count DESC;
-
-    `;
+        model,
+        manufacturer,
+        COUNT(DISTINCT icao24) as total_count,
+        GROUP_CONCAT(icao24) as icao_list,
+        MAX(NAME) as name,
+        MAX(CITY) as city,
+        MAX(STATE) as state,
+        MAX(OWNER_TYPE) as ownerType
+      FROM aircraft
+      WHERE manufacturer = ?
+      GROUP BY model, manufacturer
+      ORDER BY total_count DESC;
+      `;
 
       const modelResults = await this.executeQuery<{
         model: string;
@@ -475,7 +518,6 @@ ORDER BY total_count DESC;
         ownerType: string;
         state: string;
         name: string;
-        activeCount: number;
       }>(modelQuery, [manufacturer]);
 
       if (modelResults.length === 0) {
@@ -487,78 +529,58 @@ ORDER BY total_count DESC;
 
       console.log(`[StaticDB] ✅ Found ${modelResults.length} models`);
 
-      // Get active aircraft from tracking database
-      try {
-        const trackedAircraft =
-          await trackingDatabaseManager.getTrackedAircraft(manufacturer);
+      // Get active counts by importing the tracking manager here instead of at the top
+      let activeCountMap = new Map<string, number>();
 
-        // Create a map of active aircraft by ICAO24
-        const activeAircraftMap = new Map<string, Aircraft>();
-        trackedAircraft.forEach((aircraft) => {
+      try {
+        // Lazy-load the tracking database manager to avoid circular dependency
+        const { default: trackingDatabaseManagerPromise } = await import(
+          './trackingDatabaseManager'
+        );
+        // Make sure to await the promise to get the actual manager
+        const trackingManager = await trackingDatabaseManagerPromise;
+        const trackedAircraft =
+          await trackingManager.getTrackedAircraft(manufacturer);
+
+        // Create a map of active aircraft counts by ICAO24
+        trackedAircraft.forEach((aircraft: Aircraft) => {
           if (aircraft.icao24) {
-            activeAircraftMap.set(aircraft.icao24.toLowerCase(), aircraft);
+            const icao = aircraft.icao24.toLowerCase();
+            activeCountMap.set(icao, (activeCountMap.get(icao) || 0) + 1);
           }
         });
-
-        // 🚀 **New: Fetch Additional Static Data for Each Model**
-        for (const result of modelResults) {
-          const icaos = result.icao_list
-            .split(',')
-            .map((icao) => icao.trim().toLowerCase());
-
-          // Fetch additional details from Static DB
-          const aircraftDetails = await this.getAircraftByIcao24s(icaos);
-
-          // Get first aircraft as reference for static data (since all models should belong to same manufacturer)
-          const referenceAircraft =
-            aircraftDetails.length > 0 ? aircraftDetails[0] : null;
-
-          const activeCount = icaos.reduce(
-            (count, icao) => count + (activeAircraftMap.has(icao) ? 1 : 0),
-            0
-          );
-
-          result.city = referenceAircraft?.city || 'Unknown';
-          result.state = referenceAircraft?.state || 'Unknown';
-          result.ownerType = referenceAircraft?.ownerType || 'Unknown';
-          result.name = referenceAircraft?.name || 'Unknown';
-
-          // Store in ActiveModel format
-          result.activeCount = activeCount;
-        }
-
-        return modelResults.map((result) => ({
-          model: result.model,
-          manufacturer: result.manufacturer,
-          label: `${result.model} (${result.activeCount} active)`,
-          totalCount: result.total_count,
-          count: result.total_count,
-          activeCount: result.activeCount,
-          city: result.city,
-          state: result.state,
-          ownerType: result.ownerType,
-          name: result.name,
-        }));
       } catch (trackingError) {
         console.warn(
           '[StaticDB] ⚠️ Could not fetch tracking data:',
           trackingError
         );
+        // Continue with zero active counts
+      }
 
-        // Fallback to basic stats without active counts
-        return modelResults.map((result) => ({
+      // Process each model
+      return modelResults.map((result) => {
+        const icaos = result.icao_list
+          ? result.icao_list.split(',').map((icao) => icao.trim().toLowerCase())
+          : [];
+
+        // Count active aircraft for this model
+        const activeCount = icaos.reduce(
+          (count, icao) => count + (activeCountMap.get(icao) || 0),
+          0
+        );
+
+        return {
           model: result.model,
           manufacturer: result.manufacturer,
-          label: `${result.model} (0 active)`,
           totalCount: result.total_count,
           count: result.total_count,
-          activeCount: 0,
-          city: 'Unknown',
-          state: 'Unknown',
-          ownerType: 'Unknown',
-          name: 'Unknown',
-        }));
-      }
+          activeCount,
+          city: result.city || 'Unknown',
+          state: result.state || 'Unknown',
+          ownerType: result.ownerType || 'Unknown',
+          name: result.name || 'Unknown',
+        };
+      });
     } catch (error) {
       console.error('[StaticDB] ❌ Failed to fetch models:', error);
       throw error;
@@ -650,7 +672,7 @@ ORDER BY total_count DESC;
     console.log(`[StaticDB] Fetching aircraft with N-Number: ${nNumber}`);
 
     const query = `
-    SELECT * FROM aircraft WHERE n_number = ? LIMIT 1;
+    SELECT * FROM aircraft WHERE "N-NUMBER" = ? LIMIT 1;
   `;
 
     try {

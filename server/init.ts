@@ -1,6 +1,6 @@
 // server/init.ts
 import { CleanupService } from '../lib/services/CleanupService';
-import { initializeAircraftCache } from '../lib/services/managers/initializeAircraftCache';
+import initializeAircraftCache from '../lib/services/managers/unified-cache-system';
 import BackendDatabaseManager from '../lib/db/backendDatabaseManager';
 import databaseManager from '../lib/db/databaseManager';
 import {

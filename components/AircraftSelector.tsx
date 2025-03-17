@@ -260,12 +260,18 @@ const AircraftSelector: React.FC<AircraftSelectorProps> = ({
   };
 
   // Handle refresh button click
+  // Handle refresh button click
+  // In AircraftSelector.tsx
   const handleRefresh = async () => {
+    if (isRefreshing || isLoading) return;
+
     setIsRefreshing(true);
     try {
+      // Use the manual refresh function from the hook
       await hookRefreshAircraft();
     } catch (error) {
       console.error('Error refreshing data:', error);
+      if (onError) onError('Failed to refresh aircraft data');
     } finally {
       setIsRefreshing(false);
     }
@@ -286,7 +292,7 @@ const AircraftSelector: React.FC<AircraftSelectorProps> = ({
 
   return (
     <div className="bg-white rounded-lg shadow-lg p-4 w-80 absolute top-4 left-4 z-50">
-      {/* Header with controls */}
+      {/* Header with controls - SIMPLIFIED */}
       <div className="flex justify-between items-center mb-4">
         <button
           onClick={toggleMinimized}
@@ -296,41 +302,14 @@ const AircraftSelector: React.FC<AircraftSelectorProps> = ({
           <Minus size={16} />
         </button>
         <h2 className="text-gray-700 text-lg font-medium">Aircraft Selector</h2>
-        <div className="flex space-x-2">
-          <button
-            onClick={handleRefresh}
-            className="p-1 bg-gray-200 rounded-md hover:bg-gray-300 disabled:opacity-50"
-            disabled={isLoading || isRefreshing}
-            aria-label="Refresh data"
-          >
-            <RefreshCw
-              size={16}
-              className={isLoading || isRefreshing ? 'animate-spin' : ''}
-            />
-          </button>
-          <button
-            onClick={handleReset}
-            className="px-3 py-1 bg-blue-500 text-white rounded-md hover:bg-blue-600 disabled:opacity-50"
-            disabled={isLoading}
-          >
-            Reset
-          </button>
-        </div>
+        <button
+          onClick={handleReset}
+          className="px-3 py-1 bg-blue-500 text-white rounded-md hover:bg-blue-600 disabled:opacity-50"
+          disabled={isLoading}
+        >
+          Reset
+        </button>
       </div>
-
-      {/* Error message */}
-      {hookError && (
-        <div className="mb-3 p-2 bg-red-50 border border-red-200 rounded text-red-600 text-sm">
-          {hookError}
-        </div>
-      )}
-
-      {/* No manufacturers warning */}
-      {manufacturers.length === 0 && !isLoading && (
-        <div className="mb-3 p-2 bg-yellow-50 border border-yellow-200 rounded text-yellow-800 text-sm">
-          No manufacturers found. Please check your database connection.
-        </div>
-      )}
 
       {/* Manufacturer Selector */}
       <div className="mb-4 relative" ref={dropdownRef}>
@@ -459,7 +438,6 @@ const AircraftSelector: React.FC<AircraftSelectorProps> = ({
         </div>
       )}
 
-      {/* Refresh status */}
       <div className="mt-3 pt-3 border-t border-gray-200 text-xs text-gray-500">
         <div className="flex justify-between">
           <span>Models cached:</span>
@@ -473,17 +451,23 @@ const AircraftSelector: React.FC<AircraftSelectorProps> = ({
               : 'Never'}
           </span>
         </div>
-        <div className="flex justify-between items-center mt-2">
+        <div className="flex justify-center mt-2">
           <button
             onClick={handleRefresh}
-            className={`w-full py-2 px-4 bg-blue-100 hover:bg-blue-200 text-blue-800 text-sm font-medium rounded-md flex items-center justify-center ${isRefreshing || isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+            className={`w-full py-2 px-4 ${
+              isRefreshing || isLoading
+                ? 'bg-blue-50 text-blue-400'
+                : 'bg-blue-500 hover:bg-blue-600 text-white'
+            } text-sm font-medium rounded-md flex items-center justify-center transition-colors`}
             disabled={isRefreshing || isLoading}
           >
             <RefreshCw
-              size={14}
-              className={`mr-2 ${isRefreshing ? 'animate-spin' : ''}`}
+              size={16}
+              className={`mr-2 ${isRefreshing || isLoading ? 'animate-spin' : ''}`}
             />
-            {isRefreshing ? 'Refreshing...' : 'Refresh Aircraft Data'}
+            {isRefreshing || isLoading
+              ? 'Refreshing...'
+              : 'Refresh Aircraft Data'}
           </button>
         </div>
       </div>

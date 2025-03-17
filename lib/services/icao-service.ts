@@ -9,11 +9,22 @@ export class Icao24Service {
   private cache: Map<string, string[]> = new Map();
   private pendingRequests: Map<string, Promise<string[]>> = new Map();
   private CACHE_DURATION = 10 * 60 * 1000; // 10 minutes
-  private dbManager: TrackingDatabaseManager;
+  private dbManager!: TrackingDatabaseManager;
 
-  private constructor() {
-    this.dbManager = TrackingDatabaseManager.getInstance();
-    console.log('[Icao24Service] Initialized');
+  private constructor() {}
+
+  private async initialize() {
+    this.dbManager = await TrackingDatabaseManager.getInstance();
+  }
+
+  async getAircraft(icao24: string) {
+    return await this.dbManager.getAircraftByIcao24(icao24);
+  }
+
+  static async create(): Promise<Icao24Service> {
+    const service = new Icao24Service();
+    await service.initialize(); // Ensure database manager is ready
+    return service;
   }
 
   public static getInstance(): Icao24Service {

@@ -1,9 +1,11 @@
 // pages/api/aircraft/icaofetcher.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { TrackingDatabaseManager } from '@/lib/db/managers/trackingDatabaseManager';
+import trackingDatabaseManagerPromise from '@/lib/db/managers/trackingDatabaseManager';
+import staticDatabaseManagerPromise from '@/lib/db/managers/staticDatabaseManager';
 import { IcaoBatchService } from '@/lib/services/icao-batch-service';
+import { AircraftRecord, Aircraft } from '@/types/base';
 
-// Track active requests to prevent duplicates
+// In-memory cache for active ICAO fetch requests
 const activeRequests = new Map<string, Promise<any>>();
 
 export default async function handler(
@@ -20,13 +22,13 @@ export default async function handler(
 
   const { icao24s, manufacturer } = req.body;
 
-  const icaoBatchService = new IcaoBatchService();
-  const aircraft = await icaoBatchService.processBatches(icao24s, manufacturer);
-
   if (!icao24s || !Array.isArray(icao24s) || icao24s.length === 0) {
     console.error('[ICAOFetcher] ❌ Invalid or missing ICAO24 list');
     return res.status(400).json({ error: 'Invalid ICAO24 list' });
   }
+
+  // Ensure manufacturer is defined
+  const selectedManufacturer = manufacturer || 'Unknown';
 
   // Create a cache key for this request
   const requestKey = JSON.stringify(icao24s.sort());
@@ -46,14 +48,14 @@ export default async function handler(
   }
 
   // Create a new promise for this request
-  const requestPromise = processRequest(icao24s, manufacturer || '');
+  const requestPromise = processRequest(icao24s, selectedManufacturer);
   activeRequests.set(requestKey, requestPromise);
 
-  // Set cleanup after request completes
+  // Cleanup cache after request completes
   requestPromise.finally(() => {
     setTimeout(() => {
       activeRequests.delete(requestKey);
-    }, 1000); // Clean up after 1 second to handle potential rapid duplicate requests
+    }, 1000);
   });
 
   try {
@@ -69,106 +71,100 @@ export default async function handler(
 }
 
 /**
- * Process the ICAO request with database integration and batch processing
+ * Process ICAO request with database integration, batch processing, and static data caching.
  */
 async function processRequest(icao24s: string[], manufacturer: string) {
-  // Deduplicate and clean ICAO codes
   const uniqueIcaos = [
     ...new Set(icao24s.map((icao) => icao.toLowerCase().trim())),
   ];
 
-  console.log(
-    `[ICAOFetcher] 🔄 Processing ${uniqueIcaos.length} unique ICAOs from ${icao24s.length} total`
-  );
+  console.log(`[ICAOFetcher] 🔄 Processing ${uniqueIcaos.length} unique ICAOs`);
 
   try {
-    const trackingDb = TrackingDatabaseManager.getInstance();
+    // Get database instances by awaiting the promises
+    const trackingDb = await trackingDatabaseManagerPromise;
+    const staticDb = await staticDatabaseManagerPromise;
 
-    // Get existing aircraft from the tracking DB
+    // 1️⃣ **Retrieve static data for ICAOs**
+    const staticAircraft = await staticDb.getAircraftByIcao24s(uniqueIcaos);
+    const staticAircraftMap = new Map(
+      staticAircraft.map((a: AircraftRecord) => [a.icao24, a])
+    );
+
+    console.log(
+      `[ICAOFetcher] 🛠 Retrieved ${staticAircraft.length} aircraft from static DB`
+    );
+
+    // 2️⃣ **Check tracking DB for existing aircraft**
     const existingAircraft = await trackingDb.getAircraftByIcao24(uniqueIcaos);
     console.log(
       `[ICAOFetcher] ✅ Found ${existingAircraft.length} aircraft in tracking DB`
     );
 
-    // Define what "active" means - updated in the last hour
+    // 3️⃣ **Filter active aircraft (last update < 1 hour)**
     const activeTimeThreshold = Date.now() - 60 * 60 * 1000; // 1 hour ago
-
-    // Filter existing aircraft to find which ones are active
     const activeAircraft = existingAircraft.filter(
-      (aircraft) => aircraft.last_contact * 1000 > activeTimeThreshold
+      (aircraft: Aircraft) =>
+        (aircraft.last_contact || 0) * 1000 > activeTimeThreshold
     );
 
-    // Create sets for quick lookups
     const existingIcaos = new Set(
-      existingAircraft.map((a) => a.icao24.toLowerCase())
+      existingAircraft.map((a: Aircraft) => a.icao24.toLowerCase())
     );
     const activeIcaos = new Set(
-      activeAircraft.map((a) => a.icao24.toLowerCase())
+      activeAircraft.map((a: Aircraft) => a.icao24.toLowerCase())
     );
 
-    // STRATEGY:
-    // 1. Track all currently active aircraft (no matter how many)
-    // 2. Add up to 50 new aircraft we haven't seen before
-
-    // First, include all active aircraft
+    // 4️⃣ **Select ICAOs to fetch: Active + up to 50 new ones**
     let icaosToFetch = uniqueIcaos.filter((icao) => activeIcaos.has(icao));
-
-    // Then add up to 50 new aircraft
     const NEW_AIRCRAFT_LIMIT = 50;
     const newIcaos = uniqueIcaos
       .filter((icao) => !existingIcaos.has(icao)) // Not in DB yet
-      .slice(0, NEW_AIRCRAFT_LIMIT); // Take only up to 50 new ones
+      .slice(0, NEW_AIRCRAFT_LIMIT);
 
     icaosToFetch = [...icaosToFetch, ...newIcaos];
 
     console.log(
-      `[ICAOFetcher] ✈️ Tracking ${icaosToFetch.length} aircraft: ` +
-        `${activeAircraft.length} active, ${newIcaos.length} new ` +
-        `(new aircraft limit: ${NEW_AIRCRAFT_LIMIT})`
+      `[ICAOFetcher] ✈️ Tracking ${icaosToFetch.length} aircraft: ${activeAircraft.length} active, ${newIcaos.length} new`
     );
 
-    // Skip OpenSky fetch if we have nothing to fetch
-    if (icaosToFetch.length === 0) {
-      return {
-        success: true,
-        data: activeAircraft,
-        source: 'database',
-      };
+    // 5️⃣ **Fetch live data from OpenSky only if needed**
+    let openSkyAircraft: Aircraft[] = [];
+    if (icaosToFetch.length > 0) {
+      const batchService = new IcaoBatchService();
+      openSkyAircraft = (await batchService.processBatches(
+        icaosToFetch,
+        manufacturer
+      )) as Aircraft[];
+      console.log(
+        `[ICAOFetcher] 🔄 Received ${openSkyAircraft.length} aircraft from OpenSky`
+      );
     }
 
-    // Use the ICAO batch service with our limited list
-    const batchService = new IcaoBatchService();
-    const openSkyAircraft = await batchService.processBatches(
-      icaosToFetch,
-      manufacturer
+    // 6️⃣ **Merge static + OpenSky results**
+    const mergedAircraft = openSkyAircraft.map((aircraft: Aircraft) => {
+      const staticInfo = staticAircraftMap.get(aircraft.icao24) || {};
+      return { ...staticInfo, ...aircraft }; // Merge static + live data
+    });
+
+    // 7️⃣ **Drop ICAOs that OpenSky did not return**
+    const activeIcaoSet = new Set(
+      openSkyAircraft.map((a: Aircraft) => a.icao24)
+    );
+    const finalAircraftList = mergedAircraft.filter((a: Aircraft) =>
+      activeIcaoSet.has(a.icao24)
     );
 
     console.log(
-      `[ICAOFetcher] 🔄 Received ${openSkyAircraft.length} aircraft from OpenSky`
-    );
-
-    // If no OpenSky data was found, just return what we had in the database
-    if (openSkyAircraft.length === 0 && existingAircraft.length === 0) {
-      console.log('[ICAOFetcher] ⚠️ No aircraft data found from any source');
-      return {
-        success: true,
-        data: [],
-        message: 'No aircraft data found',
-      };
-    }
-
-    // Combine existing and new aircraft
-    const combinedAircraft = [...existingAircraft, ...openSkyAircraft];
-
-    console.log(
-      `[ICAOFetcher] ✅ Returning ${combinedAircraft.length} aircraft (${existingAircraft.length} from DB, ${openSkyAircraft.length} from OpenSky)`
+      `[ICAOFetcher] ✅ Returning ${finalAircraftList.length} aircraft`
     );
 
     return {
       success: true,
-      data: combinedAircraft,
+      data: finalAircraftList,
       sources: {
-        database: existingAircraft.length,
+        staticDb: staticAircraft.length,
+        trackingDb: existingAircraft.length,
         opensky: openSkyAircraft.length,
       },
     };

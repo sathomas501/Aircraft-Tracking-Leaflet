@@ -9,7 +9,7 @@ import {
 } from '../error-handler/error-handler';
 import { OpenSkyTransforms } from '@/utils/aircraft-transform1';
 import trackingDatabaseManager from '../../db/managers/trackingDatabaseManager';
-import cacheService from '../managers/cache-manager';
+import { CacheManager } from '../managers/cache-manager';
 
 /**
  * Safely require a module with a fallback
@@ -50,7 +50,7 @@ export abstract class BaseTrackingService {
     if (this.isServer) {
       try {
         this.trackingDatabaseManager = trackingDatabaseManager;
-        this.cacheService = cacheService;
+        this.cacheService = CacheManager;
 
         if (this.DEBUG) {
           if (this.trackingDatabaseManager && this.cacheService) {

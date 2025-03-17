@@ -10,7 +10,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
   }
 
   try {
-    const db = StaticDatabaseManager.getInstance();
+    const db = await StaticDatabaseManager.getInstance(); // Await the instance
     await db.initializeDatabase();
 
     const limit = Number(req.query.limit) || 50;
@@ -27,12 +27,10 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
       },
     });
   } catch (error) {
-    console.error('[ManufacturerAPI] Failed to fetch manufacturers:', error);
-    throw APIErrors.Internal(
-      new Error(
-        error instanceof Error ? error.message : 'Failed to fetch manufacturers'
-      )
-    );
+    console.error('Error fetching manufacturers:', error);
+    return res
+      .status(500)
+      .json({ success: false, error: 'Internal Server Error' });
   }
 }
 

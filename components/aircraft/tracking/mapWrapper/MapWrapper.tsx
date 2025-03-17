@@ -220,21 +220,6 @@ const MapWrapper: React.FC<MapWrapperProps> = ({
           />
         </div>
       )}
-
-      {/* Status message */}
-      {statusMessage && !isLoading && (
-        <div className="absolute bottom-4 right-4 z-20 bg-white p-2 rounded shadow">
-          <p className="text-sm">{statusMessage}</p>
-        </div>
-      )}
-
-      {/* Debug info */}
-      <div className="absolute bottom-4 left-4 z-20 bg-white p-2 rounded shadow text-xs">
-        <p>Manufacturers: {manufacturers.length}</p>
-        <p>Models: {models.length}</p>
-        <p>Aircraft: {trackedAircraft?.length || 0}</p>
-        <p>Displayed: {displayedAircraft.length}</p>
-      </div>
     </div>
   );
 };

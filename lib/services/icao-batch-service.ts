@@ -151,10 +151,17 @@ export class IcaoBatchService {
       models.slice(0, 5)
     );
 
-    // Check which ICAO24s are already in the tracking database
-    const existingAircraft = await trackingDb.getAircraftByIcao24(validIcaos);
+    // ✅ Fetch existing aircraft by ICAO24
+    // First get the actual database manager instance
+    const trackingDbInstance = await trackingDb;
+
+    // ✅ Now use the instance to fetch aircraft
+    const existingAircraft =
+      await trackingDbInstance.getAircraftByIcao24(validIcaos);
+
+    // ✅ Add proper type annotation to `a`
     const existingIcaos = new Set(
-      existingAircraft.map((a) => a.icao24.toLowerCase())
+      existingAircraft.map((a: { icao24: string }) => a.icao24.toLowerCase())
     );
 
     // Only process ICAO24s that aren't already being tracked
@@ -352,8 +359,12 @@ export class IcaoBatchService {
             );
 
             try {
-              // Store in tracking database
-              await trackingDb.upsertActiveAircraftBatch(validAircraft);
+              // First await the tracking database manager to get the actual instance
+              const trackingDbInstance = await trackingDb;
+
+              // Now use the instance's methods
+              await trackingDbInstance.upsertActiveAircraftBatch(validAircraft);
+
               console.log(
                 `[IcaoBatchService] 💾 Stored ${validAircraft.length} aircraft in tracking DB`
               );

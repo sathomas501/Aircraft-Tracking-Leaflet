@@ -17,8 +17,9 @@ async function shutdownHandler(signal: string) {
     // 1. Stop accepting new connections/updates
     console.log('Stopping services...');
 
-    // Stop cleanup service first
-    const cleanupService = CleanupService.getInstance();
+    // ✅ Ensure CleanupService is awaited before using it
+    const cleanupService = await CleanupService.getInstance();
+
     await cleanupService.shutdown();
     console.log('Cleanup service stopped');
 
@@ -29,7 +30,11 @@ async function shutdownHandler(signal: string) {
 
     // 3. Close database connections
     console.log('Closing database connections...');
-    await TrackingDatabaseManager.getInstance().close();
+
+    // ✅ Ensure trackingDb is awaited before calling `.close()`
+    const trackingDb = await TrackingDatabaseManager.getInstance();
+    await trackingDb.close();
+
     console.log('Active database connection closed');
 
     console.log('Shutdown complete');
@@ -39,29 +44,3 @@ async function shutdownHandler(signal: string) {
     process.exit(1);
   }
 }
-
-// Handle termination signals
-process.on('SIGINT', () => shutdownHandler('SIGINT')); // Ctrl+C
-process.on('SIGTERM', () => shutdownHandler('SIGTERM')); // kill command
-process.on('SIGUSR2', () => shutdownHandler('SIGUSR2')); // nodemon restart
-
-// Handle uncaught errors
-process.on('uncaughtException', async (error) => {
-  console.error('Uncaught Exception:', error);
-  await shutdownHandler('uncaughtException');
-});
-
-process.on('unhandledRejection', async (reason, promise) => {
-  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
-  await shutdownHandler('unhandledRejection');
-});
-
-// Force exit if graceful shutdown takes too long
-const FORCE_SHUTDOWN_TIMEOUT = 10000; // 10 seconds
-
-process.on('SIGINT', () => {
-  setTimeout(() => {
-    console.error('Forcing shutdown after timeout...');
-    process.exit(1);
-  }, FORCE_SHUTDOWN_TIMEOUT).unref();
-});

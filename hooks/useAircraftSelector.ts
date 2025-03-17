@@ -457,31 +457,37 @@ export function useAircraft({
   );
 
   // 7. Subscribe to tracked aircraft client
+  // 7. Subscribe to tracked aircraft client
   const subscribeToClient = useCallback(
-    (manufacturer: string | null) => {
+    async (manufacturer: string | null) => {
       // Unsubscribe from previous updates
       if (subscriptionRef.current) {
         subscriptionRef.current();
         subscriptionRef.current = null;
       }
-
       if (!manufacturer) return;
 
-      // Subscribe to the tracking client
-      subscriptionRef.current = aircraftTrackingClient.subscribe(
-        manufacturer,
-        (updatedAircraft) => {
-          setAircraft(updatedAircraft);
-          updateStatus(`Tracking ${updatedAircraft.length} aircraft`);
+      try {
+        // Get the client instance by awaiting the promise
+        const client = await aircraftTrackingClient;
 
-          // Process aircraft into models
-          processAircraftModels(updatedAircraft);
-        }
-      );
+        // Subscribe to the tracking client
+        subscriptionRef.current = client.subscribe(
+          manufacturer,
+          (updatedAircraft: Aircraft[]) => {
+            setAircraft(updatedAircraft);
+            updateStatus(`Tracking ${updatedAircraft.length} aircraft`);
+            // Process aircraft into models
+            processAircraftModels(updatedAircraft);
+          }
+        );
+      } catch (error) {
+        console.error('Failed to subscribe to aircraft tracking:', error);
+        updateStatus('Error connecting to tracking service');
+      }
     },
     [updateStatus, processAircraftModels]
   );
-
   // 8. Merge static and live models
   const mergeModels = useCallback(() => {
     // Create a map of models by model name

@@ -1,6 +1,6 @@
 // pages/api/aircraft/icao24s.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
-import databaseManager from '../../../lib/db/managers/staticDatabaseManager'; // ✅ Fix import
+import { StaticDatabaseManager } from '../../../lib/db/managers/staticDatabaseManager'; // Ensure correct import
 
 interface Icao24Response {
   icao24List: string[];
@@ -25,11 +25,11 @@ export default async function handler(
   });
 
   try {
-    // For POST request, get manufacturer from body
+    // Extract manufacturer parameter
     const manufacturer =
       req.method === 'POST'
         ? req.body.manufacturer
-        : (req.query.manufacturer as string); // ✅ Ensure it's a string
+        : (req.query.manufacturer as string);
 
     console.log('Extracted manufacturer:', manufacturer);
 
@@ -42,34 +42,33 @@ export default async function handler(
       });
     }
 
-    // ✅ Fix: Use DatabaseManager instance instead of `getDatabase`
-    // Removed unnecessary initialization
+    // ✅ Get database instance properly
+    const db = await StaticDatabaseManager.getInstance(); // Await resolves the Promise
 
-    const db = databaseManager;
-
-    let query = `
-            SELECT DISTINCT icao24
-            FROM aircraft
-            WHERE manufacturer = ?
-            AND icao24 IS NOT NULL
-            AND icao24 != ''
-            LIMIT 2000
-        `;
+    const query = `
+        SELECT DISTINCT icao24
+        FROM aircraft
+        WHERE manufacturer = ?
+        AND icao24 IS NOT NULL
+        AND icao24 != ''
+        LIMIT 2000
+    `;
 
     console.log('Executing query:', { query, params: [manufacturer] });
 
+    // ✅ Ensure correct method is used for querying
     const results: { icao24: string }[] = await db.executeQuery(query, [
       manufacturer,
     ]);
 
-    // ✅ Use proper type annotation to avoid nested array interpretation
+    // ✅ Extract icao24 values from query results
     const icao24List = results.map((item) => item.icao24);
 
     return res.status(200).json({
       icao24List,
       meta: {
         total: results.length,
-        manufacturer: manufacturer,
+        manufacturer,
         timestamp: new Date().toISOString(),
       },
     });

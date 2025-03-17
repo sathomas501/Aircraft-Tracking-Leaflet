@@ -16,13 +16,16 @@ export class AircraftTrackingClient {
   private readonly CACHE_DURATION = 5000; // 5 seconds
   private readonly POLL_INTERVAL = 30000; // 30 seconds
 
-  constructor() {
-    this.cleanupService = new CleanupService();
+  private constructor(cleanupService: CleanupService) {
+    this.cleanupService = cleanupService;
   }
 
-  public static getInstance(): AircraftTrackingClient {
+  public static async getInstance(): Promise<AircraftTrackingClient> {
     if (!AircraftTrackingClient.instance) {
-      AircraftTrackingClient.instance = new AircraftTrackingClient();
+      const cleanupService = await CleanupService.getInstance(); // ✅ Get instance properly
+      AircraftTrackingClient.instance = new AircraftTrackingClient(
+        cleanupService
+      );
     }
     return AircraftTrackingClient.instance;
   }

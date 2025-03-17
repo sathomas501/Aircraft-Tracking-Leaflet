@@ -2,8 +2,8 @@
 import { BaseTrackingService } from './base-tracking-service';
 import { IcaoBatchService } from '../icao-batch-service';
 import { Aircraft } from '@/types/base';
-import CacheManager from '../managers/cache-manager';
-import { getCachedIcao24s } from '../managers/aircraft-cache';
+import { CacheManager } from '../managers/cache-manager';
+import { getCachedIcao24s } from '../managers/unified-cache-system';
 
 interface Subscriber {
   callback: (aircraft: Aircraft[]) => void;

@@ -7,6 +7,8 @@ import React, {
 } from 'react';
 import { SelectOption } from '@/types/base';
 import { useTrackedAircraft } from '../../../../hooks/useTrackedAircraft';
+import TrackingService from '../../../../lib/services/managers/tracking-service-cache';
+import { useOpenSkyData } from '@/hooks/useOpenSkyData';
 
 interface ManufacturerSelectorProps {
   manufacturers: SelectOption[];
@@ -46,16 +48,45 @@ export const ManufacturerSelector: React.FC<ManufacturerSelectorProps> = ({
     }
   }, [selectedManufacturer, manufacturers]);
 
-  // Handler for manufacturer selection
   const handleManufacturerSelect = async (manufacturerValue: string) => {
     try {
       setIsSelecting(true);
       setIsOpen(false);
 
+      console.log(`🔹 Manufacturer selected: ${manufacturerValue}`);
+
+      // Fetch ICAOs from static database
+      const response = await fetch('/api/getIcaos', {
+        method: 'POST',
+        body: JSON.stringify({ manufacturer: manufacturerValue }),
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      if (!response.ok) {
+        console.error('❌ Error fetching ICAO24s');
+        onError?.('Failed to fetch ICAO24s');
+        return;
+      }
+
+      const { icao24s, staticAircraftList } = await response.json();
+
+      if (!icao24s.length) {
+        console.warn('⚠️ No ICAOs found for this manufacturer.');
+        return;
+      }
+
+      // Cache static aircraft details while waiting for OpenSky data
+      TrackingService.cacheStaticAircraft(staticAircraftList);
+
+      console.log(`✅ Cached ${staticAircraftList.length} static aircraft.`);
+
+      // Fetch live tracking data from OpenSky
+      await useOpenSkyData(icao24s);
+
       // Call the parent component's onSelect handler
       await onSelect(manufacturerValue);
     } catch (error) {
-      console.error(`Error during manufacturer selection:`, error);
+      console.error(`❌ Error during manufacturer selection:`, error);
       onError?.('Failed to select manufacturer');
     } finally {
       setIsSelecting(false);

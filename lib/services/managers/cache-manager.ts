@@ -11,18 +11,6 @@ export class CacheManager<T> {
     return this.cache.get<T>(key);
   }
 
-  set(key: string, value: T): void {
-    this.cache.set(key, value);
-  }
-
-  flush(): void {
-    this.cache.flushAll();
-  }
-
-  delete(key: string): void {
-    this.cache.del(key);
-  }
-
   public getMultiple(keys: string[]): Record<string, T> {
     return this.cache.mget<T>(keys);
   }
@@ -33,13 +21,12 @@ export class CacheManager<T> {
     );
   }
 
-  public invalidate(predicate: (key: string) => boolean): void {
-    const keys = this.cache.keys();
-    keys.forEach((key) => {
-      if (predicate(key)) {
-        this.cache.del(key);
-      }
-    });
+  set(key: string, value: T): void {
+    this.cache.set(key, value);
+  }
+
+  delete(key: string): void {
+    this.cache.del(key);
   }
 
   public size(): number {
@@ -47,6 +34,5 @@ export class CacheManager<T> {
   }
 }
 
-// ✅ Export a singleton instance with a 60-second TTL
-const cacheManager = new CacheManager<any>(60);
-export default CacheManager;
+// ✅ Keep this only for general caching needs
+export const cacheManager = new CacheManager<any>(60);

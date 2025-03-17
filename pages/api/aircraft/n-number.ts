@@ -20,7 +20,12 @@ export default async function handler(
     }
 
     console.log(`[N-Number API] Searching for aircraft: ${nNumber}`);
-    const aircraft = await staticDatabaseManager.getAircraftByNNumber(nNumber);
+
+    // ✅ Await the instance before using it
+    const db = await staticDatabaseManager;
+
+    // ✅ Call the method on the resolved instance
+    const aircraft = await db.getAircraftByNNumber(nNumber);
 
     if (!aircraft) {
       return res.status(404).json({ error: 'Aircraft not found' });

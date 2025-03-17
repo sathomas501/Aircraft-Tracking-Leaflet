@@ -24,7 +24,12 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
     console.log(
       `[Static Data API] 🔍 Fetching data for ${icao24s.length} aircraft`
     );
-    const aircraft = await databaseManager.getAircraftByIcao24s(icao24s);
+
+    // ✅ Ensure we await the instance before calling methods
+    const db = await databaseManager;
+
+    // ✅ Call the method on the resolved instance
+    const aircraft = await db.getAircraftByIcao24s(icao24s);
 
     return res.status(200).json({
       success: true,

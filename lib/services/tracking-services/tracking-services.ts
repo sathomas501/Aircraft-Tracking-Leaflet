@@ -6,10 +6,7 @@ import {
   ClientTrackingService,
   clientTrackingService,
 } from './client-tracking-service';
-import {
-  TrackingDataService,
-  createTrackingDataService,
-} from './tracking-data-service';
+import { TrackingDataService } from './tracking-data-service';
 import { aircraftPositionService, Position } from './aircraft-position-service';
 import type { Aircraft, OpenSkyStateArray } from '@/types/base';
 import { TrackingDatabaseManager } from '@/lib/db/managers/trackingDatabaseManager';
@@ -31,38 +28,31 @@ export class TrackingServices {
 
     // Initialize data service on server side if needed
     if (this.isServer) {
-      try {
-        // Get database manager instance synchronously
-        const dbManager: TrackingDatabaseManager =
-          TrackingDatabaseManager.getInstance();
-
-        // Ensure database is actually initialized
-        // This will create tables if they don't exist
-        dbManager.initializeDatabase().catch((initError) => {
-          console.error(
-            '[TrackingServices] ❌ Failed to initialize database:',
-            initError
-          );
-        });
-
-        this.dataService = createTrackingDataService(dbManager);
-        console.log(
-          '[TrackingServices] ✅ Data service initialized successfully'
-        );
-      } catch (error: unknown) {
-        console.error(
-          '[TrackingServices] ❌ Failed to create data service:',
-          error
-        );
-      }
+      this.initializeDatabase();
     }
   }
 
-  public static getInstance(): TrackingServices {
+  public static async getInstance(): Promise<TrackingServices> {
     if (!TrackingServices.instance) {
       TrackingServices.instance = new TrackingServices();
+      await TrackingServices.instance.initializeDatabase();
     }
     return TrackingServices.instance;
+  }
+
+  private async initializeDatabase(): Promise<void> {
+    try {
+      // ✅ Ensure database instance is awaited before usage
+      const dbManager = await TrackingDatabaseManager.getInstance();
+
+      // ✅ Ensure database is properly initialized
+      await dbManager.initializeDatabase();
+    } catch (initError) {
+      console.error(
+        '[TrackingServices] ❌ Failed to initialize database:',
+        initError
+      );
+    }
   }
 
   /**

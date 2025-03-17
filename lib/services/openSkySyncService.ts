@@ -4,7 +4,6 @@ import UnifiedCacheService from '@/lib/services/managers/unified-cache-system';
 import { TrackingDatabaseManager } from '@/lib/db/managers/trackingDatabaseManager';
 import { icao24CacheService } from './icao24Cache';
 import { trackingServices } from '../services/tracking-services/tracking-services';
-import getAircraftIcao24s from '../db/managers/staticDatabaseManager';
 
 export class OpenSkySyncService {
   private static instance: OpenSkySyncService;
@@ -15,11 +14,21 @@ export class OpenSkySyncService {
 
   private constructor() {
     this.cache = UnifiedCacheService.getInstance();
-    this.dbManager = TrackingDatabaseManager.getInstance();
+  }
+
+  public static async getInstance(): Promise<OpenSkySyncService> {
+    if (!OpenSkySyncService.instance) {
+      OpenSkySyncService.instance = new OpenSkySyncService();
+      await OpenSkySyncService.instance.initialize();
+    }
+    return OpenSkySyncService.instance;
+  }
+
+  private async initialize() {
+    this.dbManager = await TrackingDatabaseManager.getInstance(); // ✅ Await before assignment
 
     // Ensure `dbManager` is initialized only on the server-side
     if (typeof window === 'undefined') {
-      // Also load the static database manager if available
       try {
         this.staticDbManager =
           require('@/lib/db/managers/staticDatabaseManager').default;
@@ -30,13 +39,6 @@ export class OpenSkySyncService {
         );
       }
     }
-  }
-
-  public static getInstance(): OpenSkySyncService {
-    if (!OpenSkySyncService.instance) {
-      OpenSkySyncService.instance = new OpenSkySyncService();
-    }
-    return OpenSkySyncService.instance;
   }
 
   /**
@@ -55,10 +57,16 @@ export class OpenSkySyncService {
     );
 
     try {
-      // Use the unified tracking services
-      return await trackingServices.getManufacturerIcao24s(manufacturer);
+      // First await the tracking services to get the actual instance
+      const trackingServicesInstance = await trackingServices;
+
+      // Now use the instance to call the method
+      return await trackingServicesInstance.getManufacturerIcao24s(
+        manufacturer
+      );
     } catch (error) {
       console.error(`[OpenSkySyncService] ❌ Error fetching ICAO24s:`, error);
+      // Make sure you're also handling the error here, maybe with a throw or a return
 
       // Fallback to direct API call if tracking services fail
       try {
@@ -117,8 +125,11 @@ export class OpenSkySyncService {
       // Step 2: Fetch missing ICAO24s from OpenSky
       const newIcao24s: string[] =
         await icao24CacheService.fetchAndCacheIcao24s('generic', async () => {
-          // Use tracking services to get ICAO24s
-          return await trackingServices.getManufacturerIcao24s('all');
+          // First await the tracking services to get the actual instance
+          const trackingServicesInstance = await trackingServices;
+
+          // Now use the instance to call the method
+          return await trackingServicesInstance.getManufacturerIcao24s('all');
         });
 
       if (newIcao24s.length === 0) {
@@ -178,11 +189,15 @@ export class OpenSkySyncService {
       this.currentManufacturer = manufacturer;
 
       // Start tracking for this manufacturer
-      await trackingServices.startTracking(manufacturer);
+      // Get the tracking services instance once
+      const trackingServicesInstance = await trackingServices;
+
+      // Start tracking for this manufacturer
+      await trackingServicesInstance.startTracking(manufacturer);
 
       // Get ICAO24 codes for this manufacturer
       const icao24s =
-        await trackingServices.getManufacturerIcao24s(manufacturer);
+        await trackingServicesInstance.getManufacturerIcao24s(manufacturer);
 
       if (icao24s.length === 0) {
         console.warn(

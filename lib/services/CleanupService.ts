@@ -18,13 +18,12 @@ class CleanupService {
   private retryCount = 0;
   private readonly MAX_RETRIES = 3;
 
-  constructor() {
-    this.dbManager = TrackingDatabaseManager.getInstance();
-  }
+  private constructor() {}
 
-  public static getInstance(): CleanupService {
+  public static async getInstance(): Promise<CleanupService> {
     if (!CleanupService.instance) {
       CleanupService.instance = new CleanupService();
+      await CleanupService.instance.initialize(); // Ensure initialization
     }
     return CleanupService.instance;
   }
@@ -33,7 +32,7 @@ class CleanupService {
     if (this.isInitialized) return;
 
     try {
-      this.dbManager = TrackingDatabaseManager.getInstance();
+      this.dbManager = await TrackingDatabaseManager.getInstance();
       await this.dbManager.initializeDatabase();
       await this.startCleanupJob();
       this.isInitialized = true;

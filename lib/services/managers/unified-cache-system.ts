@@ -10,6 +10,12 @@ interface CacheEntry {
   subscriptions: Set<(data: CachedAircraftData[]) => void>;
 }
 
+const ICAO24S_CACHE: Record<string, string[]> = {};
+
+export function getCachedIcao24s(manufacturer: string): string[] | null {
+  return ICAO24S_CACHE[manufacturer] || null;
+}
+
 class UnifiedCacheService {
   private static instance: UnifiedCacheService;
   private cache: Map<string, CacheEntry>;
@@ -79,6 +85,23 @@ class UnifiedCacheService {
   public setLiveData(manufacturer: string, aircraft: Aircraft[]): void {
     const key = this.normalizeKey(manufacturer);
     const cachedData = aircraft.map(CacheTransforms.toCache);
+
+    const entry = this.cache.get(key) || {
+      data: [],
+      timestamp: Date.now(),
+      subscriptions: new Set(),
+    };
+
+    entry.data = cachedData;
+    entry.timestamp = Date.now();
+    this.cache.set(key, entry);
+
+    entry.subscriptions.forEach((callback) => callback(cachedData));
+  }
+
+  public updateLiveData(manufacturer: string, data: Aircraft[]) {
+    const key = this.normalizeKey(manufacturer);
+    const cachedData = data.map(CacheTransforms.toCache);
 
     const entry = this.cache.get(key) || {
       data: [],

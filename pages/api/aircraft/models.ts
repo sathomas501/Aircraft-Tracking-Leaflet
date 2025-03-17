@@ -1,133 +1,141 @@
+// pages/api/aircraft/models.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
-import staticDatabaseManager from '@/lib/db/managers/staticDatabaseManager';
-import { withErrorHandler } from '@/lib/middleware/error-handler';
-import CacheManager from '@/lib/services/managers/cache-manager';
+import { StaticDatabaseManager } from '@/lib/db/managers/staticDatabaseManager';
+import trackingDatabaseManagerPromise from '@/lib/db/managers/trackingDatabaseManager';
 
-export interface ActiveModel {
-  model: string;
-  manufacturer: string;
-  count: number;
-  city?: string;
-  state?: string;
-  OWNER_TYPE?: string;
-  name?: string;
-}
+// Cache for models data
+let modelsCache: Record<string, { models: any[]; timestamp: number }> = {};
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const API_TIMEOUT = 15000; // 15 seconds
 
-async function handler(req: NextApiRequest, res: NextApiResponse) {
-  const start = Date.now();
-  console.log(`[Models API] 📩 Request received:`, {
-    method: req.method,
-    query: req.query,
-    body: req.body,
-    timestamp: new Date().toISOString(),
-  });
-
-  const { method } = req;
-  const cache = new CacheManager<ActiveModel[]>(300); // Cache expires in 300 seconds
-
-  // Handle both GET and POST methods
-  if (method !== 'GET' && method !== 'POST') {
-    console.log(`[Models API] ⚠️ Invalid method: ${method}`);
-    return res
-      .status(405)
-      .json({ success: false, message: 'Method not allowed' });
+export default async function handler(
+  req: NextApiRequest,
+  res: NextApiResponse
+) {
+  if (req.method !== 'POST') {
+    return res.status(405).json({
+      success: false,
+      message: 'Method not allowed',
+    });
   }
 
-  // Extract manufacturer from either query params (GET) or request body (POST)
-  let manufacturer: string | undefined;
-
-  if (method === 'GET') {
-    manufacturer = req.query.manufacturer as string;
-  } else if (method === 'POST') {
-    manufacturer = req.body.manufacturer;
-  }
+  const { manufacturer } = req.body;
 
   if (!manufacturer) {
-    console.log(
-      '[Models API] ⚠️ No manufacturer provided:',
-      method === 'GET' ? req.query : req.body
-    );
     return res.status(400).json({
       success: false,
-      message: 'Manufacturer parameter is required',
+      message: 'Manufacturer is required',
+    });
+  }
+
+  // Check cache first (unless force refresh is requested)
+  if (
+    !req.body.refresh &&
+    modelsCache[manufacturer] &&
+    Date.now() - modelsCache[manufacturer].timestamp < CACHE_TTL
+  ) {
+    return res.status(200).json({
+      success: true,
+      models: modelsCache[manufacturer].models,
+      cached: true,
     });
   }
 
   try {
-    // Define cache key for the manufacturer
-    const cacheKey = `models:${manufacturer}`;
-
-    // Check if models are already cached
-    const cachedData = cache.get(cacheKey);
-    if (cachedData) {
-      console.log('[Models API] ✅ Returning cached data');
-      return res.status(200).json({
-        success: true,
-        data: cachedData,
-      });
-    }
-
-    // Ensure database is initialized
-    if (!staticDatabaseManager.isReady) {
-      console.log('[Models API] 🔄 Initializing database');
-      await staticDatabaseManager.initializeDatabase();
-    }
-
-    // Fetch models from the database
-    console.log(
-      `[Models API] 📊 Fetching models for manufacturer: ${manufacturer}`
-    );
-    const models =
-      await staticDatabaseManager.getModelsByManufacturer(manufacturer);
-
-    const results: ActiveModel[] = models.map((model) => ({
-      model: model.model,
-      manufacturer: model.manufacturer,
-      count: model.count,
-      CITY: model.city || '',
-      STATE: model.state || '',
-      OWNER_TYPE: model.ownerType || '',
-      NAME: model.name || '',
-    }));
-
-    console.log(
-      `[Models API] 📋 Found ${results.length} models for ${manufacturer}`
+    // Set up timeout
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Query timeout')), API_TIMEOUT)
     );
 
-    const formattedModels = results
-      .filter((item) => item && item.model)
-      .map((model) => ({
-        model: model.model,
-        manufacturer: model.manufacturer,
-        count: model.count,
-        label: `${model.model} (${model.count} aircraft)`,
-      }));
+    // Setup actual query
+    const queryPromise = async () => {
+      console.log(`[Models API] Getting models for ${manufacturer}`);
 
-    // Cache the fetched models for future requests
-    cache.set(cacheKey, formattedModels);
+      // Get database instances
+      const staticDb = await StaticDatabaseManager.getInstance();
+      const trackingDb = await trackingDatabaseManagerPromise;
 
-    const responseTime = Date.now() - start;
-    console.log(
-      `[Models API] ✅ Request completed in ${responseTime}ms, returning ${formattedModels.length} models`
-    );
+      // Fetch models from static database first
+      const staticModels = await staticDb.getModelsByManufacturer(manufacturer);
+
+      if (!staticModels || staticModels.length === 0) {
+        return { models: [] };
+      }
+
+      // Enhance with tracking data if available
+      try {
+        const trackedAircraft =
+          await trackingDb.getTrackedAircraft(manufacturer);
+
+        // Create a map of active aircraft by model
+        const activeModelCounts = new Map();
+
+        for (const aircraft of trackedAircraft) {
+          if (!aircraft.model) continue;
+
+          const count = activeModelCounts.get(aircraft.model) || 0;
+          activeModelCounts.set(aircraft.model, count + 1);
+        }
+
+        // Update active counts on models
+        const modelsWithCounts = staticModels.map((model) => ({
+          ...model,
+          activeCount: activeModelCounts.get(model.model) || 0,
+        }));
+
+        // Sort models by active count (desc) then by name
+        const sortedModels = modelsWithCounts.sort((a, b) => {
+          const countDiff = (b.activeCount || 0) - (a.activeCount || 0);
+          return countDiff !== 0 ? countDiff : a.model.localeCompare(b.model);
+        });
+
+        return { models: sortedModels };
+      } catch (trackingError) {
+        console.error(
+          '[Models API] Failed to enhance with tracking data:',
+          trackingError
+        );
+        // Return just the static models if tracking data fails
+        return { models: staticModels };
+      }
+    };
+
+    // Race between the timeout and query
+    const result = (await Promise.race([queryPromise(), timeoutPromise])) as {
+      models: any[];
+    };
+
+    // Update cache
+    modelsCache[manufacturer] = {
+      models: result.models,
+      timestamp: Date.now(),
+    };
 
     return res.status(200).json({
       success: true,
-      data: formattedModels,
-      meta: {
-        count: formattedModels.length,
-        manufacturer,
-        responseTime,
-      },
+      models: result.models,
+      count: result.models.length,
     });
   } catch (error) {
-    console.error('[Models API] ❌ Error processing request:', error);
+    console.error('[Models API] Error:', error);
+
+    // Return cached data if available, even if expired
+    if (modelsCache[manufacturer]) {
+      return res.status(200).json({
+        success: true,
+        models: modelsCache[manufacturer].models,
+        count: modelsCache[manufacturer].models.length,
+        cached: true,
+        stale: true,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+
     return res.status(500).json({
       success: false,
-      message: 'Internal server error',
-      error: error instanceof Error ? error.message : 'Unknown error',
+      message:
+        error instanceof Error ? error.message : 'Failed to fetch models',
+      models: [],
     });
   }
 }
-
-export default withErrorHandler(handler);
