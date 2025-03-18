@@ -7,7 +7,8 @@ import sqlite3 from 'sqlite3';
 
 export class TrackingDatabaseManager extends BaseDatabaseManager {
   private static instance: TrackingDatabaseManager | null = null;
-  private static initializing: Promise<void> | null = null; // Track initialization state
+  private static initializing: Promise<TrackingDatabaseManager | null> | null =
+    null; // Track initialization state
 
   private constructor() {
     const trackingDbPath = process.env.TRACKING_DB_PATH || 'tracking.db';
@@ -25,44 +26,36 @@ export class TrackingDatabaseManager extends BaseDatabaseManager {
    * Get the singleton instance of TrackingDatabaseManager
    */
   public static async getInstance(): Promise<TrackingDatabaseManager> {
-    if (!TrackingDatabaseManager.instance) {
+    if (TrackingDatabaseManager.instance) {
+      return TrackingDatabaseManager.instance;
+    }
+
+    if (!TrackingDatabaseManager.initializing) {
       console.warn(
         '[TrackingDB] ⚠️ Database not initialized, creating new instance...'
       );
       TrackingDatabaseManager.instance = new TrackingDatabaseManager();
+      TrackingDatabaseManager.initializing = TrackingDatabaseManager.instance
+        .initializeDatabase()
+        .then(() => {
+          console.log('[TrackingDB] ✅ Database initialized successfully.');
+          return TrackingDatabaseManager.instance;
+        })
+        .catch((err) => {
+          console.error('[TrackingDB] ❌ Failed to initialize database:', err);
+          TrackingDatabaseManager.instance = null; // Ensure next call reattempts
+          throw err;
+        })
+        .finally(() => {
+          TrackingDatabaseManager.initializing = null;
+        });
     }
 
-    if (!TrackingDatabaseManager.instance.isReady) {
-      if (!TrackingDatabaseManager.initializing) {
-        console.warn('[TrackingDB] ⚠️ Database not ready, initializing...');
-        TrackingDatabaseManager.initializing = TrackingDatabaseManager.instance
-          .initializeDatabase()
-          .then(() => {
-            console.log('[TrackingDB] ✅ Database initialized successfully.');
-          })
-          .catch((err) => {
-            console.error(
-              '[TrackingDB] ❌ Failed to initialize database:',
-              err
-            );
-            throw err; // Ensure the error propagates
-          })
-          .finally(() => {
-            TrackingDatabaseManager.initializing = null;
-          });
-      }
-
-      await TrackingDatabaseManager.initializing; // Wait for initialization to finish
+    const instance = await TrackingDatabaseManager.initializing;
+    if (!instance) {
+      throw new Error('[TrackingDB] ❌ Failed to initialize database');
     }
-
-    // Final check: ensure database is fully ready before returning
-    if (!TrackingDatabaseManager.instance.isReady) {
-      throw new Error(
-        '[TrackingDB] ❌ Database failed to initialize properly.'
-      );
-    }
-
-    return TrackingDatabaseManager.instance;
+    return instance;
   }
 
   /**

@@ -1,18 +1,18 @@
-// UnifiedSelector.tsx
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import { Plus, Minus } from 'lucide-react';
 import ManufacturerSelector from './ManufacturerSelector';
 import ModelSelector from './ModelSelector';
-import { ModelProvider } from '../ModelContext';
 import { SelectOption, Aircraft } from '@/types/base';
 import { AircraftModel } from '@/types/aircraft-models';
-import { useResetState } from '../../../../hooks/useResetState';
 
+// Define the unified selector props interface
 export interface UnifiedSelectorProps {
   // Data props
   manufacturers: SelectOption[];
   selectedManufacturer: string;
   selectedModel: string;
+  models: AircraftModel[];
+  modelCounts: Record<string, number>;
   totalActive: number;
 
   // Handler props
@@ -23,6 +23,7 @@ export interface UnifiedSelectorProps {
   onReset: () => void;
   onError: (message: string) => void;
   onAircraftUpdate?: (aircraft: Aircraft[]) => void;
+  onModelsUpdate?: (models: AircraftModel[]) => void;
 
   // UI state props (optional)
   isLoading?: boolean;
@@ -37,10 +38,13 @@ const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
   setSelectedModel,
   onManufacturerSelect,
   onModelSelect,
+  models,
+  modelCounts,
   totalActive,
   onReset,
   onError,
   onAircraftUpdate,
+  onModelsUpdate,
   isLoading = false,
   trackingStatus = '',
 }) => {
@@ -50,11 +54,11 @@ const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
     useState(trackingStatus);
 
   // Update local state when props change
-  useEffect(() => {
+  React.useEffect(() => {
     setLocalIsLoading(isLoading);
   }, [isLoading]);
 
-  useEffect(() => {
+  React.useEffect(() => {
     setLocalTrackingStatus(trackingStatus);
   }, [trackingStatus]);
 
@@ -62,24 +66,6 @@ const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
   const handleToggle = useCallback(() => {
     setIsMinimized((prev) => !prev);
   }, []);
-
-  // Reset local state function for the reset hook
-  const resetLocalState = useCallback(() => {
-    // Reset any local state in UnifiedSelector if needed
-    console.log('[UnifiedSelector] Resetting local state');
-  }, []);
-
-  // Use our reset hook to handle the reset
-  const resetParentState = useCallback(async () => {
-    console.log('[UnifiedSelector] Calling parent reset');
-    onReset();
-  }, [onReset]);
-
-  const { handleReset, isResetting } = useResetState({
-    resetLocalState,
-    resetParentState,
-    onError: (error) => onError('Reset operation failed: ' + error.message),
-  });
 
   // For the minimized state, show just a button
   if (isMinimized) {
@@ -106,11 +92,10 @@ const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
         </button>
         <h2 className="text-gray-700 text-lg">Select Aircraft</h2>
         <button
-          onClick={handleReset}
-          className="px-3 py-1 bg-blue-500 text-white rounded-md hover:bg-blue-600 disabled:opacity-50"
-          disabled={localIsLoading || isResetting}
+          onClick={onReset}
+          className="px-3 py-1 bg-blue-500 text-white rounded-md hover:bg-blue-600"
         >
-          {isResetting ? 'Resetting...' : 'Reset'}
+          Reset
         </button>
       </div>
 
@@ -118,27 +103,30 @@ const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
         manufacturers={manufacturers}
         selectedManufacturer={selectedManufacturer}
         onSelect={onManufacturerSelect}
-        isLoading={localIsLoading || isResetting}
+        isLoading={localIsLoading}
         onError={onError}
       />
 
       {selectedManufacturer && (
-        <ModelProvider
-          manufacturer={selectedManufacturer}
-          onStatusChange={setLocalTrackingStatus}
-        >
-          <ModelSelector
-            onModelSelect={onModelSelect}
-            disabled={localIsLoading || isResetting}
-          />
-        </ModelProvider>
+        <ModelSelector
+          selectedModel={selectedModel}
+          setSelectedModel={setSelectedModel}
+          models={models}
+          onModelSelect={onModelSelect}
+          trackedAircraftCount={totalActive}
+          selectedManufacturer={selectedManufacturer}
+          isLoading={localIsLoading}
+          setIsLoading={setLocalIsLoading}
+          setTrackingStatus={setLocalTrackingStatus}
+          disabled={localIsLoading}
+        />
       )}
 
       {/* Show tracking status */}
       {localTrackingStatus && (
         <div className="mt-2 p-2 border rounded bg-gray-50">
           <div className="flex items-center">
-            {(localIsLoading || isResetting) && (
+            {localIsLoading && (
               <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-2"></div>
             )}
             <span className="text-sm text-gray-700">{localTrackingStatus}</span>

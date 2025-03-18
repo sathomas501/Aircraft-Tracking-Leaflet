@@ -38,7 +38,8 @@ interface DatabaseConfig {
 class StaticDatabaseManager extends BaseDatabaseManager {
   private static instance: StaticDatabaseManager | null = null;
   // Use a different property name to avoid conflict with BaseDatabaseManager
-  private static initializationPromise: Promise<void> | null = null; // Track initialization state
+  private static initializationPromise: Promise<StaticDatabaseManager | null> | null =
+    null; // Track initialization state
 
   private config: DatabaseConfig = {
     trackingDbPath: process.env.TRACKING_DB_PATH || './tracking.db',
@@ -87,7 +88,7 @@ class StaticDatabaseManager extends BaseDatabaseManager {
 
     if (!StaticDatabaseManager.instance.isReady) {
       if (!StaticDatabaseManager.initializationPromise) {
-        console.warn('[StaticDB] ⚠️ Database not ready, initializing...');
+        console.warn('[StaticDB] ⏳ Database not ready, initializing...');
         StaticDatabaseManager.initializationPromise =
           StaticDatabaseManager.instance
             .initializeDatabase()
@@ -99,14 +100,14 @@ class StaticDatabaseManager extends BaseDatabaseManager {
                 '[StaticDB] ❌ Failed to initialize database:',
                 err
               );
-              throw err; // Ensure the error propagates
+              StaticDatabaseManager.instance = null; // Prevent stuck instance
+              throw err;
             })
             .finally(() => {
               StaticDatabaseManager.initializationPromise = null;
             });
       }
-
-      await StaticDatabaseManager.initializationPromise; // Wait for initialization to finish
+      await StaticDatabaseManager.initializationPromise;
     }
 
     return StaticDatabaseManager.instance;
@@ -240,17 +241,13 @@ class StaticDatabaseManager extends BaseDatabaseManager {
     );
 
     const query = `
-    SELECT manufacturer
-    FROM (
-      SELECT 
-        TRIM(manufacturer) AS manufacturer, 
-        COUNT(*) AS count
-      FROM aircraft 
-      WHERE manufacturer IS NOT NULL 
-      AND TRIM(manufacturer) != ''
-      GROUP BY TRIM(manufacturer)
-      ORDER BY count DESC
-      LIMIT ?
+    SELECT manufacturer AS name, COUNT(*) AS count 
+FROM aircraft 
+WHERE manufacturer IS NOT NULL 
+GROUP BY manufacturer 
+HAVING count > 0
+ORDER BY count DESC
+LIMIT ?
     ) AS TopManufacturers
   `;
 
@@ -401,6 +398,10 @@ class StaticDatabaseManager extends BaseDatabaseManager {
 
     // Add a row count check
     console.log('[StaticDB] Checking aircraft table row count...');
+    const rowCount = await this.getRowCount('aircraft');
+    console.log(
+      `[BaseDatabaseManager] 📊 Aircraft table row count: ${rowCount}`
+    );
     const countQuery = await this.executeQuery<{ count: number }>(
       'SELECT COUNT(*) as count FROM aircraft'
     );
@@ -418,28 +419,20 @@ class StaticDatabaseManager extends BaseDatabaseManager {
     );
 
     try {
-      const result = await this.executeQuery<ManufacturerInfo>(
-        `SELECT name, count FROM (
-          SELECT
-            TRIM(manufacturer) AS name,
-            COUNT(*) AS count
-          FROM aircraft
-          WHERE manufacturer IS NOT NULL
-          AND TRIM(manufacturer) != ''
-          GROUP BY TRIM(manufacturer)
-          HAVING count > 0
-          ORDER BY count DESC
-          LIMIT ?
-        ) AS TopManufacturers
-        ORDER BY name ASC`,
-        [limit]
-      );
+      const query = `
+  SELECT manufacturer, COUNT(*) AS count 
+  FROM aircraft 
+  WHERE manufacturer IS NOT NULL 
+  GROUP BY manufacturer 
+  HAVING count > 0
+  ORDER BY count DESC
+  LIMIT ?;
+`;
 
-      const manufacturers = result.filter((m) => m.name && m.count);
-      await this.manufacturerListCache.set(
-        this.MANUFACTURER_LIST_CACHE_KEY,
-        manufacturers
-      );
+      const manufacturers = await this.executeQuery<ManufacturerInfo>(query, [
+        limit,
+      ]);
+
       console.log(`[StaticDB] Cached ${manufacturers.length} manufacturers`);
 
       return manufacturers;

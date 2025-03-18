@@ -3,6 +3,7 @@ import { SelectOption, Aircraft } from '../types/base';
 import { AircraftModel } from '../types/aircraft-models';
 import { aircraftTrackingClient } from '../lib/services/tracking-services/aircraft-tracking-client';
 import { icao24CacheService } from '@/lib/services/icao24Cache';
+import axios from 'axios';
 
 // Global shared request cache for deduplication
 const inFlightRequests = new Map<string, Promise<any>>();
@@ -223,7 +224,10 @@ export function useAircraft({
           async () => {
             const res = await fetch('/api/aircraft/models', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: {
+                'Content-Type': 'application/json',
+                'X-Source-Module': 'useAircraftSelector', // ✅ Added tracking header
+              },
               body: JSON.stringify({ manufacturer }),
             });
 
@@ -286,7 +290,10 @@ export function useAircraft({
           async () => {
             const response = await fetch('/api/aircraft/track', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: {
+                'Content-Type': 'application/json',
+                'X-Source-Module': 'useAircraftSelector', // ✅ Added tracking header
+              },
               body: JSON.stringify({ manufacturer }),
               signal: abortControllerRef.current?.signal,
             });
@@ -456,7 +463,6 @@ export function useAircraft({
     [fetchLivePositions, pollInterval, autoPolling]
   );
 
-  // 7. Subscribe to tracked aircraft client
   // 7. Subscribe to tracked aircraft client
   const subscribeToClient = useCallback(
     async (manufacturer: string | null) => {

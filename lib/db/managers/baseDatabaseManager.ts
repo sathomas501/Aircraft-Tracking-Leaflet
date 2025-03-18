@@ -137,19 +137,39 @@ export abstract class BaseDatabaseManager {
   private async ensureDatabaseDirectory(dbDir: string): Promise<void> {
     await loadModules(); // Ensure modules are loaded
 
-    if (fs && !fs.existsSync(dbDir)) {
+    if (typeof window !== 'undefined') {
       console.warn(
-        `[BaseDatabaseManager] 📁 Creating missing database directory: ${dbDir}`
+        '[BaseDatabaseManager] ❌ File system access not allowed in browser.'
       );
-      fs.mkdirSync(dbDir, { recursive: true });
+      return; // Skip execution in browser environments
     }
 
-    // Ensure database file exists before opening (prevents `SQLITE_CANTOPEN`)
-    if (fs && !fs.existsSync(this.dbPath)) {
-      console.warn(
-        `[BaseDatabaseManager] ⚠️ Database file not found, creating: ${this.dbPath}`
+    try {
+      // ✅ Check if the directory exists
+      if (fs && !fs.existsSync(dbDir)) {
+        console.warn(
+          `[BaseDatabaseManager] 📁 Creating missing database directory: ${dbDir}`
+        );
+        fs.mkdirSync(dbDir, { recursive: true });
+      }
+
+      // ✅ Check if the database file exists
+      if (fs && !fs.existsSync(this.dbPath)) {
+        console.warn(
+          `[BaseDatabaseManager] ⚠️ Database file not found: ${this.dbPath}`
+        );
+        console.error(
+          '[BaseDatabaseManager] ❌ SQLite database must be pre-created.'
+        );
+        throw new Error(
+          'Database file is missing. It must be manually created.'
+        );
+      }
+    } catch (error) {
+      console.error('[BaseDatabaseManager] ❌ FS Error:', error);
+      throw new Error(
+        'Database initialization failed due to file system restrictions.'
       );
-      fs.writeFileSync(this.dbPath, ''); // Create an empty file
     }
   }
 
@@ -185,31 +205,32 @@ export abstract class BaseDatabaseManager {
    * Initialize the database with built-in deduplication
    */
   public async initializeDatabase(): Promise<void> {
-    // If we're already initialized, return immediately
     if (this._isInitialized && this.db) {
       return;
     }
 
-    // If we have an ongoing initialization, return that promise
     if (this.initializationPromise) {
+      console.log(
+        `[BaseDatabaseManager] ⏳ Waiting for initialization to complete...`
+      );
       return this.initializationPromise;
     }
 
-    // Check if there's a global initialization for this database path
-    const existingInitialization =
-      BaseDatabaseManager.initializingDatabases.get(this.dbPath);
+    let existingInitialization = BaseDatabaseManager.initializingDatabases.get(
+      this.dbPath
+    );
     if (existingInitialization) {
       console.log(
-        `[BaseDatabaseManager] ⏳ Waiting for existing initialization of ${this.dbPath}`
+        `[BaseDatabaseManager] ⏳ Using existing initialization of ${this.dbPath}`
       );
-      this.initializationPromise = existingInitialization;
       return existingInitialization;
     }
 
-    // Create a new initialization promise
-    this.initializationPromise = this.performInitialization();
+    console.log(
+      `[BaseDatabaseManager] 🔄 Starting database initialization: ${this.dbPath}`
+    );
 
-    // Add to global tracking
+    this.initializationPromise = this.performInitialization();
     BaseDatabaseManager.initializingDatabases.set(
       this.dbPath,
       this.initializationPromise
@@ -217,13 +238,22 @@ export abstract class BaseDatabaseManager {
 
     try {
       await this.initializationPromise;
+      this._isInitialized = true;
+      console.log(
+        `[BaseDatabaseManager] ✅ Database successfully initialized.`
+      );
+    } catch (error) {
+      console.error(
+        '[BaseDatabaseManager] ❌ Database initialization failed:',
+        error
+      );
+      this._isInitialized = false;
+      this.db = null;
+      throw error;
     } finally {
-      // Remove from global tracking when done (success or failure)
       BaseDatabaseManager.initializingDatabases.delete(this.dbPath);
       this.initializationPromise = null;
     }
-
-    return;
   }
 
   /**
@@ -231,7 +261,6 @@ export abstract class BaseDatabaseManager {
    */
   protected async performInitialization(): Promise<void> {
     try {
-      // Ensure modules are loaded
       await loadModules();
 
       if (!sqlite3Instance || !sqlite) {
@@ -242,7 +271,6 @@ export abstract class BaseDatabaseManager {
         `[BaseDatabaseManager] 🔄 Initializing database at: ${this.dbPath}`
       );
 
-      // Ensure database file exists
       await this.ensureDatabaseDirectory(path.dirname(this.dbPath));
 
       this.db = await sqlite.open({
@@ -250,12 +278,17 @@ export abstract class BaseDatabaseManager {
         driver: sqlite3Instance.Database,
       });
 
-      // Ensure SQLite is ready
+      // ✅ Enable WAL mode and timeout
       await this.db.run('PRAGMA journal_mode = WAL;');
-      await this.db.run('PRAGMA busy_timeout = 5000;');
+      await this.db.run('PRAGMA busy_timeout = 30000;');
+      console.log(
+        '[BaseDatabaseManager] ✅ WAL mode enabled and busy timeout set to 30s'
+      );
 
-      // Create the necessary tables
+      // ✅ Wrap table creation in a transaction
+      await this.db.run('BEGIN TRANSACTION;');
       await this.createTables();
+      await this.db.run('COMMIT;');
 
       console.log(
         `[BaseDatabaseManager] ✅ Database initialized at: ${this.dbPath}`
@@ -266,8 +299,7 @@ export abstract class BaseDatabaseManager {
 
       if ((error as any).code === 'SQLITE_CANTOPEN') {
         console.error(
-          `[BaseDatabaseManager] 🚨 Unable to open database file: ${this.dbPath}. 
-           Make sure the path is correct and accessible.`
+          `[BaseDatabaseManager] 🚨 Unable to open database file: ${this.dbPath}. Make sure the path is correct and accessible.`
         );
       }
 
@@ -311,14 +343,44 @@ export abstract class BaseDatabaseManager {
    * @param params Optional parameters for the query
    * @returns Array of results of type T
    */
-  public async executeQuery<T extends object>(
-    query: string,
-    params: any[] = []
-  ): Promise<T[]> {
-    const db = await this.ensureInitialized();
+  async executeQuery<T>(sql: string, params: any[] = []): Promise<T[]> {
+    if (!this.db) {
+      throw new Error(
+        '[BaseDatabaseManager] ❌ Database connection is not initialized'
+      );
+    }
 
-    // Using await unwraps the Promise, giving us T[] directly
-    return (await db.all(query, params)) as T[];
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        console.error(
+          `[BaseDatabaseManager] ❌ Query timeout exceeded: ${sql}`
+        );
+        reject(new Error('Query timeout exceeded'));
+      }, 5000); // ✅ Increase timeout to 5s
+
+      interface QueryResultRow {
+        [key: string]: any;
+      }
+
+      interface QueryError extends Error {
+        code?: string;
+      }
+
+      this.db!.all<QueryResultRow[]>(
+        sql,
+        params,
+        (err: QueryError | null, rows: QueryResultRow[]) => {
+          clearTimeout(timeout);
+          if (err) {
+            console.error(
+              `[BaseDatabaseManager] ❌ Query error: ${err.message}`
+            );
+            return reject(err);
+          }
+          resolve(rows as T[]);
+        }
+      );
+    });
   }
 
   /**
@@ -383,6 +445,28 @@ export abstract class BaseDatabaseManager {
     const db = await this.ensureInitialized();
     // await unwraps the Promise, giving us T | undefined directly
     return (await db.get(query, params)) as T | undefined;
+  }
+
+  public async getRowCount(tableName: string): Promise<number> {
+    if (!this.db) {
+      throw new Error('[BaseDatabaseManager] ❌ Database not initialized');
+    }
+
+    try {
+      // ✅ Use SQLite's metadata instead of COUNT(*)
+      const result = await this.executeQuery<{ count: number }>(
+        `SELECT (SELECT seq FROM sqlite_sequence WHERE name = ?) AS count`,
+        [tableName]
+      );
+
+      return result[0]?.count || 0; // ✅ Returns estimated row count
+    } catch (error) {
+      console.error(
+        `[BaseDatabaseManager] ❌ Failed to get row count for ${tableName}:`,
+        error
+      );
+      return 0; // ✅ Prevents failure if the query fails
+    }
   }
 
   /**

@@ -49,25 +49,20 @@ export const ManufacturerSelector: React.FC<ManufacturerSelectorProps> = ({
   }, [selectedManufacturer, manufacturers]);
 
   const handleManufacturerSelect = async (manufacturerValue: string) => {
-    try {
-      setIsSelecting(true);
-      setIsOpen(false);
+    if (isSelecting) return; // Prevent redundant selections
+    setIsSelecting(true);
 
+    try {
       console.log(`🔹 Manufacturer selected: ${manufacturerValue}`);
 
-      // Fetch ICAOs from static database
+      // Fetch ICAOs but only proceed if results are new
       const response = await fetch('/api/getIcaos', {
         method: 'POST',
         body: JSON.stringify({ manufacturer: manufacturerValue }),
         headers: { 'Content-Type': 'application/json' },
       });
 
-      if (!response.ok) {
-        console.error('❌ Error fetching ICAO24s');
-        onError?.('Failed to fetch ICAO24s');
-        return;
-      }
-
+      if (!response.ok) throw new Error('❌ Error fetching ICAO24s');
       const { icao24s, staticAircraftList } = await response.json();
 
       if (!icao24s.length) {
@@ -75,18 +70,15 @@ export const ManufacturerSelector: React.FC<ManufacturerSelectorProps> = ({
         return;
       }
 
-      // Cache static aircraft details while waiting for OpenSky data
-      TrackingService.cacheStaticAircraft(staticAircraftList);
+      if (TrackingService.hasCached(icao24s)) {
+        console.log('🟢 Using cached data, skipping OpenSky API call.');
+      } else {
+        await useOpenSkyData(icao24s); // Fetch tracking data only if necessary
+      }
 
-      console.log(`✅ Cached ${staticAircraftList.length} static aircraft.`);
-
-      // Fetch live tracking data from OpenSky
-      await useOpenSkyData(icao24s);
-
-      // Call the parent component's onSelect handler
       await onSelect(manufacturerValue);
     } catch (error) {
-      console.error(`❌ Error during manufacturer selection:`, error);
+      console.error(`❌ Error during selection:`, error);
       onError?.('Failed to select manufacturer');
     } finally {
       setIsSelecting(false);
