@@ -1,141 +1,109 @@
-import { NextApiRequest, NextApiResponse } from 'next';
-import { StaticDatabaseManager } from '@/lib/db/managers/staticDatabaseManager';
-import { withErrorHandler } from '@/lib/middleware/error-handler';
-import type { SelectOption } from '@/types/base';
+// pages/api/aircraft/manufacturers.ts
+import type { NextApiRequest, NextApiResponse } from 'next';
+import { SelectOption } from '@/types/base';
+import dbManager from '../../../lib/db/DatabaseManager';
 
-interface ManufacturersResponse {
-  success: boolean;
-  manufacturers: SelectOption[];
-  cached?: boolean;
-  stale?: boolean;
-  error?: string;
-  message?: string;
-}
-
-// ✅ Cache settings
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
-const QUERY_TIMEOUT = 15000; // 15 seconds
-
-// ✅ Global cache state
-let manufacturersCache: SelectOption[] = [];
-let cacheTimestamp: number = 0;
-let cacheInProgress: Promise<SelectOption[]> | null = null;
-
-async function manufacturersHandler(
+export default async function handler(
   req: NextApiRequest,
-  res: NextApiResponse<ManufacturersResponse>
+  res: NextApiResponse
 ) {
-  console.log('[Manufacturers API] 📡 Received request');
-
-  if (req.method !== 'POST') {
-    return res.status(405).json({
-      success: false,
-      manufacturers: [],
-      message: 'Method Not Allowed. Use POST instead.',
-    });
-  }
-
-  const now = Date.now();
-  const cacheAge = now - cacheTimestamp;
-  const cacheIsFresh = cacheAge < CACHE_TTL;
-
-  // ✅ Return cache immediately if fresh
-  if (manufacturersCache.length > 0 && cacheIsFresh) {
-    console.log(
-      `[Manufacturers API] ✅ Using fresh cache (${cacheAge / 1000}s old)`
-    );
-    return res.status(200).json({
-      success: true,
-      manufacturers: manufacturersCache,
-      cached: true,
-      message: `Returning ${manufacturersCache.length} manufacturers from cache`,
-    });
-  }
-
-  // ✅ Piggyback on ongoing request
-  if (cacheInProgress) {
-    console.log('[Manufacturers API] ⏳ Piggybacking on existing request');
-    try {
-      const piggybackedData = await cacheInProgress;
-      return res.status(200).json({
-        success: true,
-        manufacturers: piggybackedData,
-        cached: true,
-        message: `Piggybacked request successful`,
-      });
-    } catch (error) {
-      console.error(
-        '[Manufacturers API] ❌ Piggybacking failed, retrying:',
-        error
-      );
-    }
-  }
-
-  // ✅ Start a new fetch operation
-  console.log('[Manufacturers API] 🔄 Fetching manufacturers from Static DB');
-  cacheInProgress = fetchManufacturersFromDB();
+  console.log('[API] Manufacturers endpoint called with method:', req.method);
 
   try {
-    const manufacturers = await cacheInProgress;
-    return res.status(200).json({
-      success: true,
-      manufacturers,
-      message: `Successfully fetched ${manufacturers.length} manufacturers`,
-    });
-  } catch (error) {
-    console.error(
-      '[Manufacturers API] ❌ Failed to fetch manufacturers:',
-      error
-    );
-    return res.status(500).json({
-      success: false,
-      manufacturers: [],
-      error: error instanceof Error ? error.message : 'Unknown error',
-      message: 'Failed to fetch manufacturers',
-    });
-  } finally {
-    cacheInProgress = null;
-    console.log('[Manufacturers API] 🔄 Cleared cache in-progress flag');
-  }
-}
+    // Check database connection first
+    console.log('[API] Checking database connection...');
+    await dbManager.initialize();
+    console.log('[API] Database initialized successfully');
 
-/**
- * ✅ Fetches manufacturers from Static DB using BaseDatabaseManager
- */
-async function fetchManufacturersFromDB(): Promise<SelectOption[]> {
-  try {
-    const staticDb = await StaticDatabaseManager.getInstance();
+    // Get top 50 manufacturers by aircraft count
+    console.log('[API] Fetching manufacturers...');
 
-    console.log(
-      '[Manufacturers API] 🔍 Querying Static DB for top manufacturers...'
-    );
-    const result = await staticDb.query(`
-      SELECT manufacturer AS name, COUNT(*) as count
-      FROM aircraft
-      GROUP BY manufacturer
-      ORDER BY count DESC
+    // Use a simpler query with explicit column name targeting
+    const query = `
+      SELECT 
+        manufacturer AS name, 
+        COUNT(*) AS count 
+      FROM aircraft 
+      WHERE manufacturer IS NOT NULL 
+      GROUP BY manufacturer 
+      HAVING count > 0 
+      ORDER BY count DESC 
       LIMIT 50
-    `);
+    `;
 
-    // ✅ Convert DB result to SelectOptions
-    manufacturersCache = result.map((m: { name: string; count: number }) => ({
-      value: m.name,
-      label: `${m.name} (${m.count} aircraft)`,
-    }));
+    console.log('[API] Executing query:', query);
 
-    cacheTimestamp = Date.now();
-    console.log(
-      `[Manufacturers API] ✅ Cached ${manufacturersCache.length} manufacturers`
+    // 1. First check for empty table
+    const countQuery = await dbManager.query(
+      'aircraft-count',
+      'SELECT COUNT(*) as count FROM aircraft',
+      [],
+      0
+    );
+    const tableCount =
+      countQuery.length > 0 ? (countQuery[0] as any).count || 0 : 0;
+
+    console.log('[API] Aircraft table has', tableCount, 'records');
+
+    if (tableCount === 0) {
+      console.log('[API] Aircraft table is empty, returning empty result');
+      return res.status(200).json([]);
+    }
+
+    // 2. Execute the manufacturers query
+    const manufacturers = await dbManager.query(
+      'manufacturers-direct',
+      query,
+      [],
+      0
+    );
+    console.log('[API] Query returned', manufacturers.length, 'results');
+
+    // Log a sample of the results
+    if (manufacturers.length > 0) {
+      console.log('[API] Sample results:', manufacturers.slice(0, 3));
+    }
+
+    // Format for the UI
+    const formattedManufacturers: SelectOption[] = manufacturers.map(
+      (m: any) => ({
+        value: m.name as string,
+        label: `${m.name as string} (${m.count as number} aircraft)`,
+      })
     );
 
-    return manufacturersCache;
+    return res.status(200).json(formattedManufacturers);
   } catch (error) {
-    console.error(
-      '[Manufacturers API] ❌ Error fetching from Static DB:',
-      error
-    );
-    throw new Error('Database query failed');
+    console.error('[API] Error fetching manufacturers:', error);
+
+    // Check database tables
+    try {
+      console.log('[API] Checking database tables...');
+      const tables = await dbManager.query(
+        'db-tables',
+        "SELECT name FROM sqlite_master WHERE type='table'",
+        [],
+        0
+      );
+      console.log('[API] Database tables:', tables);
+
+      // If aircraft table exists, check schema
+      if (tables.some((t: any) => t.name === 'aircraft')) {
+        const schemaResult = await dbManager.query(
+          'aircraft-schema',
+          'PRAGMA table_info(aircraft)',
+          [],
+          0
+        );
+        console.log('[API] Aircraft table schema:', schemaResult);
+      }
+    } catch (tableError) {
+      console.error('[API] Error checking tables:', tableError);
+    }
+
+    return res.status(500).json({
+      error: 'Failed to fetch manufacturers',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
   }
 }
-
-export default withErrorHandler(manufacturersHandler);

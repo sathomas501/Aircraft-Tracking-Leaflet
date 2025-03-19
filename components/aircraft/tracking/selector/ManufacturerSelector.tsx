@@ -1,118 +1,37 @@
-import React, {
-  useState,
-  useRef,
-  useEffect,
-  useMemo,
-  useCallback,
-} from 'react';
+// SimplifiedManufacturerSelector.tsx
+import React, { useState, useRef, useEffect } from 'react';
 import { SelectOption } from '@/types/base';
-import { useTrackedAircraft } from '../../../../hooks/useTrackedAircraft';
-import TrackingService from '../../../../lib/services/managers/tracking-service-cache';
-import { useOpenSkyData } from '@/hooks/useOpenSkyData';
 
 interface ManufacturerSelectorProps {
   manufacturers: SelectOption[];
   selectedManufacturer: string | null;
-  onSelect: (manufacturer: string | null) => void; // Accept null
-  isLoading: boolean;
-  onError?: (message: string) => void;
+  onSelect: (manufacturer: string | null) => void;
+  isLoading?: boolean;
 }
 
-export const ManufacturerSelector: React.FC<ManufacturerSelectorProps> = ({
+const ManufacturerSelector: React.FC<ManufacturerSelectorProps> = ({
   manufacturers,
   selectedManufacturer,
   onSelect,
   isLoading = false,
-  onError,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [isOpen, setIsOpen] = useState(false);
-  const [isSelecting, setIsSelecting] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const [isResetting, setIsResetting] = useState(false);
 
-  const { startTracking, loadAircraft } =
-    useTrackedAircraft(selectedManufacturer);
-
-  // Update displayed manufacturer in the input when selectedManufacturer changes
+  // Update search term when selection changes
   useEffect(() => {
     if (selectedManufacturer) {
-      const selectedOption = manufacturers.find(
+      const selected = manufacturers.find(
         (m) => m.value === selectedManufacturer
       );
-      if (selectedOption) {
-        setSearchTerm(selectedOption.label);
-      }
+      if (selected) setSearchTerm(selected.label);
     } else {
       setSearchTerm('');
     }
   }, [selectedManufacturer, manufacturers]);
 
-  const handleManufacturerSelect = async (manufacturerValue: string) => {
-    if (isSelecting) return; // Prevent redundant selections
-    setIsSelecting(true);
-
-    try {
-      console.log(`🔹 Manufacturer selected: ${manufacturerValue}`);
-
-      // Fetch ICAOs but only proceed if results are new
-      const response = await fetch('/api/getIcaos', {
-        method: 'POST',
-        body: JSON.stringify({ manufacturer: manufacturerValue }),
-        headers: { 'Content-Type': 'application/json' },
-      });
-
-      if (!response.ok) throw new Error('❌ Error fetching ICAO24s');
-      const { icao24s, staticAircraftList } = await response.json();
-
-      if (!icao24s.length) {
-        console.warn('⚠️ No ICAOs found for this manufacturer.');
-        return;
-      }
-
-      if (TrackingService.hasCached(icao24s)) {
-        console.log('🟢 Using cached data, skipping OpenSky API call.');
-      } else {
-        await useOpenSkyData(icao24s); // Fetch tracking data only if necessary
-      }
-
-      await onSelect(manufacturerValue);
-    } catch (error) {
-      console.error(`❌ Error during selection:`, error);
-      onError?.('Failed to select manufacturer');
-    } finally {
-      setIsSelecting(false);
-    }
-  };
-
-  const resetLocalState = useCallback(() => {
-    setSearchTerm('');
-    setIsOpen(false);
-  }, []);
-
-  const resetParentState = useCallback(async () => {
-    return await onSelect(null);
-  }, [onSelect]);
-
-  const handleReset = async () => {
-    try {
-      console.log('[ManufacturerSelector] Resetting manufacturer selection...');
-      setIsSelecting(true);
-      setSearchTerm('');
-      setIsOpen(false);
-
-      // Call the parent onSelect with null to reset
-      await onSelect(null);
-      console.log('[ManufacturerSelector] Reset completed');
-    } catch (error) {
-      console.error('[ManufacturerSelector] Failed to reset:', error);
-      if (onError) onError('Failed to reset selection');
-    } finally {
-      setIsSelecting(false);
-    }
-  };
-
-  // Close dropdown when clicking outside
+  // Handle clicks outside the dropdown
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (
@@ -128,12 +47,8 @@ export const ManufacturerSelector: React.FC<ManufacturerSelectorProps> = ({
   }, []);
 
   // Filter manufacturers based on search term
-  const filteredManufacturers = useMemo(
-    () =>
-      manufacturers.filter((manufacturer: SelectOption) =>
-        manufacturer.label.toLowerCase().includes(searchTerm.toLowerCase())
-      ),
-    [manufacturers, searchTerm]
+  const filteredManufacturers = manufacturers.filter((manufacturer) =>
+    manufacturer.label.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   return (
@@ -145,6 +60,7 @@ export const ManufacturerSelector: React.FC<ManufacturerSelectorProps> = ({
         Manufacturer
         {isLoading && <span className="text-blue-500 ml-2">(Loading...)</span>}
       </label>
+
       <input
         id="manufacturer-input"
         type="text"
@@ -153,7 +69,7 @@ export const ManufacturerSelector: React.FC<ManufacturerSelectorProps> = ({
         value={searchTerm}
         onChange={(e) => setSearchTerm(e.target.value)}
         onFocus={() => setIsOpen(true)}
-        disabled={isSelecting || isLoading}
+        disabled={isLoading}
       />
 
       {isOpen && filteredManufacturers.length > 0 && (
@@ -161,13 +77,15 @@ export const ManufacturerSelector: React.FC<ManufacturerSelectorProps> = ({
           {filteredManufacturers.map((manufacturer) => (
             <div
               key={manufacturer.value}
-              className={`px-4 py-2 hover:bg-gray-200 cursor-pointer ${
-                isSelecting || isLoading ? 'opacity-50' : ''
-              } ${selectedManufacturer === manufacturer.value ? 'bg-blue-100' : ''}`}
-              onClick={() =>
-                !(isSelecting || isLoading) &&
-                handleManufacturerSelect(manufacturer.value)
-              }
+              className={`px-4 py-2 hover:bg-gray-200 cursor-pointer 
+                ${isLoading ? 'opacity-50' : ''} 
+                ${selectedManufacturer === manufacturer.value ? 'bg-blue-100' : ''}`}
+              onClick={() => {
+                if (!isLoading) {
+                  onSelect(manufacturer.value);
+                  setIsOpen(false);
+                }
+              }}
             >
               {manufacturer.label}
             </div>
@@ -177,12 +95,12 @@ export const ManufacturerSelector: React.FC<ManufacturerSelectorProps> = ({
 
       {selectedManufacturer && (
         <button
-          onClick={handleReset}
+          onClick={() => onSelect(null)}
           className="mt-2 px-3 py-1 bg-red-500 text-white rounded-md hover:bg-red-600 disabled:opacity-50"
           type="button"
-          disabled={isSelecting || isLoading || isResetting}
+          disabled={isLoading}
         >
-          {isResetting ? 'Resetting...' : 'Reset'}
+          Clear
         </button>
       )}
     </div>

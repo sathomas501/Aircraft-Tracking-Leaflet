@@ -1,77 +1,110 @@
-import React, { useState, useCallback } from 'react';
+// SimplifiedUnifiedSelector.tsx
+import React, { useState, useEffect } from 'react';
 import { Plus, Minus } from 'lucide-react';
 import ManufacturerSelector from './ManufacturerSelector';
 import ModelSelector from './ModelSelector';
-import { SelectOption, Aircraft } from '@/types/base';
+import { SelectOption } from '@/types/base';
 import { AircraftModel } from '@/types/aircraft-models';
 
-// Define the unified selector props interface
-export interface UnifiedSelectorProps {
-  // Data props
+interface UnifiedSelectorProps {
   manufacturers: SelectOption[];
-  selectedManufacturer: string;
-  selectedModel: string;
-  models: AircraftModel[];
-  modelCounts: Record<string, number>;
-  totalActive: number;
-
-  // Handler props
-  setSelectedManufacturer: (manufacturer: string | null) => void;
-  setSelectedModel: (model: string | null) => void;
   onManufacturerSelect: (manufacturer: string | null) => Promise<void>;
   onModelSelect: (model: string | null) => void;
   onReset: () => void;
-  onError: (message: string) => void;
-  onAircraftUpdate?: (aircraft: Aircraft[]) => void;
-  onModelsUpdate?: (models: AircraftModel[]) => void;
-
-  // UI state props (optional)
+  totalActive?: number;
   isLoading?: boolean;
-  trackingStatus?: string;
 }
 
 const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
   manufacturers,
-  selectedManufacturer,
-  selectedModel,
-  setSelectedManufacturer,
-  setSelectedModel,
   onManufacturerSelect,
   onModelSelect,
-  models,
-  modelCounts,
-  totalActive,
   onReset,
-  onError,
-  onAircraftUpdate,
-  onModelsUpdate,
+  totalActive = 0,
   isLoading = false,
-  trackingStatus = '',
 }) => {
   const [isMinimized, setIsMinimized] = useState(false);
-  const [localIsLoading, setLocalIsLoading] = useState(isLoading);
-  const [localTrackingStatus, setLocalTrackingStatus] =
-    useState(trackingStatus);
+  const [selectedManufacturer, setSelectedManufacturer] = useState<
+    string | null
+  >(null);
+  const [selectedModel, setSelectedModel] = useState<string | null>(null);
+  const [models, setModels] = useState<AircraftModel[]>([]);
+  const [loadingModels, setLoadingModels] = useState(false);
+  const [status, setStatus] = useState('');
 
-  // Update local state when props change
-  React.useEffect(() => {
-    setLocalIsLoading(isLoading);
-  }, [isLoading]);
+  // Load models when manufacturer changes
+  useEffect(() => {
+    const fetchModels = async () => {
+      if (!selectedManufacturer) {
+        setModels([]);
+        return;
+      }
 
-  React.useEffect(() => {
-    setLocalTrackingStatus(trackingStatus);
-  }, [trackingStatus]);
+      setLoadingModels(true);
+      try {
+        const response = await fetch('/api/aircraft/models', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            manufacturer: selectedManufacturer,
+            refresh: true, // Optional, if needed
+          }),
+        });
 
-  // Simply toggle the minimized state
-  const handleToggle = useCallback(() => {
-    setIsMinimized((prev) => !prev);
-  }, []);
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`Failed to fetch models: ${errorText}`);
+        }
+
+        const data = await response.json();
+        setModels(data.models || []);
+        setStatus(`Loaded ${data.models.length} models`);
+      } catch (error) {
+        setStatus('Failed to load models');
+        console.error('Fetch error:', error);
+      } finally {
+        setLoadingModels(false);
+      }
+    };
+
+    fetchModels();
+  }, [selectedManufacturer]);
+
+  // Handle manufacturer selection
+  const handleManufacturerSelect = async (manufacturer: string | null) => {
+    setSelectedManufacturer(manufacturer);
+    setSelectedModel(null);
+
+    if (manufacturer) {
+      try {
+        await onManufacturerSelect(manufacturer);
+      } catch (error) {
+        console.error('Error selecting manufacturer:', error);
+      }
+    }
+  };
+
+  // Handle model selection
+  const handleModelSelect = (model: string | null) => {
+    setSelectedModel(model);
+    onModelSelect(model);
+  };
+
+  // Handle reset
+  const handleReset = () => {
+    setSelectedManufacturer(null);
+    setSelectedModel(null);
+    setModels([]);
+    onReset();
+  };
 
   // For the minimized state, show just a button
   if (isMinimized) {
     return (
       <button
-        onClick={handleToggle}
+        onClick={() => setIsMinimized(false)}
         className="absolute top-4 left-4 z-[3000] p-2 bg-white rounded-md shadow-lg hover:bg-gray-200"
         aria-label="Expand aircraft selector"
       >
@@ -80,11 +113,14 @@ const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
     );
   }
 
+  // Calculate loading state
+  const currentlyLoading = isLoading || loadingModels;
+
   return (
     <div className="bg-white rounded-lg shadow-lg p-4 w-[320px] absolute top-4 left-4 z-[3000]">
       <div className="flex justify-between items-center mb-2">
         <button
-          onClick={handleToggle}
+          onClick={() => setIsMinimized(true)}
           className="p-1 bg-gray-200 rounded-md mr-2 hover:bg-gray-300"
           aria-label="Minimize aircraft selector"
         >
@@ -92,8 +128,9 @@ const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
         </button>
         <h2 className="text-gray-700 text-lg">Select Aircraft</h2>
         <button
-          onClick={onReset}
+          onClick={handleReset}
           className="px-3 py-1 bg-blue-500 text-white rounded-md hover:bg-blue-600"
+          disabled={currentlyLoading}
         >
           Reset
         </button>
@@ -102,34 +139,34 @@ const UnifiedSelector: React.FC<UnifiedSelectorProps> = ({
       <ManufacturerSelector
         manufacturers={manufacturers}
         selectedManufacturer={selectedManufacturer}
-        onSelect={onManufacturerSelect}
-        isLoading={localIsLoading}
-        onError={onError}
+        onSelect={handleManufacturerSelect}
+        isLoading={currentlyLoading}
       />
 
       {selectedManufacturer && (
         <ModelSelector
-          selectedModel={selectedModel}
-          setSelectedModel={setSelectedModel}
           models={models}
-          onModelSelect={onModelSelect}
-          trackedAircraftCount={totalActive}
-          selectedManufacturer={selectedManufacturer}
-          isLoading={localIsLoading}
-          setIsLoading={setLocalIsLoading}
-          setTrackingStatus={setLocalTrackingStatus}
-          disabled={localIsLoading}
+          selectedModel={selectedModel}
+          onModelSelect={handleModelSelect}
+          isLoading={currentlyLoading}
+          totalActive={totalActive}
+          totalInactive={
+            models.reduce(
+              (sum, model) => sum + (model.totalCount || model.count || 0),
+              0
+            ) - totalActive
+          }
         />
       )}
 
-      {/* Show tracking status */}
-      {localTrackingStatus && (
+      {/* Show status */}
+      {status && (
         <div className="mt-2 p-2 border rounded bg-gray-50">
           <div className="flex items-center">
-            {localIsLoading && (
+            {currentlyLoading && (
               <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-2"></div>
             )}
-            <span className="text-sm text-gray-700">{localTrackingStatus}</span>
+            <span className="text-sm text-gray-700">{status}</span>
           </div>
         </div>
       )}

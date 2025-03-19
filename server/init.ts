@@ -1,7 +1,5 @@
 // server/init.ts
-import { CleanupService } from '../lib/services/CleanupService';
-import initializeAircraftCache from '../lib/services/managers/unified-cache-system';
-import BackendDatabaseManager from '../lib/db/backendDatabaseManager';
+
 import databaseManager from '../lib/db/databaseManager';
 import {
   errorHandler,
@@ -16,14 +14,10 @@ async function initializeDatabases() {
 
   try {
     // Initialize static database first
-    await databaseManager.initializeDatabase();
+    await databaseManager.initialize();
     console.log('[Init] ✅ Static database initialized');
 
-    // Then initialize tracking database
-    const trackingDb = await BackendDatabaseManager.getInstance();
-    console.log('[Init] ✅ Tracking database initialized');
-
-    return { staticDb: databaseManager, trackingDb };
+    return { staticDb: databaseManager };
   } catch (error) {
     console.error('[Init] ❌ Database initialization failed:', error);
     errorHandler.handleError(
@@ -48,31 +42,18 @@ function createInitPromise() {
       return;
     }
 
-    let dbs:
-      | { staticDb: typeof databaseManager; trackingDb: BackendDatabaseManager }
-      | undefined;
+    let dbs: { staticDb: typeof databaseManager } | undefined;
 
     try {
       // Step 1: Initialize databases
       dbs = await initializeDatabases();
-
-      // Step 2: Initialize aircraft cache
-      console.log('[Init] 🔄 Initializing aircraft cache...');
-      await initializeAircraftCache();
-      console.log('[Init] ✅ Aircraft cache initialized');
-
-      // Step 3: Initialize cleanup service
-      console.log('[Init] 🔄 Initializing cleanup service...');
-      const cleanupService = CleanupService.getInstance();
-      await cleanupService.initialize();
-      console.log('[Init] ✅ Cleanup service initialized');
 
       // Mark services as initialized
       isInitialized = true;
       console.log('[Init] ✅ All services initialized successfully');
 
       // Setup shutdown handlers
-      setupShutdown(cleanupService, dbs.staticDb, dbs.trackingDb);
+      setupShutdown(dbs.staticDb);
     } catch (error) {
       console.error('[Init] ❌ Initialization failed:', error);
       errorHandler.handleError(
@@ -98,11 +79,7 @@ export async function initializeApp() {
   return createInitPromise();
 }
 
-function setupShutdown(
-  cleanupService: CleanupService,
-  staticDb: typeof databaseManager,
-  trackingDb: BackendDatabaseManager
-) {
+function setupShutdown(staticDb: typeof databaseManager) {
   if (typeof window !== 'undefined') return;
 
   const shutdown = async (signal: string) => {
@@ -116,14 +93,9 @@ function setupShutdown(
     }, 10000); // 10 seconds timeout
 
     try {
-      // Run final cleanup
-      console.log('[Shutdown] 🧹 Running final cleanup...');
-      await cleanupService.cleanup();
-      console.log('[Shutdown] ✅ Cleanup completed');
-
       // Close database connections
       console.log('[Shutdown] 🔄 Closing database connections...');
-      await Promise.all([staticDb.close(), trackingDb.close()]);
+      await Promise.all([staticDb.close()]);
       console.log('[Shutdown] ✅ Database connections closed');
 
       console.log('[Shutdown] ✅ Graceful shutdown completed');
