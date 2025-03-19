@@ -4,7 +4,7 @@ import dynamic from 'next/dynamic';
 import type { SelectOption, ExtendedAircraft } from '@/types/base';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 import UnifiedSelector from '../selector/UnifiedSelector';
-import aircraftTrackingService from '../../../../lib/services/tracking-services/AircraftTrackingService';
+import openSkyTrackingService from '@/lib/services/openSkyTrackingService';
 
 // Dynamically import the map to avoid SSR issues with Leaflet
 const LeafletMap = dynamic(() => import('./LeafletMap'), {
@@ -54,12 +54,12 @@ class MapComponent extends React.Component<
 
   componentDidMount() {
     // Subscribe to aircraft updates
-    this.unsubscribeAircraft = aircraftTrackingService.subscribeToAircraft(() =>
+    this.unsubscribeAircraft = openSkyTrackingService.subscribeToAircraft(() =>
       this.updateAircraftDisplay()
     );
 
     // Subscribe to status updates
-    this.unsubscribeStatus = aircraftTrackingService.subscribeToStatus(
+    this.unsubscribeStatus = openSkyTrackingService.subscribeToStatus(
       this.handleStatusUpdate
     );
   }
@@ -82,8 +82,8 @@ class MapComponent extends React.Component<
       selectedModel: null,
     });
 
-    // Track the new manufacturer
-    await aircraftTrackingService.trackManufacturer(manufacturer);
+    // Track the new manufacturer, ensuring it's always a string
+    await openSkyTrackingService.trackManufacturer(manufacturer ?? '');
   }
 
   // Handle model selection
@@ -101,13 +101,13 @@ class MapComponent extends React.Component<
   // Update aircraft display based on model filter
   updateAircraftDisplay() {
     const { selectedModel } = this.state;
-    const extendedAircraft = aircraftTrackingService.getExtendedAircraft(
+    const extendedAircraft = openSkyTrackingService.getExtendedAircraft(
       selectedModel || undefined
     );
 
     this.setState({
       displayedAircraft: extendedAircraft,
-      isLoading: aircraftTrackingService.isLoading(),
+      isLoading: openSkyTrackingService.isLoading(),
     });
   }
 
@@ -115,7 +115,7 @@ class MapComponent extends React.Component<
   handleStatusUpdate(status: string) {
     this.setState({
       trackingStatus: status,
-      isLoading: aircraftTrackingService.isLoading(),
+      isLoading: openSkyTrackingService.isLoading(),
     });
   }
 
@@ -152,6 +152,14 @@ class MapComponent extends React.Component<
             <LoadingSpinner message="Loading aircraft data..." />
           </div>
         )}
+
+        {/* Manual Refresh Button */}
+        <button
+          onClick={() => openSkyTrackingService.refreshNow()}
+          className="absolute bottom-4 left-4 z-20 bg-blue-500 text-white px-4 py-2 rounded shadow-md hover:bg-blue-600"
+        >
+          Refresh Aircraft Data
+        </button>
 
         {/* Status message */}
         {trackingStatus && !isLoading && (

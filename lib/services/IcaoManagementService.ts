@@ -8,6 +8,8 @@ import { API_CONFIG } from '@/config/api';
 const MAX_ICAO_PER_REQUEST = 100; // OpenSky limit
 const OPENSKY_PROXY_URL = '/api/proxy/opensky';
 const CACHE_TTL = 15000; // 15 seconds cache
+const BASE_URL =
+  process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3001';
 
 // Cache for OpenSky responses
 const responseCache = new Map<string, { data: any; timestamp: number }>();
@@ -19,58 +21,54 @@ const activeRequests = new Map<string, Promise<Aircraft[]>>();
  * Service for managing ICAO codes and fetching aircraft data
  */
 class IcaoManagementService {
-  private static instance: IcaoManagementService;
+  private static BATCH_SIZE = 900; // Keep below SQLite's limit
 
-  private constructor() {}
+  public constructor() {}
 
   /**
-   * Get singleton instance
+   * Fetch ICAO24s for a manufacturer, directly from the database.
    */
-  public static getInstance(): IcaoManagementService {
-    if (!IcaoManagementService.instance) {
-      IcaoManagementService.instance = new IcaoManagementService();
+  public async getIcao24sForManufacturer(
+    manufacturer: string
+  ): Promise<string[]> {
+    console.log(`[IcaoManagement] Fetching ICAO24s for ${manufacturer}`);
+
+    try {
+      // Get ICAO codes directly from the database instead of making an API call
+      const allIcao24s =
+        await dbManager.getIcao24sForManufacturer(manufacturer);
+
+      if (allIcao24s.length === 0) {
+        console.warn(`[IcaoManagement] No ICAO24s found for ${manufacturer}`);
+        return [];
+      }
+
+      // Process in batches
+      return this.processBatchedRequests(allIcao24s, async (batch) => batch);
+    } catch (error) {
+      console.error(`[IcaoManagement] Error fetching ICAO24s:`, error);
+      return [];
     }
-    return IcaoManagementService.instance;
   }
 
   /**
-   * Fetch ICAO codes for a manufacturer from the database
+   * Generic function to process large lists in batches.
    */
-  public async getIcaosByManufacturer(manufacturer: string): Promise<string[]> {
-    try {
-      console.log(`[ICAO] Fetching ICAOs for ${manufacturer}`);
-      const cacheKey = `manufacturer-icaos-${manufacturer}`;
-
-      // Query with caching
-      const query = `
-        SELECT DISTINCT icao24
-        FROM aircraft
-        WHERE manufacturer = ?
-        AND icao24 IS NOT NULL AND icao24 != ''
-        AND LENGTH(icao24) = 6
-        ORDER BY icao24
-      `;
-
-      const results = await dbManager.query<{ icao24: string }>(
-        cacheKey,
-        query,
-        [manufacturer],
-        600 // 10 minute cache
-      );
-
-      // Validate ICAO codes
-      const validIcaos = results
-        .map((item) => item.icao24.toLowerCase())
-        .filter((icao) => /^[0-9a-f]{6}$/.test(icao));
-
-      console.log(
-        `[ICAO] Found ${validIcaos.length} valid ICAOs for ${manufacturer}`
-      );
-      return validIcaos;
-    } catch (error) {
-      console.error(`[ICAO] Error fetching ICAOs for ${manufacturer}:`, error);
-      return [];
+  private async processBatchedRequests<T>(
+    items: T[],
+    batchProcessor: (batch: T[]) => Promise<any>
+  ): Promise<T[]> {
+    let results: T[] = [];
+    for (let i = 0; i < items.length; i += IcaoManagementService.BATCH_SIZE) {
+      const batch = items.slice(i, i + IcaoManagementService.BATCH_SIZE);
+      try {
+        const batchResult = await batchProcessor(batch);
+        results = results.concat(batchResult);
+      } catch (error) {
+        console.error(`[IcaoManagement] Batch processing error:`, error);
+      }
     }
+    return results;
   }
 
   /**
@@ -301,6 +299,4 @@ class IcaoManagementService {
   }
 }
 
-// Export a singleton instance
-const icaoService = IcaoManagementService.getInstance();
-export default icaoService;
+export default new IcaoManagementService();

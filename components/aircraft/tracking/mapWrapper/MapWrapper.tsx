@@ -86,7 +86,7 @@ export class MapWrapper extends React.Component<
 
     try {
       // Get ICAO codes for this manufacturer
-      const icaos = await icaoService.getIcaosByManufacturer(manufacturer);
+      const icaos = await icaoService.getIcao24sForManufacturer(manufacturer);
       console.log(`About to fetch ICAOs for ${manufacturer}`);
       if (icaos.length === 0) {
         this.props.onError(`No ICAO codes found for ${manufacturer}`);

@@ -84,3 +84,13 @@ module.exports = {
     TRACKING_DB_PATH: process.env.TRACKING_DB_PATH,
   },
 };
+
+module.exports = {
+  productionBrowserSourceMaps: false, // Disables source maps in production
+  webpack: (config, { dev }) => {
+    if (dev) {
+      config.devtool = false; // Disable source maps in development
+    }
+    return config;
+  },
+};

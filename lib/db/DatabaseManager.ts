@@ -203,6 +203,54 @@ export class DatabaseManager {
   }
 
   /**
+   * Get ICAO24 codes for a specific manufacturer
+   * @param manufacturer The manufacturer name
+   * @returns Array of ICAO24 codes as strings
+   */
+  public async getIcao24sForManufacturer(
+    manufacturer: string
+  ): Promise<string[]> {
+    // Check if we need to initialize first
+    if (!this.isInitialized) {
+      await this.initialize();
+    }
+
+    const cacheKey = `icao24s-${manufacturer}`;
+
+    // Try to get from cache first
+    const cachedData = this.getFromCache<string[]>(cacheKey);
+    if (cachedData) {
+      console.log(`[DB] Cache hit for: ${cacheKey}`);
+      return cachedData;
+    }
+
+    console.log(`[DB] Cache miss for: ${cacheKey}, executing query`);
+
+    try {
+      const result = await this.db!.all<{ icao24: string }[]>(
+        `SELECT DISTINCT icao24 
+       FROM aircraft 
+       WHERE manufacturer = ? 
+       AND icao24 IS NOT NULL`,
+        [manufacturer]
+      );
+
+      // Extract just the ICAO24 codes and normalize them to lowercase
+      const icao24s = result.map((row) => row.icao24.toLowerCase());
+
+      // Store in cache (5 minute TTL)
+      this.setInCache(cacheKey, icao24s, 300);
+
+      return icao24s;
+    } catch (error) {
+      console.error(
+        `[DB] Error retrieving ICAO24s for manufacturer ${manufacturer}:`,
+        error
+      );
+      return [];
+    }
+  }
+  /**
    * Get aircraft by ICAO24 codes
    */
   public async getAircraftByIcao24s(icao24s: string[]): Promise<any[]> {
