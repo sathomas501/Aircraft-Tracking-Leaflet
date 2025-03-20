@@ -5,7 +5,8 @@
 
 /* === Base Layer === */
 @layer base {
-  html, body {
+  html,
+  body {
     @apply antialiased bg-gray-50 text-gray-900;
   }
 
@@ -19,44 +20,56 @@
   /* Layout & Containers */
   .app-container {
     @apply opacity-0 transition-opacity duration-200 min-h-screen;
-    &.styles-loaded { @apply opacity-100; }
+    &.styles-loaded {
+      @apply opacity-100;
+    }
   }
 
   .grid-container {
     @apply grid gap-4 p-4;
-    &.aircraft-grid { @apply grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4; }
+    &.aircraft-grid {
+      @apply grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4;
+    }
   }
 
   /* Cards & Displays */
   .card {
     @apply bg-white rounded-lg shadow transition-shadow duration-200 hover:shadow-md;
-    &.aircraft-card { @apply p-4 min-w-[200px] space-y-2; }
+    &.aircraft-card {
+      @apply p-4 min-w-[200px] space-y-2;
+    }
   }
 
   /* Status Indicators */
   .status-badge {
     @apply px-2 py-1 rounded-full text-xs font-medium inline-flex items-center gap-1;
-    &.active { @apply bg-green-100 text-green-800; }
-    &.grounded { @apply bg-yellow-100 text-yellow-800; }
-    &.tracking { @apply bg-blue-100 text-blue-800; }
+    &.active {
+      @apply bg-green-100 text-green-800;
+    }
+    &.grounded {
+      @apply bg-yellow-100 text-yellow-800;
+    }
+    &.tracking {
+      @apply bg-blue-100 text-blue-800;
+    }
   }
 
   /* Map Components */
   .map-container {
     @apply relative w-full h-[calc(100vh-4rem)] rounded-lg shadow-md;
   }
-  
+
   .leaflet-container {
     height: 100% !important;
     width: 100% !important;
     touch-action: auto !important;
     cursor: grab;
   }
-  
+
   .leaflet-container:active {
     cursor: grabbing;
   }
-  
+
   /* Leaflet Aircraft Markers */
   .custom-aircraft-marker {
     background: none;
@@ -65,7 +78,7 @@
 
   .aircraft-marker {
     @apply transform-gpu transition-all duration-200;
-    
+
     &.selected {
       @apply z-10 scale-110;
       filter: brightness(1.2);
@@ -87,17 +100,17 @@
     white-space: nowrap !important;
     z-index: 1000 !important;
   }
-  
+
   .leaflet-tooltip-top:before {
     border-top-color: white !important;
   }
-  
+
   /* Popup styles */
   .leaflet-popup-content-wrapper {
     border-radius: 8px;
     padding: 12px;
   }
-  
+
   .leaflet-popup-content {
     margin: 0;
     min-width: 200px;
@@ -108,18 +121,18 @@
   }
 
   /* Aircraft Type-Specific Styles */
-  .aircraft-marker[data-owner="5"] {
+  .aircraft-marker[data-owner='5'] {
     filter: drop-shadow(0 0 4px rgba(255, 0, 0, 0.5));
   }
 
-  .aircraft-marker[data-type="6"] {
+  .aircraft-marker[data-type='6'] {
     animation: rotate 2s linear infinite;
   }
 
   /* Selector Components */
   .unified-selector {
     @apply relative z-[1000];
-    
+
     .selector-input {
       @apply w-full px-4 py-2 border rounded-lg transition-colors duration-200;
       @apply focus:border-blue-500 focus:ring-2 focus:ring-blue-200;
@@ -145,25 +158,35 @@
 
 /* === Utility Layer === */
 @layer utilities {
-  .text-shadow-sm { 
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1); 
+  .text-shadow-sm {
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
   }
-  
-  .backdrop-blur-md { 
-    backdrop-filter: blur(8px); 
+
+  .backdrop-blur-md {
+    backdrop-filter: blur(8px);
   }
 }
 
 /* === Animations === */
 @keyframes rotate {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @keyframes pulse {
-  0% { transform: scale(1); }
-  50% { transform: scale(1.1); }
-  100% { transform: scale(1); }
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.1);
+  }
+  100% {
+    transform: scale(1);
+  }
 }
 
 /* Trail styles */
@@ -178,5 +201,169 @@
   }
   100% {
     stroke-dashoffset: 0;
+  }
+}
+
+/* Add these to your globals.css file */
+
+/* === Component Layer - Aircraft Information === */
+@layer components {
+  /* Enhanced Aircraft Tooltips */
+  .aircraft-tooltip {
+    @apply min-w-[200px] !important;
+  }
+
+  .aircraft-tooltip .aircraft-callsign {
+    @apply font-bold text-sm;
+  }
+
+  .aircraft-tooltip .aircraft-model {
+    @apply text-xs text-gray-700;
+  }
+
+  .aircraft-tooltip .aircraft-data-grid {
+    @apply grid grid-cols-2 gap-x-2 text-xs mt-1;
+  }
+
+  /* Aircraft Popup Styles */
+  .aircraft-popup {
+    @apply min-w-[250px] max-w-md;
+  }
+
+  .aircraft-popup h3 {
+    @apply text-lg font-bold border-b pb-1 mb-2;
+  }
+
+  .aircraft-popup table {
+    @apply w-full text-sm border-collapse;
+  }
+
+  .aircraft-popup td:first-child {
+    @apply font-medium text-gray-600 pr-2 w-1/3;
+  }
+
+  .aircraft-popup td:last-child {
+    @apply text-gray-900;
+  }
+
+  .aircraft-popup tr {
+    @apply border-b border-gray-100 last:border-0;
+  }
+
+  .aircraft-popup .popup-actions {
+    @apply mt-2 text-center;
+  }
+
+  .aircraft-popup .popup-button {
+    @apply bg-blue-500 text-white px-2 py-1 rounded text-xs 
+           hover:bg-blue-600 transition-colors duration-150;
+  }
+
+  /* Aircraft Info Panel */
+  .aircraft-info-panel {
+    @apply absolute top-4 right-4 bg-white rounded-lg shadow-xl p-4 z-[1000]
+           max-w-md max-h-[80vh] overflow-y-auto;
+    min-width: 300px;
+  }
+
+  .aircraft-info-panel .panel-header {
+    @apply flex justify-between items-start mb-3;
+  }
+
+  .aircraft-info-panel .panel-title {
+    @apply text-xl font-bold;
+  }
+
+  .aircraft-info-panel .close-button {
+    @apply p-1 hover:bg-gray-100 rounded-full transition-colors duration-150;
+  }
+
+  .aircraft-info-panel .aircraft-type {
+    @apply text-sm text-gray-700 mb-3;
+  }
+
+  .aircraft-info-panel .stats-grid {
+    @apply grid grid-cols-2 gap-3 mb-4;
+  }
+
+  .aircraft-info-panel .stat-card {
+    @apply bg-gray-50 p-2 rounded;
+  }
+
+  .aircraft-info-panel .stat-label {
+    @apply text-xs text-gray-500;
+  }
+
+  .aircraft-info-panel .stat-value {
+    @apply font-medium;
+  }
+
+  .aircraft-info-panel .details-section {
+    @apply border-t border-gray-200 pt-3;
+  }
+
+  .aircraft-info-panel .details-title {
+    @apply font-medium mb-2;
+  }
+
+  .aircraft-info-panel .details-table {
+    @apply w-full text-sm;
+  }
+
+  .aircraft-info-panel .details-table td:first-child {
+    @apply py-1 text-gray-500 w-1/3;
+  }
+
+  .aircraft-info-panel .position-text {
+    @apply mt-2 text-xs text-gray-500;
+  }
+
+  /* Status Badges in Info Panel */
+  .status-badge.in-flight {
+    @apply px-2 py-0.5 bg-blue-100 text-blue-800 rounded-full text-xs;
+  }
+
+  .status-badge.on-ground {
+    @apply px-2 py-0.5 bg-orange-100 text-orange-800 rounded-full text-xs;
+  }
+
+  /* Enhanced Aircraft Markers */
+  .aircraft-icon.selected {
+    z-index: 1000 !important;
+  }
+
+  .aircraft-marker img {
+    @apply transform-gpu;
+    transform-origin: center;
+    transition: transform 0.3s ease;
+  }
+}
+
+/* Improve Leaflet Controls */
+.leaflet-control-layers {
+  @apply shadow-md rounded-md border-0 !important;
+}
+
+.leaflet-control-layers-toggle {
+  @apply bg-white !important;
+}
+
+.leaflet-control-zoom {
+  @apply shadow-md rounded-md border-0 !important;
+}
+
+.leaflet-control-zoom a {
+  @apply bg-white !important;
+}
+
+/* Responsive adjustments */
+@media (max-width: 640px) {
+  .aircraft-info-panel {
+    @apply bottom-4 left-4 right-4 top-auto max-w-full;
+    max-height: 60vh;
+  }
+
+  .aircraft-info-panel .stats-grid {
+    @apply grid-cols-2 gap-2;
   }
 }

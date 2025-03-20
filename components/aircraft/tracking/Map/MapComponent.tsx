@@ -2,6 +2,7 @@
 import React from 'react';
 import dynamic from 'next/dynamic';
 import type { SelectOption, ExtendedAircraft } from '@/types/base';
+import type { AircraftModel } from '@/types/aircraft-models';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 import UnifiedSelector from '../selector/UnifiedSelector';
 import openSkyTrackingService from '@/lib/services/openSkyTrackingService';
@@ -21,14 +22,12 @@ interface MapComponentState {
   selectedManufacturer: string | null;
   selectedModel: string | null;
   displayedAircraft: ExtendedAircraft[];
+  activeModels: AircraftModel[];
   isLoading: boolean;
   isRefreshing: boolean;
   trackingStatus: string;
   lastRefreshed: string | null;
-  modelStats: {
-    totalActive: number;
-    totalInactive: number;
-  };
+  totalActive: number;
 }
 
 class MapComponent extends React.Component<
@@ -47,14 +46,12 @@ class MapComponent extends React.Component<
       selectedManufacturer: null,
       selectedModel: null,
       displayedAircraft: [],
+      activeModels: [],
       isLoading: false,
       isRefreshing: false,
       trackingStatus: '',
       lastRefreshed: null,
-      modelStats: {
-        totalActive: 0,
-        totalInactive: 0,
-      },
+      totalActive: 0,
     };
 
     // Bind methods
@@ -136,18 +133,20 @@ class MapComponent extends React.Component<
   // Update aircraft display based on model filter
   updateAircraftDisplay() {
     const { selectedModel } = this.state;
+
+    // Get extended aircraft based on selected model
     const extendedAircraft = openSkyTrackingService.getExtendedAircraft(
       selectedModel || undefined
     );
 
     // Get model stats from the service
-    const { totalActive, totalInactive } =
-      openSkyTrackingService.getModelStats();
+    const { models, totalActive } = openSkyTrackingService.getModelStats();
 
     this.setState({
       displayedAircraft: extendedAircraft,
+      activeModels: models,
+      totalActive: totalActive,
       isLoading: openSkyTrackingService.isLoading(),
-      modelStats: { totalActive, totalInactive },
     });
   }
 
@@ -221,10 +220,12 @@ class MapComponent extends React.Component<
       selectedManufacturer,
       selectedModel,
       displayedAircraft,
+      activeModels,
       isLoading,
       isRefreshing,
       trackingStatus,
       lastRefreshed,
+      totalActive,
     } = this.state;
 
     const isTrackingActive =
@@ -235,15 +236,19 @@ class MapComponent extends React.Component<
         {/* Map component */}
         <LeafletMap aircraft={displayedAircraft} onError={onError} />
 
-        {/* Aircraft selector */}
+        {/* Integrated Aircraft & Model Selector */}
         <div className="absolute top-0 left-0 right-0 z-10 max-w-sm ml-4">
           <UnifiedSelector
             manufacturers={manufacturers}
+            activeModels={activeModels}
+            selectedManufacturer={selectedManufacturer}
+            selectedModel={selectedModel}
             onManufacturerSelect={this.handleManufacturerSelect}
             onModelSelect={this.handleModelSelect}
             onReset={this.handleReset}
-            totalActive={displayedAircraft.length}
-            isLoading={isLoading}
+            onRefresh={this.handleFullRefresh}
+            isLoading={isLoading || isRefreshing}
+            totalActive={totalActive}
           />
         </div>
 
@@ -295,6 +300,11 @@ class MapComponent extends React.Component<
           {lastRefreshed && (
             <p className="text-xs text-gray-600">
               Last updated: {lastRefreshed}
+            </p>
+          )}
+          {selectedManufacturer && totalActive > 0 && (
+            <p className="text-xs text-blue-600">
+              Tracking {totalActive} aircraft
             </p>
           )}
         </div>

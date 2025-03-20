@@ -8,12 +8,25 @@ interface LeafletMapProps {
   onError: (message: string) => void;
 }
 
-class LeafletMap extends Component<LeafletMapProps> {
+interface LeafletMapState {
+  selectedAircraft: ExtendedAircraft | null;
+}
+
+class LeafletMap extends Component<LeafletMapProps, LeafletMapState> {
   private mapRef = createRef<HTMLDivElement>();
+  private infoRef = createRef<HTMLDivElement>();
   private map: any = null;
   private markerLayer: any = null;
   private leaflet: any = null;
+  private markers: Map<string, any> = new Map(); // Store markers by icao24
   private isInitialized = false;
+
+  constructor(props: LeafletMapProps) {
+    super(props);
+    this.state = {
+      selectedAircraft: null,
+    };
+  }
 
   componentDidMount() {
     this.initializeMap();
@@ -77,6 +90,11 @@ class LeafletMap extends Component<LeafletMapProps> {
       L.control.layers(layers).addTo(this.map);
       this.markerLayer = L.layerGroup().addTo(this.map);
 
+      // Add click handler to map for deselecting aircraft
+      this.map.on('click', () => {
+        this.setState({ selectedAircraft: null });
+      });
+
       this.isInitialized = true;
       console.log('[LeafletMap] Map initialized successfully');
 
@@ -106,8 +124,16 @@ class LeafletMap extends Component<LeafletMapProps> {
 
       console.log('[LeafletMap] Updating aircraft positions:', aircraft.length);
 
-      // Clear existing markers
-      this.markerLayer.clearLayers();
+      // Track existing icao24 codes to know which to remove
+      const currentIcao24s = new Set(aircraft.map((a) => a.icao24));
+
+      // Remove markers that are no longer present
+      for (const [icao24, marker] of this.markers.entries()) {
+        if (!currentIcao24s.has(icao24)) {
+          this.markerLayer.removeLayer(marker);
+          this.markers.delete(icao24);
+        }
+      }
 
       // Filter valid aircraft
       const validAircraft = aircraft.filter(
@@ -118,40 +144,63 @@ class LeafletMap extends Component<LeafletMapProps> {
           !isNaN(plane.longitude)
       );
 
-      // Add markers for each aircraft
+      // Add or update markers for each aircraft
       validAircraft.forEach((plane) => {
-        const marker = L.marker([plane.latitude, plane.longitude], {
-          icon: L.icon({
-            iconUrl: plane.isGovernment
-              ? '/icons/governmentJetIconImg.png'
-              : '/icons/jetIconImg.png',
-            iconSize: [24, 24],
-            iconAnchor: [12, 12],
-            popupAnchor: [0, -12],
-          }),
-        });
+        const isSelected = this.state.selectedAircraft?.icao24 === plane.icao24;
 
-        // Create popup content
-        const content = `
-          <div class="aircraft-popup p-2">
-            <h3 class="text-lg font-bold mb-2">${plane.icao24?.toUpperCase() || 'Unknown'}</h3>
-            <div class="text-sm space-y-1">
-              <p><span class="font-semibold">Model:</span> ${plane.model || 'Unknown'}</p>
-              <p><span class="font-semibold">Type:</span> ${plane.type || 'Unknown'}</p>
-              <p><span class="font-semibold">Altitude:</span> ${Math.round(plane.altitude || 0)} ft</p>
-              <p><span class="font-semibold">Speed:</span> ${Math.round(plane.velocity || 0)} knots</p>
-              <p><span class="font-semibold">Heading:</span> ${Math.round(plane.heading || 0)}°</p>
-              ${plane['N-NUMBER'] ? `<p><span class="font-semibold">N-Number:</span> ${plane['N-NUMBER']}</p>` : ''}
-            </div>
-          </div>
-        `;
+        // Create or update marker
+        if (this.markers.has(plane.icao24)) {
+          // Update existing marker position
+          const marker = this.markers.get(plane.icao24);
+          marker.setLatLng([plane.latitude, plane.longitude]);
 
-        marker.bindPopup(content);
-        this.markerLayer.addLayer(marker);
+          // Update popup content
+          const popup = marker.getPopup();
+          if (popup) {
+            popup.setContent(this.createPopupContent(plane));
+          }
+
+          // Update tooltip content
+          const tooltip = marker.getTooltip();
+          if (tooltip) {
+            tooltip.setContent(this.createTooltipContent(plane));
+          }
+
+          // Update icon to reflect selection state
+          marker.setIcon(this.createAircraftIcon(plane, isSelected));
+        } else {
+          // Create new marker
+          const marker = L.marker([plane.latitude, plane.longitude], {
+            icon: this.createAircraftIcon(plane, isSelected),
+            riseOnHover: true,
+            zIndexOffset: isSelected ? 1000 : 0,
+          });
+
+          // Bind popup
+          marker.bindPopup(this.createPopupContent(plane));
+
+          // Bind tooltip
+          marker.bindTooltip(this.createTooltipContent(plane), {
+            direction: 'top',
+            offset: [0, -12],
+            opacity: 0.9,
+            className: 'aircraft-tooltip',
+          });
+
+          // Add click handler
+          marker.on('click', (e: any) => {
+            L.DomEvent.stopPropagation(e);
+            this.handleAircraftClick(plane);
+          });
+
+          // Store and add to layer
+          this.markers.set(plane.icao24, marker);
+          this.markerLayer.addLayer(marker);
+        }
       });
 
-      // Auto-fit bounds if we have aircraft
-      if (validAircraft.length > 0) {
+      // Auto-fit bounds if we have aircraft and no selection
+      if (validAircraft.length > 0 && !this.state.selectedAircraft) {
         const bounds = L.latLngBounds(
           validAircraft.map((a) => [a.latitude, a.longitude])
         );
@@ -166,6 +215,223 @@ class LeafletMap extends Component<LeafletMapProps> {
     }
   }
 
+  createAircraftIcon(aircraft: ExtendedAircraft, isSelected: boolean) {
+    const L = this.leaflet;
+
+    // Determine icon size based on selected state
+    const size = isSelected ? 32 : 24;
+
+    // Determine icon URL based on aircraft type and government status
+    let iconUrl = '/icons/jetIconImg.png';
+    if (aircraft.isGovernment) {
+      iconUrl = '/icons/governmentJetIconImg.png';
+    } else if (aircraft.type === 'helicopter') {
+      iconUrl = '/icons/helicopterIconImg.png';
+    }
+
+    // Create the icon
+    const icon = L.divIcon({
+      className: `aircraft-icon ${isSelected ? 'selected' : ''} ${aircraft.on_ground ? 'grounded' : ''}`,
+      html: `
+        <div class="aircraft-marker" style="
+          width: ${size}px; 
+          height: ${size}px; 
+          ${isSelected ? 'filter: drop-shadow(0 0 4px #4a80f5);' : ''}
+          transition: all 300ms ease;
+        ">
+          <img 
+            src="${iconUrl}" 
+            style="
+              width: 100%; 
+              height: 100%; 
+              transform: rotate(${aircraft.heading || 0}deg);
+              transition: transform 0.3s ease;
+            "
+            alt="Aircraft" 
+          />
+        </div>
+      `,
+      iconSize: [size, size],
+      iconAnchor: [size / 2, size / 2],
+      popupAnchor: [0, -size / 2],
+    });
+
+    return icon;
+  }
+
+  createTooltipContent(aircraft: ExtendedAircraft) {
+    // Registration or N-Number display (with fallbacks)
+    const registration =
+      aircraft.registration || aircraft['N-NUMBER'] || aircraft.icao24;
+
+    // Format altitude with commas for thousands
+    const formattedAltitude = aircraft.altitude
+      ? Math.round(aircraft.altitude).toLocaleString() + ' ft'
+      : 'N/A';
+
+    // Format speed
+    const formattedSpeed = aircraft.velocity
+      ? Math.round(aircraft.velocity) + ' kts'
+      : 'N/A';
+
+    return `
+      <div class="p-1 min-w-[180px]">
+        <div class="text-xs">${aircraft.model || aircraft.TYPE_AIRCRAFT || 'Unknown'}</div>
+        <div class="grid grid-cols-2 gap-x-2 text-xs mt-1">
+          <div>Alt: ${formattedAltitude}</div>
+          <div>Speed: ${formattedSpeed}</div>
+          ${aircraft.heading ? `<div class="col-span-2">Heading: ${Math.round(aircraft.heading)}°</div>` : ''}
+          ${aircraft.manufacturer ? `<div class="col-span-2">${aircraft.manufacturer}</div>` : ''}
+        </div>
+      </div>
+    `;
+  }
+
+  createPopupContent(aircraft: ExtendedAircraft) {
+    // Registration or N-Number display (with fallbacks)
+    const registration =
+      aircraft.registration || aircraft['N-NUMBER'] || aircraft.icao24;
+
+    // Format altitude with commas for thousands
+    const formattedAltitude = aircraft.altitude
+      ? Math.round(aircraft.altitude).toLocaleString() + ' ft'
+      : 'N/A';
+
+    // Format speed
+    const formattedSpeed = aircraft.velocity
+      ? Math.round(aircraft.velocity) + ' kts'
+      : 'N/A';
+
+    return `
+      <div class="aircraft-popup p-2 min-w-[220px]">
+        <table class="w-full text-sm border-collapse mt-2">
+          <tbody>
+            <tr>
+              <td class="font-medium pr-2">Model:</td>
+              <td>${aircraft.model || aircraft.TYPE_AIRCRAFT || 'Unknown'}</td>
+            </tr>
+            ${
+              aircraft.manufacturer
+                ? `
+              <tr>
+                <td class="font-medium pr-2">Manufacturer:</td>
+                <td>${aircraft.manufacturer}</td>
+              </tr>
+            `
+                : ''
+            }
+            <tr>
+              <td class="font-medium pr-2">Altitude:</td>
+              <td>${formattedAltitude}</td>
+            </tr>
+            <tr>
+              <td class="font-medium pr-2">Speed:</td>
+              <td>${formattedSpeed}</td>
+            </tr>
+            ${
+              aircraft.heading
+                ? `
+              <tr>
+                <td class="font-medium pr-2">Heading:</td>
+                <td>${Math.round(aircraft.heading)}°</td>
+              </tr>
+            `
+                : ''
+            }
+            <tr>
+              <td class="font-medium pr-2">Registration:</td>
+              <td>${registration}</td>
+            </tr>
+            <tr>
+              <td class="font-medium pr-2">ICAO:</td>
+              <td>${aircraft.icao24}</td>
+            </tr>
+            ${
+              aircraft.owner
+                ? `
+              <tr>
+                <td class="font-medium pr-2">Owner:</td>
+                <td>${aircraft.owner}</td>
+              </tr>
+            `
+                : ''
+            }
+            ${
+              aircraft.CITY || aircraft.STATE
+                ? `
+              <tr>
+                <td class="font-medium pr-2">Location:</td>
+                <td>${[aircraft.CITY, aircraft.STATE].filter(Boolean).join(', ')}</td>
+              </tr>
+            `
+                : ''
+            }
+            ${
+              aircraft.OWNER_TYPE
+                ? `
+              <tr>
+                <td class="font-medium pr-2">Owner Type:</td>
+                <td>${this.getOwnerTypeLabel(aircraft.OWNER_TYPE)}</td>
+              </tr>
+            `
+                : ''
+            }
+          </tbody>
+        </table>
+        <div class="mt-2 text-xs text-center">
+          <button class="bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600" onclick="this.dispatchEvent(new CustomEvent('select-aircraft', {bubbles: true}))">
+            View Details
+          </button>
+        </div>
+      </div>
+    `;
+  }
+
+  // Helper function to convert owner type codes to readable labels
+  getOwnerTypeLabel(ownerType: string): string {
+    const ownerTypes: Record<string, string> = {
+      '1': 'Individual',
+      '2': 'Partnership',
+      '3': 'Corporation',
+      '4': 'Co-Owned',
+      '5': 'Government',
+      '8': 'Non-Citizen Corporation',
+      '9': 'Non-Citizen Co-Owned',
+    };
+    return ownerTypes[ownerType] || `Type ${ownerType}`;
+  }
+
+  handleAircraftClick(aircraft: ExtendedAircraft) {
+    // Update selected aircraft state
+    this.setState({ selectedAircraft: aircraft });
+
+    // If map exists, pan to the aircraft
+    if (this.map && aircraft.latitude && aircraft.longitude) {
+      this.map.panTo([aircraft.latitude, aircraft.longitude]);
+    }
+
+    // Update all markers to reflect the new selection
+    this.updateMarkerStyles(aircraft.icao24);
+  }
+
+  updateMarkerStyles(selectedIcao24: string) {
+    // Update styles for all markers
+    for (const [icao24, marker] of this.markers.entries()) {
+      const aircraft = this.props.aircraft.find((a) => a.icao24 === icao24);
+      if (aircraft) {
+        const isSelected = icao24 === selectedIcao24;
+        marker.setIcon(this.createAircraftIcon(aircraft, isSelected));
+        marker.setZIndexOffset(isSelected ? 1000 : 0);
+      }
+    }
+  }
+
+  // Clear selection when clicking elsewhere
+  handleMapClick = () => {
+    this.setState({ selectedAircraft: null });
+    this.updateMarkerStyles('');
+  };
+
   destroyMap() {
     if (this.map) {
       console.log('[LeafletMap] Destroying map');
@@ -173,6 +439,7 @@ class LeafletMap extends Component<LeafletMapProps> {
       this.map.remove(); // Destroy the map instance
       this.map = null;
       this.markerLayer = null;
+      this.markers.clear();
       this.isInitialized = false;
     }
 
@@ -182,13 +449,160 @@ class LeafletMap extends Component<LeafletMapProps> {
   }
 
   render() {
+    const { selectedAircraft } = this.state;
+
     return (
-      <div
-        ref={this.mapRef}
-        className="w-full h-full"
-        style={{ backgroundColor: '#f0f0f0' }}
-        id="leaflet-map"
-      />
+      <div className="relative w-full h-full">
+        <div
+          ref={this.mapRef}
+          className="w-full h-full"
+          style={{ backgroundColor: '#f0f0f0' }}
+          id="leaflet-map"
+        />
+
+        {/* Info panel for selected aircraft */}
+        {selectedAircraft && (
+          <div
+            ref={this.infoRef}
+            className="absolute top-4 right-4 bg-white rounded-lg shadow-lg p-4 z-30 max-w-md"
+          >
+            <div className="flex justify-between items-start mb-2">
+              <h2 className="text-xl font-bold">
+                {selectedAircraft.registration ||
+                  selectedAircraft['N-NUMBER'] ||
+                  selectedAircraft.icao24}
+              </h2>
+              <button
+                onClick={() => this.setState({ selectedAircraft: null })}
+                className="p-1 hover:bg-gray-100 rounded-full"
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="mb-3">
+              <span className="font-medium">
+                {selectedAircraft.model ||
+                  selectedAircraft.TYPE_AIRCRAFT ||
+                  'Unknown'}
+              </span>
+              {selectedAircraft.manufacturer && (
+                <span className="ml-2 text-gray-600">
+                  {selectedAircraft.manufacturer}
+                </span>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 mb-4">
+              <div className="bg-gray-50 p-2 rounded">
+                <div className="text-xs text-gray-500">Altitude</div>
+                <div className="font-medium">
+                  {selectedAircraft.altitude
+                    ? Math.round(selectedAircraft.altitude).toLocaleString() +
+                      ' ft'
+                    : 'N/A'}
+                </div>
+              </div>
+              <div className="bg-gray-50 p-2 rounded">
+                <div className="text-xs text-gray-500">Speed</div>
+                <div className="font-medium">
+                  {selectedAircraft.velocity
+                    ? Math.round(selectedAircraft.velocity) + ' kts'
+                    : 'N/A'}
+                </div>
+              </div>
+              {selectedAircraft.heading !== undefined && (
+                <div className="bg-gray-50 p-2 rounded">
+                  <div className="text-xs text-gray-500">Heading</div>
+                  <div className="font-medium">
+                    {Math.round(selectedAircraft.heading)}°
+                  </div>
+                </div>
+              )}
+              <div className="bg-gray-50 p-2 rounded">
+                <div className="text-xs text-gray-500">ICAO24</div>
+                <div className="font-medium font-mono">
+                  {selectedAircraft.icao24}
+                </div>
+              </div>
+            </div>
+
+            <div className="border-t border-gray-200 pt-3">
+              <h3 className="font-medium mb-2">Aircraft Details</h3>
+              <table className="w-full text-sm">
+                <tbody>
+                  {(selectedAircraft.registration ||
+                    selectedAircraft['N-NUMBER']) && (
+                    <tr>
+                      <td className="py-1 text-gray-500">Registration</td>
+                      <td className="py-1 font-medium">
+                        {selectedAircraft.registration ||
+                          selectedAircraft['N-NUMBER']}
+                      </td>
+                    </tr>
+                  )}
+                  {selectedAircraft.owner && (
+                    <tr>
+                      <td className="py-1 text-gray-500">Owner</td>
+                      <td className="py-1">{selectedAircraft.owner}</td>
+                    </tr>
+                  )}
+                  {selectedAircraft.CITY && selectedAircraft.STATE && (
+                    <tr>
+                      <td className="py-1 text-gray-500">Location</td>
+                      <td className="py-1">
+                        {selectedAircraft.CITY}, {selectedAircraft.STATE}
+                      </td>
+                    </tr>
+                  )}
+                  {selectedAircraft.OWNER_TYPE && (
+                    <tr>
+                      <td className="py-1 text-gray-500">Owner Type</td>
+                      <td className="py-1">
+                        {this.getOwnerTypeLabel(selectedAircraft.OWNER_TYPE)}
+                      </td>
+                    </tr>
+                  )}
+                  {selectedAircraft.lastSeen && (
+                    <tr>
+                      <td className="py-1 text-gray-500">Last Seen</td>
+                      <td className="py-1">
+                        {new Date(
+                          selectedAircraft.lastSeen
+                        ).toLocaleTimeString()}
+                      </td>
+                    </tr>
+                  )}
+                  {selectedAircraft.on_ground !== undefined && (
+                    <tr>
+                      <td className="py-1 text-gray-500">Status</td>
+                      <td className="py-1">
+                        {selectedAircraft.on_ground ? (
+                          <span className="px-2 py-0.5 bg-orange-100 text-orange-800 rounded-full text-xs">
+                            On Ground
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 bg-blue-100 text-blue-800 rounded-full text-xs">
+                            In Flight
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {selectedAircraft.latitude && selectedAircraft.longitude && (
+              <div className="mt-2 text-xs text-gray-500">
+                Position: {selectedAircraft.latitude.toFixed(4)},{' '}
+                {selectedAircraft.longitude.toFixed(4)}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     );
   }
 }

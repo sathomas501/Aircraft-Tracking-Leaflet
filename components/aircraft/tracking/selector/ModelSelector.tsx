@@ -1,4 +1,4 @@
-// SimplifiedModelSelector.tsx
+// components/aircraft/tracking/selector/ModelSelector.tsx
 import React from 'react';
 import { RefreshCw } from 'lucide-react';
 import { AircraftModel } from '@/types/aircraft-models';
@@ -10,7 +10,6 @@ interface ModelSelectorProps {
   onRefresh?: () => void;
   isLoading?: boolean;
   totalActive?: number;
-  totalInactive?: number;
 }
 
 const ModelSelector: React.FC<ModelSelectorProps> = ({
@@ -20,24 +19,19 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
   onRefresh,
   isLoading = false,
   totalActive = 0,
-  totalInactive = 0,
 }) => {
-  // Format the option label with active/inactive counts
-  // Format the option label with clear aircraft counts
-  const formatOptionLabel = (model: AircraftModel) => {
-    const totalCount = model.totalCount || model.count || 0;
-    const activeCount = model.activeCount || 0;
+  // Filter to only show models with active aircraft
+  const activeModels = models.filter((model) => (model.activeCount || 0) > 0);
 
-    if (activeCount > 0) {
-      // If there are active aircraft, show both active and total
-      return `${model.model} (${activeCount} active)`;
-    } else if (totalCount > 0) {
-      // If there are aircraft but none active, show total
-      return `${model.model} (${totalCount} total)`;
-    } else {
-      // If no aircraft at all
-      return `${model.model} (0)`;
-    }
+  // Sort models by active count (highest first)
+  const sortedModels = [...activeModels].sort(
+    (a, b) => (b.activeCount || 0) - (a.activeCount || 0)
+  );
+
+  // Format the option label to show active count
+  const formatOptionLabel = (model: AircraftModel) => {
+    const activeCount = model.activeCount || 0;
+    return `${model.model} (${activeCount})`;
   };
 
   // Handle selection change
@@ -87,36 +81,39 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
         } ${!selectedModel ? 'text-gray-500' : 'text-gray-900'}`}
         value={selectedModel || ''}
         onChange={handleModelChange}
-        disabled={isLoading || models.length === 0}
+        disabled={isLoading || sortedModels.length === 0}
       >
         <option value="">
           {totalActive > 0
             ? `All Models (${totalActive} active)`
-            : totalInactive > 0
-              ? `All Models (${totalInactive} total)`
-              : `All Models (0)`}
+            : `No active aircraft`}
         </option>
 
-        {models.map((model) => (
+        {sortedModels.map((model) => (
           <option
             key={model.model}
             value={model.model}
-            className={`
-              ${model.activeCount && model.activeCount > 0 ? 'font-medium text-blue-700' : 'text-gray-700'}
-            `}
+            className="font-medium text-blue-700"
           >
             {formatOptionLabel(model)}
           </option>
         ))}
       </select>
 
-      {models.length === 0 && !isLoading && (
-        <p className="mt-1 text-sm text-gray-500">No models available</p>
+      {sortedModels.length === 0 && !isLoading && (
+        <p className="mt-1 text-sm text-gray-500">No active aircraft found</p>
       )}
 
-      {totalActive === 0 && models.length > 0 && (
+      {totalActive === 0 && sortedModels.length === 0 && (
         <div className="mt-1 text-sm text-red-500 p-1 border border-red-200 rounded bg-red-50">
           No live aircraft found
+        </div>
+      )}
+
+      {sortedModels.length > 0 && (
+        <div className="mt-1 text-sm text-green-600 p-1 border border-green-200 rounded bg-green-50">
+          Showing {sortedModels.length} active model
+          {sortedModels.length !== 1 ? 's' : ''}
         </div>
       )}
     </div>
