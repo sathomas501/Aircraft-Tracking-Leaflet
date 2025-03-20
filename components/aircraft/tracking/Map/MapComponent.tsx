@@ -22,7 +22,13 @@ interface MapComponentState {
   selectedModel: string | null;
   displayedAircraft: ExtendedAircraft[];
   isLoading: boolean;
+  isRefreshing: boolean;
   trackingStatus: string;
+  lastRefreshed: string | null;
+  modelStats: {
+    totalActive: number;
+    totalInactive: number;
+  };
 }
 
 class MapComponent extends React.Component<
@@ -32,6 +38,7 @@ class MapComponent extends React.Component<
   // Aircraft data unsubscribe functions
   private unsubscribeAircraft: (() => void) | null = null;
   private unsubscribeStatus: (() => void) | null = null;
+  private refreshInterval: NodeJS.Timeout | null = null;
 
   constructor(props: MapComponentProps) {
     super(props);
@@ -41,7 +48,13 @@ class MapComponent extends React.Component<
       selectedModel: null,
       displayedAircraft: [],
       isLoading: false,
+      isRefreshing: false,
       trackingStatus: '',
+      lastRefreshed: null,
+      modelStats: {
+        totalActive: 0,
+        totalInactive: 0,
+      },
     };
 
     // Bind methods
@@ -50,6 +63,8 @@ class MapComponent extends React.Component<
     this.handleReset = this.handleReset.bind(this);
     this.updateAircraftDisplay = this.updateAircraftDisplay.bind(this);
     this.handleStatusUpdate = this.handleStatusUpdate.bind(this);
+    this.refreshPositionsOnly = this.refreshPositionsOnly.bind(this);
+    this.handleFullRefresh = this.handleFullRefresh.bind(this);
   }
 
   componentDidMount() {
@@ -73,6 +88,11 @@ class MapComponent extends React.Component<
     if (this.unsubscribeStatus) {
       this.unsubscribeStatus();
     }
+
+    // Clear any active intervals
+    if (this.refreshInterval) {
+      clearInterval(this.refreshInterval);
+    }
   }
 
   // Handle manufacturer selection
@@ -80,10 +100,25 @@ class MapComponent extends React.Component<
     this.setState({
       selectedManufacturer: manufacturer,
       selectedModel: null,
+      isLoading: true,
+      lastRefreshed: null,
     });
 
-    // Track the new manufacturer, ensuring it's always a string
-    await openSkyTrackingService.trackManufacturer(manufacturer ?? '');
+    try {
+      // Track the new manufacturer, ensuring it's always a string
+      await openSkyTrackingService.trackManufacturer(manufacturer ?? '');
+
+      // Update the lastRefreshed timestamp after successful tracking
+      this.setState({
+        lastRefreshed: new Date().toLocaleTimeString(),
+      });
+    } catch (error) {
+      this.props.onError(
+        `Error tracking manufacturer: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
+    } finally {
+      this.setState({ isLoading: false });
+    }
   }
 
   // Handle model selection
@@ -105,9 +140,14 @@ class MapComponent extends React.Component<
       selectedModel || undefined
     );
 
+    // Get model stats from the service
+    const { totalActive, totalInactive } =
+      openSkyTrackingService.getModelStats();
+
     this.setState({
       displayedAircraft: extendedAircraft,
       isLoading: openSkyTrackingService.isLoading(),
+      modelStats: { totalActive, totalInactive },
     });
   }
 
@@ -119,6 +159,62 @@ class MapComponent extends React.Component<
     });
   }
 
+  // Method to refresh only the positions of active aircraft
+  async refreshPositionsOnly() {
+    if (!this.state.selectedManufacturer || this.state.isRefreshing) return;
+
+    this.setState({
+      isRefreshing: true,
+      trackingStatus: 'Updating aircraft positions...',
+    });
+
+    try {
+      // Call the OpenSkyTrackingService method for position-only refresh
+      if (typeof openSkyTrackingService.refreshPositionsOnly === 'function') {
+        await openSkyTrackingService.refreshPositionsOnly();
+      } else {
+        // Fallback to regular refresh if the method doesn't exist yet
+        await openSkyTrackingService.refreshNow();
+      }
+
+      // Update last refreshed timestamp
+      this.setState({
+        lastRefreshed: new Date().toLocaleTimeString(),
+        trackingStatus: `${this.state.displayedAircraft.length} aircraft tracked, positions updated`,
+      });
+    } catch (error) {
+      this.props.onError(
+        `Error refreshing positions: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
+    } finally {
+      this.setState({ isRefreshing: false });
+    }
+  }
+
+  // Method for full tracking refresh
+  async handleFullRefresh() {
+    if (!this.state.selectedManufacturer || this.state.isRefreshing) return;
+
+    this.setState({
+      isRefreshing: true,
+      trackingStatus: 'Performing full refresh...',
+    });
+
+    try {
+      await openSkyTrackingService.refreshNow();
+      this.setState({
+        lastRefreshed: new Date().toLocaleTimeString(),
+        trackingStatus: `Full refresh completed with ${this.state.displayedAircraft.length} aircraft`,
+      });
+    } catch (error) {
+      this.props.onError(
+        `Error during full refresh: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
+    } finally {
+      this.setState({ isRefreshing: false });
+    }
+  }
+
   render() {
     const { manufacturers, onError } = this.props;
     const {
@@ -126,8 +222,13 @@ class MapComponent extends React.Component<
       selectedModel,
       displayedAircraft,
       isLoading,
+      isRefreshing,
       trackingStatus,
+      lastRefreshed,
     } = this.state;
+
+    const isTrackingActive =
+      selectedManufacturer !== null && displayedAircraft.length > 0;
 
     return (
       <div className="relative w-full h-screen">
@@ -147,26 +248,56 @@ class MapComponent extends React.Component<
         </div>
 
         {/* Loading indicator */}
-        {isLoading && (
+        {(isLoading || isRefreshing) && (
           <div className="absolute top-4 right-4 z-20">
-            <LoadingSpinner message="Loading aircraft data..." />
+            <LoadingSpinner
+              message={
+                isRefreshing
+                  ? 'Refreshing positions...'
+                  : 'Loading aircraft data...'
+              }
+            />
           </div>
         )}
 
-        {/* Manual Refresh Button */}
-        <button
-          onClick={() => openSkyTrackingService.refreshNow()}
-          className="absolute bottom-4 left-4 z-20 bg-blue-500 text-white px-4 py-2 rounded shadow-md hover:bg-blue-600"
-        >
-          Refresh Aircraft Data
-        </button>
+        {/* Refresh controls */}
+        <div className="absolute bottom-4 left-4 z-20 flex flex-col gap-2">
+          {/* Position-only refresh button */}
+          <button
+            onClick={this.refreshPositionsOnly}
+            disabled={!isTrackingActive || isRefreshing || isLoading}
+            className={`bg-blue-500 text-white px-4 py-2 rounded shadow-md ${
+              isTrackingActive && !isRefreshing && !isLoading
+                ? 'hover:bg-blue-600'
+                : 'opacity-50 cursor-not-allowed'
+            }`}
+          >
+            Update Positions
+          </button>
 
-        {/* Status message */}
-        {trackingStatus && !isLoading && (
-          <div className="absolute bottom-4 right-4 z-20 bg-white p-2 rounded shadow">
-            <p className="text-sm">{trackingStatus}</p>
-          </div>
-        )}
+          {/* Full refresh button */}
+          <button
+            onClick={this.handleFullRefresh}
+            disabled={!isTrackingActive || isRefreshing || isLoading}
+            className={`bg-green-500 text-white px-4 py-2 rounded shadow-md ${
+              isTrackingActive && !isRefreshing && !isLoading
+                ? 'hover:bg-green-600'
+                : 'opacity-50 cursor-not-allowed'
+            }`}
+          >
+            Full Refresh
+          </button>
+        </div>
+
+        {/* Status and last refresh info */}
+        <div className="absolute bottom-4 right-4 z-20 bg-white p-2 rounded shadow">
+          <p className="text-sm">{trackingStatus}</p>
+          {lastRefreshed && (
+            <p className="text-xs text-gray-600">
+              Last updated: {lastRefreshed}
+            </p>
+          )}
+        </div>
       </div>
     );
   }

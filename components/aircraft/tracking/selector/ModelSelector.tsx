@@ -23,15 +23,20 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
   totalInactive = 0,
 }) => {
   // Format the option label with active/inactive counts
+  // Format the option label with clear aircraft counts
   const formatOptionLabel = (model: AircraftModel) => {
     const totalCount = model.totalCount || model.count || 0;
     const activeCount = model.activeCount || 0;
-    const inactiveCount = totalCount - activeCount;
 
     if (activeCount > 0) {
-      return `${model.model} (${activeCount} active, ${inactiveCount} inactive)`;
+      // If there are active aircraft, show both active and total
+      return `${model.model} (${activeCount} active)`;
+    } else if (totalCount > 0) {
+      // If there are aircraft but none active, show total
+      return `${model.model} (${totalCount} total)`;
     } else {
-      return `${model.model} (${inactiveCount} inactive)`;
+      // If no aircraft at all
+      return `${model.model} (0)`;
     }
   };
 
@@ -86,8 +91,10 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
       >
         <option value="">
           {totalActive > 0
-            ? `All Models (${totalActive} active, ${totalInactive} inactive)`
-            : `All Models (${totalInactive} inactive)`}
+            ? `All Models (${totalActive} active)`
+            : totalInactive > 0
+              ? `All Models (${totalInactive} total)`
+              : `All Models (0)`}
         </option>
 
         {models.map((model) => (

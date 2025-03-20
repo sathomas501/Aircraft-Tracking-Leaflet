@@ -48,6 +48,8 @@ class OpenSkyTrackingService {
   private trackingActive = false;
   private trackedAircraft: Aircraft[] = [];
   private lastRefreshTime: number = 0;
+  private modelStats: Map<string, { active: number; total: number }> =
+    new Map();
 
   private constructor() {}
 
@@ -167,6 +169,54 @@ class OpenSkyTrackingService {
     );
 
     return this.trackedAircraft;
+  }
+
+  // Update this whenever aircraft data changes
+  private updateModelStats(): void {
+    // Clear previous stats
+    this.modelStats.clear();
+
+    // Count total aircraft by model from the database or cached data
+    // This would need to be populated when you first fetch the model list
+
+    // Count active aircraft by model from currently tracked aircraft
+    this.trackedAircraft.forEach((aircraft) => {
+      const model = aircraft.model || aircraft.TYPE_AIRCRAFT;
+      if (!model) return;
+
+      if (!this.modelStats.has(model)) {
+        this.modelStats.set(model, { active: 0, total: 0 });
+      }
+
+      const stats = this.modelStats.get(model)!;
+      stats.active += 1;
+    });
+  }
+
+  // Add a method to get model stats
+  public getModelStats(): {
+    models: Array<{ model: string; activeCount: number; totalCount: number }>;
+    totalActive: number;
+    totalInactive: number;
+  } {
+    const models = Array.from(this.modelStats.entries()).map(
+      ([model, stats]) => ({
+        model,
+        activeCount: stats.active,
+        totalCount: stats.total,
+        // Calculate inactive
+        inactiveCount: Math.max(0, stats.total - stats.active),
+      })
+    );
+
+    const totalActive = models.reduce(
+      (sum, model) => sum + model.activeCount,
+      0
+    );
+    const totalTotal = models.reduce((sum, model) => sum + model.totalCount, 0);
+    const totalInactive = Math.max(0, totalTotal - totalActive);
+
+    return { models, totalActive, totalInactive };
   }
 
   /**
@@ -368,6 +418,52 @@ class OpenSkyTrackingService {
     };
 
     this.subscribers.forEach((callback) => callback(data));
+  }
+
+  // In OpenSkyTrackingService.ts
+
+  /**
+   * Manually refresh only position data for currently tracked aircraft
+   * without re-fetching ICAO codes from the database
+   */
+  public async refreshPositionsOnly(): Promise<Aircraft[]> {
+    if (!this.trackingActive || !this.currentManufacturer) {
+      console.warn('[OpenSky] No active tracking session to refresh');
+      return [];
+    }
+
+    console.log('[OpenSky] Refreshing positions only for tracked aircraft');
+
+    try {
+      // Get the ICAO codes of currently tracked aircraft
+      const activeIcaos = this.trackedAircraft
+        .map((aircraft) => aircraft.icao24)
+        .filter((icao) => icao); // Filter out any undefined
+
+      if (activeIcaos.length === 0) {
+        console.log('[OpenSky] No active aircraft to refresh');
+        return [];
+      }
+
+      // Only get live data for these aircraft without re-fetching from database
+      const updatedAircraft = await this.getLiveAircraftData(
+        this.currentManufacturer,
+        activeIcaos
+      );
+
+      // Update tracked aircraft and notify subscribers
+      this.trackedAircraft = updatedAircraft;
+      this.lastRefreshTime = Date.now();
+      this.notifySubscribers();
+
+      console.log(
+        `[OpenSky] Refreshed positions for ${updatedAircraft.length} aircraft`
+      );
+      return updatedAircraft;
+    } catch (error) {
+      console.error('[OpenSky] Error refreshing positions:', error);
+      return this.trackedAircraft; // Return current data on error
+    }
   }
 
   /**
