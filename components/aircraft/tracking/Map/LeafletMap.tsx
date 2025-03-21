@@ -7,10 +7,13 @@ import {
   createPopupContent,
   getOwnerTypeLabel,
 } from '../Map/components/AircraftIcon/AircraftIcon';
+import openSkyTrackingService from '@/lib/services/openSkyTrackingService';
 
 interface LeafletMapProps {
   aircraft: ExtendedAircraft[];
   onError: (message: string) => void;
+  children?: React.ReactNode; // Add this line to accept children
+  preserveView?: boolean;
 }
 
 interface LeafletMapState {
@@ -27,6 +30,7 @@ class LeafletMap extends Component<LeafletMapProps, LeafletMapState> {
   private markers: Map<string, any> = new Map(); // Store markers by icao24
   private isInitialized = false;
   private resizeObserver: ResizeObserver | null = null;
+  private lastRefreshTime: number = 0;
 
   constructor(props: LeafletMapProps) {
     super(props);
@@ -36,8 +40,27 @@ class LeafletMap extends Component<LeafletMapProps, LeafletMapState> {
     };
   }
 
+  getMapInstance() {
+    return this.map;
+  }
+
+  // Create a ref to expose this method
+  mapInstanceRef = createRef<{ getMapInstance?: () => any }>();
+
   componentDidMount() {
     this.initializeMap();
+
+    // Expose the getMapInstance method
+    if (this.mapInstanceRef.current) {
+      this.mapInstanceRef.current.getMapInstance =
+        this.getMapInstance.bind(this);
+    }
+
+    if (typeof openSkyTrackingService.refreshPositionsOnly === 'function') {
+      openSkyTrackingService.refreshPositionsOnly(true);
+      this.lastRefreshTime = Date.now();
+    }
+
     // Set up resize observer for the map container
     if (this.mapRef.current) {
       this.resizeObserver = new ResizeObserver(() => {
@@ -66,11 +89,12 @@ class LeafletMap extends Component<LeafletMapProps, LeafletMapState> {
 
   componentWillUnmount() {
     console.log('[LeafletMap] Component unmounting...');
-    // Clean up resize observer
-    if (this.resizeObserver && this.mapRef.current) {
-      this.resizeObserver.unobserve(this.mapRef.current);
-      this.resizeObserver = null;
+
+    // Clean up the global reference
+    if ((window as any).__leafletMapInstance === this.map) {
+      (window as any).__leafletMapInstance = null;
     }
+
     this.destroyMap();
   }
 
@@ -97,6 +121,11 @@ class LeafletMap extends Component<LeafletMapProps, LeafletMapState> {
         preferCanvas: true,
         worldCopyJump: true,
       });
+
+      // Add this line to expose the map instance globally for the MapController
+      // Note: This is a temporary solution for development; in production you'd want
+      // a more elegant approach like React refs or context passing
+      (window as any).__leafletMapInstance = this.map;
 
       // Set up base layers
       const layers = {
@@ -187,6 +216,7 @@ class LeafletMap extends Component<LeafletMapProps, LeafletMapState> {
   }
 
   updateAircraftMarkers() {
+    console.log('Updating markers, preserveView:', this.props.preserveView);
     if (
       !this.map ||
       !this.markerLayer ||
@@ -244,6 +274,22 @@ class LeafletMap extends Component<LeafletMapProps, LeafletMapState> {
           if (tooltip) {
             tooltip.setContent(createTooltipContent(plane, currentZoom));
 
+            // Before fitting bounds:
+            console.log('About to check bounds fitting:', {
+              aircraftCount: validAircraft.length,
+              hasSelection: !!this.state.selectedAircraft,
+              preserveView: this.props.preserveView,
+            });
+
+            if (
+              validAircraft.length > 0 &&
+              !this.state.selectedAircraft &&
+              !this.props.preserveView
+            ) {
+              console.log('FITTING BOUNDS NOW');
+              // bounds fitting code...
+            }
+
             // Update permanence based on selection and zoom
             if (isSelected && currentZoom > 8) {
               tooltip.options.permanent = true;
@@ -295,13 +341,54 @@ class LeafletMap extends Component<LeafletMapProps, LeafletMapState> {
       });
 
       // Auto-fit bounds if we have aircraft and no selection
-      if (validAircraft.length > 0 && !this.state.selectedAircraft) {
+      if (
+        validAircraft.length > 0 &&
+        !this.state.selectedAircraft &&
+        !this.props.preserveView
+      ) {
         const bounds = L.latLngBounds(
           validAircraft.map((a) => [a.latitude, a.longitude])
         );
         this.map.fitBounds(bounds, {
           padding: [50, 50],
           maxZoom: 10, // Prevent too much zoom
+        });
+      }
+
+      // Check if we're within 2 seconds of a refresh
+      const timeSinceRefresh = Date.now() - this.lastRefreshTime;
+      const isRecentlyRefreshed = timeSinceRefresh < 2000;
+
+      console.log(
+        'Map update - preserveView:',
+        this.props.preserveView,
+        'timeSinceRefresh:',
+        timeSinceRefresh
+      );
+
+      if (
+        validAircraft.length > 0 &&
+        !this.state.selectedAircraft &&
+        !this.props.preserveView &&
+        !(window as any).__preventMapBoundsFit
+      ) {
+        // Fit bounds
+      }
+
+      // Only fit bounds if not in a refresh and not selected
+      if (
+        validAircraft.length > 0 &&
+        !this.state.selectedAircraft &&
+        !this.props.preserveView &&
+        !isRecentlyRefreshed
+      ) {
+        console.log('Fitting bounds now');
+        const bounds = L.latLngBounds(
+          validAircraft.map((a) => [a.latitude, a.longitude])
+        );
+        this.map.fitBounds(bounds, {
+          padding: [50, 50],
+          maxZoom: 10,
         });
       }
     } catch (error) {
@@ -545,6 +632,15 @@ class LeafletMap extends Component<LeafletMapProps, LeafletMapState> {
 
   render() {
     const { selectedAircraft } = this.state;
+    const currentZoom = this.state.currentZoom;
+
+    // Adjust info panel style based on zoom level
+    const infoPanelStyle = {
+      maxWidth: currentZoom >= 10 ? '350px' : '300px',
+      maxHeight: '85vh',
+      overflow: 'auto',
+      transition: 'max-width 0.3s ease-in-out',
+    };
 
     return (
       <div className="relative w-full h-full">
@@ -555,11 +651,15 @@ class LeafletMap extends Component<LeafletMapProps, LeafletMapState> {
           id="leaflet-map"
         />
 
+        {/* Render children if the map is initialized */}
+        {this.isInitialized && this.map && this.props.children}
+
         {/* Info panel for selected aircraft */}
         {selectedAircraft && (
           <div
             ref={this.infoRef}
-            className="absolute top-4 right-4 bg-white rounded-lg shadow-lg p-4 z-30 max-w-md"
+            className="absolute top-4 right-4 bg-white rounded-lg shadow-lg p-4 z-30"
+            style={infoPanelStyle}
           >
             <div className="flex justify-between items-start mb-2">
               <h2 className="text-xl font-bold">

@@ -58,6 +58,23 @@ async function processBatchedRequests<T, R>(
   return allResults;
 }
 
+// In your openSkyTrackingService.js
+let preventBoundsFit = false;
+
+// Add a function to call when starting a refresh
+interface SetRefreshInProgress {
+  (inProgress: boolean): void;
+}
+
+const setRefreshInProgress: SetRefreshInProgress = (inProgress) => {
+  preventBoundsFit = inProgress;
+  // Expose this to window for immediate access
+  (window as any).__preventMapBoundsFit = inProgress;
+  console.log('Setting preventBoundsFit to', inProgress);
+};
+
+// Call this at start/end of your refresh operations
+
 /**
  * Service for interacting with OpenSky tracking data
  */
@@ -565,8 +582,12 @@ class OpenSkyTrackingService {
       return [];
     }
 
+    (window as any).__preventMapBoundsFit = true;
+
     console.log('[OpenSky] Refreshing positions only for tracked aircraft');
     this.loading = true;
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
 
     try {
       // Get the ICAO codes of currently tracked aircraft
@@ -591,6 +612,11 @@ class OpenSkyTrackingService {
       // Update state and notify subscribers
       this.updateTrackedAircraftState();
 
+      // Reset after completion with a delay
+      setTimeout(() => {
+        (window as any).__preventMapBoundsFit = false;
+      }, 1000);
+
       console.log(
         `[OpenSky] Refreshed positions for ${updatedAircraft.length} aircraft`
       );
@@ -607,3 +633,4 @@ class OpenSkyTrackingService {
 // Export singleton instance
 const openSkyTrackingService = OpenSkyTrackingService.getInstance();
 export default openSkyTrackingService;
+export { setRefreshInProgress };

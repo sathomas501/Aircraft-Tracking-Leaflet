@@ -72,6 +72,7 @@ export class MapWrapper extends React.Component<
       trackingStatus: manufacturer
         ? `Loading aircraft for ${manufacturer}...`
         : '',
+      models: [],
     });
 
     if (!manufacturer) {
@@ -173,8 +174,12 @@ export class MapWrapper extends React.Component<
   }
 
   // Handle reset
-  handleReset(): void {
-    this.handleManufacturerSelect(null);
+  handleReset() {
+    this.setState({
+      selectedManufacturer: null,
+      selectedModel: null,
+      models: [],
+    });
   }
 
   render() {
@@ -187,6 +192,8 @@ export class MapWrapper extends React.Component<
       isLoading,
       trackingStatus,
     } = this.state;
+
+    const totalActive = displayedAircraft.length;
 
     // Calculate model counts for the selector
     const modelCounts: Record<string, number> = {};
@@ -203,10 +210,13 @@ export class MapWrapper extends React.Component<
         <div className="absolute top-0 left-0 right-0 z-10 max-w-sm ml-4">
           <SimplifiedUnifiedSelector
             manufacturers={manufacturers}
+            selectedManufacturer={selectedManufacturer}
+            activeModels={models}
+            selectedModel={selectedModel}
             onManufacturerSelect={this.handleManufacturerSelect}
             onModelSelect={this.handleModelSelect}
             onReset={this.handleReset}
-            totalActive={displayedAircraft.length}
+            totalActive={totalActive}
             isLoading={isLoading}
           />
         </div>
