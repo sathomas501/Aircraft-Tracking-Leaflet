@@ -27,6 +27,15 @@ const OptimizedReactBaseMap = dynamic(
   }
 );
 
+// Import the worker-based version
+const WorkerReactBaseMap = dynamic(
+  () => import('../../../tracking/map/ReactBaseMap'),
+  {
+    ssr: false,
+    loading: () => <LoadingSpinner message="Loading worker-based map..." />,
+  }
+);
+
 interface MapComponentProps {
   manufacturers: SelectOption[];
   onError: (message: string) => void;
@@ -44,7 +53,7 @@ interface MapComponentState {
   totalActive: number;
   preserveMapView?: boolean;
   useNewImplementation: boolean; // Add this line
-  mapMode: 'legacy' | 'react' | 'optimized';
+  mapMode: 'legacy' | 'react' | 'optimized' | 'worker';
 }
 
 class MapComponent extends React.Component<
@@ -56,6 +65,7 @@ class MapComponent extends React.Component<
   private unsubscribeStatus: (() => void) | null = null;
   private refreshInterval: NodeJS.Timeout | null = null;
   private map: any; // Add this line to define the map property
+  private _currentRefreshId: number | null = null;
 
   constructor(props: MapComponentProps) {
     super(props);
@@ -94,7 +104,7 @@ class MapComponent extends React.Component<
     }));
   }
 
-  toggleMapMode(mode: 'legacy' | 'react' | 'optimized') {
+  toggleMapMode(mode: 'legacy' | 'react' | 'optimized' | 'worker') {
     this.setState({ mapMode: mode });
   }
 
@@ -193,59 +203,58 @@ class MapComponent extends React.Component<
   }
 
   // Method to refresh only the positions of active aircraft
+  // Modified refreshPositionsOnly method
   async refreshPositionsOnly() {
-    if (!this.state.selectedManufacturer || this.state.isRefreshing) return;
+    // Check if already refreshing or if a refresh is in progress
+    if (this.state.isRefreshing || (window as any).__preventMapBoundsFit) {
+      console.log('Refresh already in progress, skipping');
+      return;
+    }
+
+    if (!this.state.selectedManufacturer) return;
 
     this.setState({
       isRefreshing: true,
       trackingStatus: 'Updating aircraft positions...',
-      preserveMapView: true, // Add this line
+      preserveMapView: true,
     });
 
-    if (!this.map) {
-      console.warn('Map not initialized, cannot disable fitBounds');
-      return;
+    // Disable map bounds fitting
+    const originalFitBounds = this.map?.fitBounds;
+    if (this.map) {
+      this.map.fitBounds = function () {
+        console.log('fitBounds disabled during refresh');
+        return this;
+      };
     }
-    const originalFitBounds = this.map.fitBounds;
-
-    this.map.fitBounds = function () {
-      console.log('fitBounds disabled during refresh');
-      return this; // Maintain method chaining
-    };
 
     try {
-      // Call the OpenSkyTrackingService method for position-only refresh
-      if (typeof openSkyTrackingService.refreshPositionsOnly === 'function') {
-        await openSkyTrackingService.refreshPositionsOnly();
-      } else {
-        // Fallback to regular refresh if the method doesn't exist yet
-        await openSkyTrackingService.refreshNow();
-      }
+      // Call the service
+      await openSkyTrackingService.refreshPositionsOnly();
 
-      // Update last refreshed timestamp
       this.setState({
         lastRefreshed: new Date().toLocaleTimeString(),
         trackingStatus: `${this.state.displayedAircraft.length} aircraft tracked, positions updated`,
       });
-
+    } catch (error) {
+      this.props.onError(
+        `Error refreshing positions: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
+    } finally {
+      // Restore the original fitBounds after a short delay
       setTimeout(() => {
-        try {
-          if (this.map) {
-            this.map.fitBounds = originalFitBounds;
-            console.log('fitBounds functionality restored');
-          }
-        } catch (error) {
-          console.error('Error restoring fitBounds:', error);
+        if (this.map && originalFitBounds) {
+          this.map.fitBounds = originalFitBounds;
         }
       }, 2000);
-    } finally {
-      // Keep preserveMapView true until fitBounds is restored
+
+      // Reset state - but wait a moment to make sure service has completed
       setTimeout(() => {
         this.setState({
           isRefreshing: false,
           preserveMapView: false,
         });
-      }, 2000); // Match this with your fitBounds restoration timing
+      }, 500);
     }
   }
 
@@ -294,8 +303,6 @@ class MapComponent extends React.Component<
 
     return (
       <MapProvider>
-        {' '}
-        {/* ✅ Now everything inside has access to useMapContext() */}
         <div className="relative w-full h-screen">
           {/* Conditionally render different map implementations */}
           {mapMode === 'legacy' && (
@@ -308,6 +315,13 @@ class MapComponent extends React.Component<
 
           {mapMode === 'optimized' && (
             <OptimizedReactBaseMap
+              aircraft={displayedAircraft}
+              onError={onError}
+            />
+          )}
+
+          {mapMode === 'worker' && (
+            <WorkerReactBaseMap
               aircraft={displayedAircraft}
               onError={onError}
             />
@@ -329,38 +343,11 @@ class MapComponent extends React.Component<
             />
           </div>
 
-          {/* Refresh controls */}
-          <div className="absolute bottom-4 left-4 z-20 flex flex-col gap-2">
-            <button
-              onClick={this.refreshPositionsOnly}
-              disabled={!isTrackingActive || isRefreshing || isLoading}
-              className={`bg-blue-500 text-white px-4 py-2 rounded shadow-md ${
-                isTrackingActive && !isRefreshing && !isLoading
-                  ? 'hover:bg-blue-600'
-                  : 'opacity-50 cursor-not-allowed'
-              }`}
-            >
-              Update Positions
-            </button>
-
-            <button
-              onClick={this.handleFullRefresh}
-              disabled={!isTrackingActive || isRefreshing || isLoading}
-              className={`bg-green-500 text-white px-4 py-2 rounded shadow-md ${
-                isTrackingActive && !isRefreshing && !isLoading
-                  ? 'hover:bg-green-600'
-                  : 'opacity-50 cursor-not-allowed'
-              }`}
-            >
-              Full Refresh
-            </button>
-          </div>
-
           {/* Map toggle buttons */}
           <div className="absolute top-4 right-4 z-50 flex space-x-2">
             <button
               onClick={() => this.toggleMapMode('legacy')}
-              className={`px-3 py-1 rounded shadow-md ${
+              className={`px-3 py-1 rounded shadow-md text-sm ${
                 mapMode === 'legacy'
                   ? 'bg-blue-600 text-white'
                   : 'bg-gray-200 text-gray-800 hover:bg-gray-300'
@@ -370,7 +357,7 @@ class MapComponent extends React.Component<
             </button>
             <button
               onClick={() => this.toggleMapMode('react')}
-              className={`px-3 py-1 rounded shadow-md ${
+              className={`px-3 py-1 rounded shadow-md text-sm ${
                 mapMode === 'react'
                   ? 'bg-blue-600 text-white'
                   : 'bg-gray-200 text-gray-800 hover:bg-gray-300'
@@ -380,7 +367,7 @@ class MapComponent extends React.Component<
             </button>
             <button
               onClick={() => this.toggleMapMode('optimized')}
-              className={`px-3 py-1 rounded shadow-md ${
+              className={`px-3 py-1 rounded shadow-md text-sm ${
                 mapMode === 'optimized'
                   ? 'bg-blue-600 text-white'
                   : 'bg-gray-200 text-gray-800 hover:bg-gray-300'
@@ -388,22 +375,33 @@ class MapComponent extends React.Component<
             >
               Optimized
             </button>
+            <button
+              onClick={() => this.toggleMapMode('worker')}
+              className={`px-3 py-1 rounded shadow-md text-sm ${
+                mapMode === 'worker'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-200 text-gray-800 hover:bg-gray-300'
+              }`}
+            >
+              Worker
+            </button>
           </div>
 
-          {/* Status and last refresh info */}
-          <div className="absolute bottom-4 right-4 z-20 bg-white p-2 rounded shadow">
-            <p className="text-sm">{trackingStatus}</p>
-            {lastRefreshed && (
-              <p className="text-xs text-gray-600">
-                Last updated: {lastRefreshed}
-              </p>
-            )}
-            {selectedManufacturer && totalActive > 0 && (
-              <p className="text-xs text-blue-600">
-                Tracking {totalActive} aircraft
-              </p>
-            )}
-          </div>
+          {/* Loading indicator */}
+          {(isLoading || isRefreshing) && (
+            <div className="absolute top-4 right-32 z-20">
+              <LoadingSpinner
+                message={
+                  isRefreshing
+                    ? 'Refreshing positions...'
+                    : 'Loading aircraft data...'
+                }
+              />
+            </div>
+          )}
+
+          {/* Your existing UI elements */}
+          {/* ... */}
         </div>
       </MapProvider>
     );

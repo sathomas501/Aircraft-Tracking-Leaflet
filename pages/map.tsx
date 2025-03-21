@@ -1,79 +1,86 @@
+// pages/map.tsx
+import React, { useState, useEffect } from 'react';
+import type { NextPage } from 'next';
 import dynamic from 'next/dynamic';
-import { useEffect, useState } from 'react';
-import { SelectOption } from '@/types/base';
-import manufacturersService from '@/lib/services/ManufacturersService';
+import { toast, Toaster } from 'react-hot-toast';
+import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 
-const MapWithNoSSR = dynamic(
-  () =>
-    import('../components/aircraft/tracking/mapWrapper/MapWrapper').then(
-      (mod) => {
-        console.log('Dynamic import resolved:', mod);
-        return mod.MapWrapper || mod.default; // Try both exports
-      }
-    ),
+// Dynamically import the map component
+const AircraftTrackingMap = dynamic(
+  () => import('../components/tracking/map/AircrafTrackingMap'),
   {
     ssr: false,
-    loading: () => (
-      <div className="w-full h-screen flex items-center justify-center">
-        Loading map...
-      </div>
-    ),
+    loading: () => <LoadingSpinner message="Loading map..." />,
   }
 );
 
-export default function MapPage() {
-  const [manufacturers, setManufacturers] = useState<SelectOption[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+const MapPage: NextPage = () => {
+  const [manufacturers, setManufacturers] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Load manufacturers when the component mounts
-  useEffect(() => {
-    async function loadData() {
-      try {
-        setLoading(true);
-        console.log('Loading manufacturers via service...');
-        const data = await manufacturersService.loadManufacturers();
-        console.log(`Loaded ${data.length} manufacturers`);
-        setManufacturers(data);
-      } catch (err) {
-        console.error('Error loading manufacturers:', err);
-        setError(
-          err instanceof Error ? err.message : 'Failed to load manufacturers'
-        );
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    loadData();
-  }, []);
-
+  // Handle errors
   const handleError = (message: string) => {
-    console.error(message);
-    setError(message);
+    toast.error(message);
   };
 
+  // Fetch manufacturers
+  useEffect(() => {
+    const fetchManufacturers = async () => {
+      try {
+        setIsLoading(true);
+        const response = await fetch('/api/aircraft/manufacturers');
+        if (!response.ok) {
+          throw new Error(
+            `Failed to fetch manufacturers: ${response.statusText}`
+          );
+        }
+
+        const data = await response.json();
+        setManufacturers(data.manufacturers || []);
+      } catch (error) {
+        console.error('Error fetching manufacturers:', error);
+        handleError(
+          `Error loading manufacturers: ${error instanceof Error ? error.message : 'Unknown error'}`
+        );
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchManufacturers();
+  }, []);
+
   return (
-    <div className="w-full h-screen">
-      {error && (
-        <div className="fixed top-4 right-4 bg-red-500 text-white p-3 rounded-md shadow-lg z-50">
-          <p>{error}</p>
-          <button
-            onClick={() => setError(null)}
-            className="absolute top-1 right-1 text-white"
-          >
-            ✕
-          </button>
+    <div className="relative min-h-screen bg-gray-50">
+      {/* Header */}
+      <header className="bg-blue-600 p-4 text-white">
+        <div className="container mx-auto">
+          <h1 className="text-2xl font-bold">Aircraft Tracking</h1>
         </div>
-      )}
+      </header>
 
-      <MapWithNoSSR manufacturers={manufacturers} onError={handleError} />
+      {/* Toaster for notifications */}
+      <Toaster position="top-right" />
 
-      {loading && (
-        <div className="fixed top-4 left-4 bg-blue-500 text-white p-3 rounded-md shadow-lg z-50">
-          Loading manufacturers...
+      {/* Loading State */}
+      {isLoading ? (
+        <div
+          className="flex justify-center items-center"
+          style={{ height: 'calc(100vh - 64px)' }}
+        >
+          <LoadingSpinner message="Loading manufacturers..." />
         </div>
+      ) : (
+        /* Map Area */
+        <main style={{ height: 'calc(100vh - 64px)' }}>
+          <AircraftTrackingMap
+            manufacturers={manufacturers}
+            onError={handleError}
+          />
+        </main>
       )}
     </div>
   );
-}
+};
+
+export default MapPage;

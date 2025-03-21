@@ -1,18 +1,19 @@
-// components/tracking/map/components/ContextAircraftMarker.tsx
+// components/tracking/map/components/EnhancedContextAircraftMarker.tsx
 import React from 'react';
 import { Marker, Popup, Tooltip } from 'react-leaflet';
-import { useMapContext } from '../../context/MapContext';
-import { createAircraftIcon } from '../../../aircraft/tracking/Map/components/AircraftIcon/AircraftIcon';
+import { useEnhancedMapContext } from '../context/EnhancedMapContext';
+import { createAircraftIcon } from '../../aircraft/tracking/Map/components/AircraftIcon/AircraftIcon';
 import type { ExtendedAircraft } from '@/types/base';
 
-interface ContextAircraftMarkerProps {
+interface EnhancedContextAircraftMarkerProps {
   aircraft: ExtendedAircraft;
 }
 
-const ContextAircraftMarker: React.FC<ContextAircraftMarkerProps> = ({
-  aircraft,
-}) => {
-  const { selectedAircraft, selectAircraft, zoomLevel } = useMapContext();
+const EnhancedContextAircraftMarker: React.FC<
+  EnhancedContextAircraftMarkerProps
+> = ({ aircraft }) => {
+  const { selectedAircraft, selectAircraft, zoomLevel } =
+    useEnhancedMapContext();
   const isSelected = selectedAircraft?.icao24 === aircraft.icao24;
 
   if (!aircraft?.latitude || !aircraft?.longitude) return null;
@@ -140,4 +141,4 @@ const ContextAircraftMarker: React.FC<ContextAircraftMarkerProps> = ({
   );
 };
 
-export default React.memo(ContextAircraftMarker);
+export default React.memo(EnhancedContextAircraftMarker);

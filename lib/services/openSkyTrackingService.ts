@@ -578,20 +578,20 @@ class OpenSkyTrackingService {
   /**
    * Update this method to call updateTrackedAircraftState
    */
-  public async refreshPositionsOnly(preserveView = false): Promise<Aircraft[]> {
-    if (!this.trackingActive || !this.currentManufacturer) {
-      console.warn('[OpenSky] No active tracking session to refresh');
-      return [];
+  private isRefreshingPositions = false;
+
+  public async refreshPositionsOnly(): Promise<Aircraft[]> {
+    if (this.isRefreshingPositions) {
+      console.log('Already refreshing positions, skipping');
+      return this.trackedAircraft;
     }
 
-    if (typeof window !== 'undefined') {
-      (window as any).__preventMapBoundsFit = true;
-    }
-
+    // Use the setRefreshInProgress function instead of directly setting window property
+    setRefreshInProgress(true);
     console.log('[OpenSky] Refreshing positions only for tracked aircraft');
-    this.loading = true;
 
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    this.loading = true;
+    const refreshStartTime = Date.now(); // Track when we started
 
     try {
       // Get the ICAO codes of currently tracked aircraft
@@ -606,7 +606,7 @@ class OpenSkyTrackingService {
 
       // Only get live data for these aircraft without re-fetching from database
       const updatedAircraft = await this.getLiveAircraftData(
-        this.currentManufacturer,
+        this.currentManufacturer ?? '', // Use empty string as fallback if null
         activeIcaos
       );
 
@@ -615,13 +615,6 @@ class OpenSkyTrackingService {
 
       // Update state and notify subscribers
       this.updateTrackedAircraftState();
-
-      // Reset after completion with a delay
-      if (typeof window !== 'undefined') {
-        setTimeout(() => {
-          (window as any).__preventMapBoundsFit = false;
-        }, 1000);
-      }
 
       console.log(
         `[OpenSky] Refreshed positions for ${updatedAircraft.length} aircraft`
@@ -632,6 +625,15 @@ class OpenSkyTrackingService {
       return this.trackedAircraft; // Return current data on error
     } finally {
       this.loading = false;
+
+      // Make sure we don't reset too quickly (ensure at least 500ms passed)
+      const elapsedTime = Date.now() - refreshStartTime;
+      const resetDelay = Math.max(0, 500 - elapsedTime);
+
+      // Reset in the finally block to ensure it always happens
+      setTimeout(() => {
+        (window as any).__preventMapBoundsFit = false;
+      }, 1000);
     }
   }
 }
