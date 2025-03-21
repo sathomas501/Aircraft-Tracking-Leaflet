@@ -1,9 +1,9 @@
 // pages/index.tsx
 import React from 'react';
 import Head from 'next/head';
-import MapComponent from '../components/aircraft/tracking/Map/MapComponent';
 import { SelectOption } from '@/types/base';
 import manufacturersService from '../lib/services/ManufacturersService';
+import dynamic from 'next/dynamic';
 
 interface HomePageProps {
   initialManufacturers?: SelectOption[];
@@ -13,6 +13,11 @@ interface HomePageState {
   manufacturers: SelectOption[];
   errorMessage: string | null;
 }
+
+const MapComponent = dynamic(
+  () => import('../components/aircraft/tracking/Map/MapComponent'),
+  { ssr: false }
+);
 
 class HomePage extends React.Component<HomePageProps, HomePageState> {
   private unsubscribeManufacturers: (() => void) | null = null;

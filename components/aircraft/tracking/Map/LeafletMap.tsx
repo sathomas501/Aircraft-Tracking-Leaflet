@@ -91,7 +91,10 @@ class LeafletMap extends Component<LeafletMapProps, LeafletMapState> {
     console.log('[LeafletMap] Component unmounting...');
 
     // Clean up the global reference
-    if ((window as any).__leafletMapInstance === this.map) {
+    if (
+      typeof window !== 'undefined' &&
+      (window as any).__leafletMapInstance === this.map
+    ) {
       (window as any).__leafletMapInstance = null;
     }
 
@@ -125,7 +128,9 @@ class LeafletMap extends Component<LeafletMapProps, LeafletMapState> {
       // Add this line to expose the map instance globally for the MapController
       // Note: This is a temporary solution for development; in production you'd want
       // a more elegant approach like React refs or context passing
-      (window as any).__leafletMapInstance = this.map;
+      if (typeof window !== 'undefined') {
+        (window as any).__leafletMapInstance = this.map;
+      }
 
       // Set up base layers
       const layers = {
@@ -370,6 +375,7 @@ class LeafletMap extends Component<LeafletMapProps, LeafletMapState> {
         validAircraft.length > 0 &&
         !this.state.selectedAircraft &&
         !this.props.preserveView &&
+        typeof window !== 'undefined' &&
         !(window as any).__preventMapBoundsFit
       ) {
         // Fit bounds

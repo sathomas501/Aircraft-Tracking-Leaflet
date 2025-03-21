@@ -1,5 +1,4 @@
 // AircraftIcon.tsx
-import L from 'leaflet';
 import type { Aircraft } from '@/types/base';
 
 interface AircraftIconOptions {
@@ -44,23 +43,19 @@ export const createAircraftIcon = (
     on_ground?: boolean;
   },
   options: AircraftIconOptions = {}
-): L.DivIcon => {
-  const { isSelected = false, zoomLevel = 9 } = options;
+): L.DivIcon | null => {
+  if (typeof window === 'undefined') return null; // SSR guard
+  const L = require('leaflet');
 
-  // Determine icon size based on zoom level and selection state
+  const { isSelected = false, zoomLevel = 9 } = options;
   const size = getIconSizeForZoom(zoomLevel, isSelected);
 
-  // Determine icon URL based on aircraft type and government status
   let iconUrl = '/icons/jetIconImg.png';
-
-  if (aircraft.isGovernment) {
-    iconUrl = '/icons/governmentJetIconImg.png';
-  } else if (aircraft.type === 'helicopter') {
+  if (aircraft.isGovernment) iconUrl = '/icons/governmentJetIconImg.png';
+  else if (aircraft.type === 'helicopter')
     iconUrl = '/icons/helicopterIconImg.png';
-  }
 
-  // Create the icon with responsive sizing
-  const icon = L.divIcon({
+  return L.divIcon({
     className: `aircraft-icon ${isSelected ? 'selected' : ''} ${aircraft.on_ground ? 'grounded' : ''}`,
     html: `
       <div class="aircraft-marker" style="
@@ -86,8 +81,6 @@ export const createAircraftIcon = (
     popupAnchor: [0, -size / 2],
     tooltipAnchor: [0, -size / 2],
   });
-
-  return icon;
 };
 
 // Create tooltip content with responsiveness

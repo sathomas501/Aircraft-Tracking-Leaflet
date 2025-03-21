@@ -7,7 +7,7 @@ import React, {
   useCallback,
 } from 'react';
 import type { ReactNode } from 'react';
-import type { ExtendedAircraft } from '@/types/base';
+import type { Aircraft, ExtendedAircraft } from '@/types/base';
 import type { Map as LeafletMap } from 'leaflet';
 import openSkyTrackingService from '@/lib/services/openSkyTrackingService';
 
@@ -24,6 +24,7 @@ interface MapContextType {
   isRefreshing: boolean;
   preserveView: boolean;
   lastRefreshed: string | null;
+  aircraft: Aircraft[];
 
   // Actions
   refreshPositions: () => Promise<void>;
@@ -47,6 +48,7 @@ export const MapProvider: React.FC<{ children: ReactNode }> = ({
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [preserveView, setPreserveView] = useState<boolean>(false);
   const [lastRefreshed, setLastRefreshed] = useState<string | null>(null);
+  const [aircraft, setAircraft] = useState<Aircraft[]>([]);
 
   // Method to refresh positions only
   const refreshPositions = useCallback(async () => {
@@ -113,6 +115,7 @@ export const MapProvider: React.FC<{ children: ReactNode }> = ({
     mapInstance,
     setMapInstance,
     selectedAircraft,
+    aircraft,
     setSelectedAircraft,
     zoomLevel,
     setZoomLevel,

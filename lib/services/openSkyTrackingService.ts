@@ -69,7 +69,9 @@ interface SetRefreshInProgress {
 const setRefreshInProgress: SetRefreshInProgress = (inProgress) => {
   preventBoundsFit = inProgress;
   // Expose this to window for immediate access
-  (window as any).__preventMapBoundsFit = inProgress;
+  if (typeof window !== 'undefined') {
+    (window as any).__preventMapBoundsFit = inProgress;
+  }
   console.log('Setting preventBoundsFit to', inProgress);
 };
 
@@ -582,7 +584,9 @@ class OpenSkyTrackingService {
       return [];
     }
 
-    (window as any).__preventMapBoundsFit = true;
+    if (typeof window !== 'undefined') {
+      (window as any).__preventMapBoundsFit = true;
+    }
 
     console.log('[OpenSky] Refreshing positions only for tracked aircraft');
     this.loading = true;
@@ -613,9 +617,11 @@ class OpenSkyTrackingService {
       this.updateTrackedAircraftState();
 
       // Reset after completion with a delay
-      setTimeout(() => {
-        (window as any).__preventMapBoundsFit = false;
-      }, 1000);
+      if (typeof window !== 'undefined') {
+        setTimeout(() => {
+          (window as any).__preventMapBoundsFit = false;
+        }, 1000);
+      }
 
       console.log(
         `[OpenSky] Refreshed positions for ${updatedAircraft.length} aircraft`

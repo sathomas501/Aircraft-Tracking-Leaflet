@@ -76,12 +76,15 @@ export async function initializeApp() {
     console.log('[Init] ⚠️ Skipping initialization in browser');
     return;
   }
+
   return createInitPromise();
 }
 
 function setupShutdown(staticDb: typeof databaseManager) {
-  if (typeof window !== 'undefined') return;
-
+  if (typeof window !== 'undefined') {
+    console.log('[Init] ⚠️ Shutdown hook skipped in browser');
+    return;
+  }
   const shutdown = async (signal: string) => {
     console.log(
       `\n[Shutdown] 🛑 Received ${signal}. Starting graceful shutdown...`

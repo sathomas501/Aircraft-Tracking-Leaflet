@@ -283,6 +283,8 @@ const DynamicMap: React.FC<DynamicMapProps> = ({ aircraft, onError }) => {
 
   // Force map re-initialization on window resize
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+
     const handleResize = () => {
       if (mapInstanceRef.current) {
         mapInstanceRef.current.invalidateSize();

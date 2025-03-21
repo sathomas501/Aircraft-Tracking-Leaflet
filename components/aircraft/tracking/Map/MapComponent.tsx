@@ -7,6 +7,7 @@ import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 import UnifiedSelector from '../selector/UnifiedSelector';
 import openSkyTrackingService from '@/lib/services/openSkyTrackingService';
 import ReactBaseMap from '../../../tracking/map/ReactBaseMap';
+import { MapProvider } from '../../../tracking/context/MapContext';
 
 // Dynamically import the map to avoid SSR issues with Leaflet
 const LeafletMap = dynamic(
@@ -292,143 +293,119 @@ class MapComponent extends React.Component<
       selectedManufacturer !== null && displayedAircraft.length > 0;
 
     return (
-      <div className="relative w-full h-screen">
-        {/* Conditionally render different map implementations */}
-        {mapMode === 'legacy' && (
-          <LeafletMap aircraft={displayedAircraft} onError={onError} />
-        )}
+      <MapProvider>
+        {' '}
+        {/* ✅ Now everything inside has access to useMapContext() */}
+        <div className="relative w-full h-screen">
+          {/* Conditionally render different map implementations */}
+          {mapMode === 'legacy' && (
+            <LeafletMap aircraft={displayedAircraft} onError={onError} />
+          )}
 
-        {mapMode === 'react' && (
-          <ReactBaseMap aircraft={displayedAircraft} onError={onError} />
-        )}
+          {mapMode === 'react' && (
+            <ReactBaseMap aircraft={displayedAircraft} onError={onError} />
+          )}
 
-        {mapMode === 'optimized' && (
-          <OptimizedReactBaseMap
-            aircraft={displayedAircraft}
-            onError={onError}
-          />
-        )}
+          {mapMode === 'optimized' && (
+            <OptimizedReactBaseMap
+              aircraft={displayedAircraft}
+              onError={onError}
+            />
+          )}
 
-        {/* Integrated Aircraft & Model Selector */}
-        <div className="absolute top-0 left-0 right-0 z-10 max-w-sm ml-4">
-          <UnifiedSelector
-            manufacturers={manufacturers}
-            activeModels={activeModels}
-            selectedManufacturer={selectedManufacturer}
-            selectedModel={selectedModel}
-            onManufacturerSelect={this.handleManufacturerSelect}
-            onModelSelect={this.handleModelSelect}
-            onReset={this.handleReset}
-            onRefresh={this.handleFullRefresh}
-            isLoading={isLoading || isRefreshing}
-            totalActive={totalActive}
-          />
-        </div>
-
-        {/* Loading indicator */}
-        {(isLoading || isRefreshing) && (
-          <div className="absolute top-4 right-4 z-20">
-            <LoadingSpinner
-              message={
-                isRefreshing
-                  ? 'Refreshing positions...'
-                  : 'Loading aircraft data...'
-              }
+          {/* Integrated Aircraft & Model Selector */}
+          <div className="absolute top-0 left-0 right-0 z-10 max-w-sm ml-4">
+            <UnifiedSelector
+              manufacturers={manufacturers}
+              activeModels={activeModels}
+              selectedManufacturer={selectedManufacturer}
+              selectedModel={selectedModel}
+              onManufacturerSelect={this.handleManufacturerSelect}
+              onModelSelect={this.handleModelSelect}
+              onReset={this.handleReset}
+              onRefresh={this.handleFullRefresh}
+              isLoading={isLoading || isRefreshing}
+              totalActive={totalActive}
             />
           </div>
-        )}
 
-        {/* Refresh controls */}
-        <div className="absolute bottom-4 left-4 z-20 flex flex-col gap-2">
-          {/* Position-only refresh button */}
-          <button
-            onClick={this.refreshPositionsOnly}
-            disabled={!isTrackingActive || isRefreshing || isLoading}
-            className={`bg-blue-500 text-white px-4 py-2 rounded shadow-md ${
-              isTrackingActive && !isRefreshing && !isLoading
-                ? 'hover:bg-blue-600'
-                : 'opacity-50 cursor-not-allowed'
-            }`}
-          >
-            Update Positions
-          </button>
+          {/* Refresh controls */}
+          <div className="absolute bottom-4 left-4 z-20 flex flex-col gap-2">
+            <button
+              onClick={this.refreshPositionsOnly}
+              disabled={!isTrackingActive || isRefreshing || isLoading}
+              className={`bg-blue-500 text-white px-4 py-2 rounded shadow-md ${
+                isTrackingActive && !isRefreshing && !isLoading
+                  ? 'hover:bg-blue-600'
+                  : 'opacity-50 cursor-not-allowed'
+              }`}
+            >
+              Update Positions
+            </button>
 
-          {/* Full refresh button */}
-          <button
-            onClick={this.handleFullRefresh}
-            disabled={!isTrackingActive || isRefreshing || isLoading}
-            className={`bg-green-500 text-white px-4 py-2 rounded shadow-md ${
-              isTrackingActive && !isRefreshing && !isLoading
-                ? 'hover:bg-green-600'
-                : 'opacity-50 cursor-not-allowed'
-            }`}
-          >
-            Full Refresh
-          </button>
-        </div>
-
-        {/* Map toggle buttons */}
-        <div className="absolute top-4 right-4 z-50 flex space-x-2">
-          <button
-            onClick={() => this.toggleMapMode('legacy')}
-            className={`px-3 py-1 rounded shadow-md ${
-              mapMode === 'legacy'
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-200 text-gray-800 hover:bg-gray-300'
-            }`}
-          >
-            Legacy
-          </button>
-          <button
-            onClick={() => this.toggleMapMode('react')}
-            className={`px-3 py-1 rounded shadow-md ${
-              mapMode === 'react'
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-200 text-gray-800 hover:bg-gray-300'
-            }`}
-          >
-            React
-          </button>
-          <button
-            onClick={() => this.toggleMapMode('optimized')}
-            className={`px-3 py-1 rounded shadow-md ${
-              mapMode === 'optimized'
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-200 text-gray-800 hover:bg-gray-300'
-            }`}
-          >
-            Optimized
-          </button>
-        </div>
-
-        {/* Loading indicator */}
-        {(isLoading || isRefreshing) && (
-          <div className="absolute top-4 right-4 z-20">
-            <LoadingSpinner
-              message={
-                isRefreshing
-                  ? 'Refreshing positions...'
-                  : 'Loading aircraft data...'
-              }
-            />
+            <button
+              onClick={this.handleFullRefresh}
+              disabled={!isTrackingActive || isRefreshing || isLoading}
+              className={`bg-green-500 text-white px-4 py-2 rounded shadow-md ${
+                isTrackingActive && !isRefreshing && !isLoading
+                  ? 'hover:bg-green-600'
+                  : 'opacity-50 cursor-not-allowed'
+              }`}
+            >
+              Full Refresh
+            </button>
           </div>
-        )}
 
-        {/* Status and last refresh info */}
-        <div className="absolute bottom-4 right-4 z-20 bg-white p-2 rounded shadow">
-          <p className="text-sm">{trackingStatus}</p>
-          {lastRefreshed && (
-            <p className="text-xs text-gray-600">
-              Last updated: {lastRefreshed}
-            </p>
-          )}
-          {selectedManufacturer && totalActive > 0 && (
-            <p className="text-xs text-blue-600">
-              Tracking {totalActive} aircraft
-            </p>
-          )}
+          {/* Map toggle buttons */}
+          <div className="absolute top-4 right-4 z-50 flex space-x-2">
+            <button
+              onClick={() => this.toggleMapMode('legacy')}
+              className={`px-3 py-1 rounded shadow-md ${
+                mapMode === 'legacy'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-200 text-gray-800 hover:bg-gray-300'
+              }`}
+            >
+              Legacy
+            </button>
+            <button
+              onClick={() => this.toggleMapMode('react')}
+              className={`px-3 py-1 rounded shadow-md ${
+                mapMode === 'react'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-200 text-gray-800 hover:bg-gray-300'
+              }`}
+            >
+              React
+            </button>
+            <button
+              onClick={() => this.toggleMapMode('optimized')}
+              className={`px-3 py-1 rounded shadow-md ${
+                mapMode === 'optimized'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-200 text-gray-800 hover:bg-gray-300'
+              }`}
+            >
+              Optimized
+            </button>
+          </div>
+
+          {/* Status and last refresh info */}
+          <div className="absolute bottom-4 right-4 z-20 bg-white p-2 rounded shadow">
+            <p className="text-sm">{trackingStatus}</p>
+            {lastRefreshed && (
+              <p className="text-xs text-gray-600">
+                Last updated: {lastRefreshed}
+              </p>
+            )}
+            {selectedManufacturer && totalActive > 0 && (
+              <p className="text-xs text-blue-600">
+                Tracking {totalActive} aircraft
+              </p>
+            )}
+          </div>
         </div>
-      </div>
+      </MapProvider>
     );
   }
 }

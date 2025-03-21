@@ -37,14 +37,17 @@ export const processAircraftInChunks = async (
 
     // If more chunks remain, schedule the next one
     if (endIndex < aircraft.length) {
-      // Use setTimeout to give UI time to update
       return new Promise<void>((resolve) => {
-        window.requestAnimationFrame(() => {
-          // Add optional delay between chunks if needed
-          setTimeout(() => {
-            processChunk(endIndex).then(resolve);
-          }, delayBetweenChunks);
-        });
+        if (typeof window !== 'undefined') {
+          window.requestAnimationFrame(() => {
+            setTimeout(() => {
+              processChunk(endIndex).then(resolve);
+            }, delayBetweenChunks);
+          });
+        } else {
+          // Fallback for SSR: just process next chunk without delay
+          processChunk(endIndex).then(resolve);
+        }
       });
     }
 

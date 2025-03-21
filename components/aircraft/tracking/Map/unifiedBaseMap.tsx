@@ -4,9 +4,10 @@ import { MapContainer, TileLayer, useMap, LayersControl } from 'react-leaflet';
 import { useMapContext } from '@/components/tracking/context/MapContext';
 import { useMapControl } from '@/components/tracking/context/useMapControl';
 import AircraftMarker from './components/AircraftMarker';
-import MapControls from './components/MapControls';
+import { MapControls } from './components/MapControls';
 import AircraftInfoPanel from './components/AircraftInfoPanel';
 import { MAP_CONFIG } from '@/config/map';
+import { transformToExtendedAircraft } from '../../../../types/aircraft-models';
 
 // Helper component to register the map instance
 const MapController: React.FC = () => {
@@ -48,15 +49,17 @@ const BaseMap: React.FC = () => {
           </LayersControl.BaseLayer>
         </LayersControl>
 
-        {/* Aircraft markers */}
-        {aircraft.map((plane) => (
-          <AircraftMarker
-            key={plane.icao24}
-            aircraft={plane}
-            isSelected={selectedAircraft?.icao24 === plane.icao24}
-            onClick={() => selectAircraft(plane)}
-          />
-        ))}
+        {aircraft.map((plane) => {
+          const extended = transformToExtendedAircraft(plane);
+          return (
+            <AircraftMarker
+              key={extended.icao24}
+              aircraft={extended}
+              isSelected={selectedAircraft?.icao24 === extended.icao24}
+              onClick={() => selectAircraft(extended)}
+            />
+          );
+        })}
 
         <MapControls />
       </MapContainer>
