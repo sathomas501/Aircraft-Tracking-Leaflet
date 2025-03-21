@@ -1,7 +1,12 @@
-// components/aircraft/tracking/Map/LeafletMap.tsx
 import React, { Component, createRef } from 'react';
 import type { ExtendedAircraft } from '@/types/base';
 import { MAP_CONFIG } from '@/config/map';
+import {
+  createAircraftIcon,
+  createTooltipContent,
+  createPopupContent,
+  getOwnerTypeLabel,
+} from '../Map/components/AircraftIcon/AircraftIcon';
 
 interface LeafletMapProps {
   aircraft: ExtendedAircraft[];
@@ -10,6 +15,7 @@ interface LeafletMapProps {
 
 interface LeafletMapState {
   selectedAircraft: ExtendedAircraft | null;
+  currentZoom: number;
 }
 
 class LeafletMap extends Component<LeafletMapProps, LeafletMapState> {
@@ -20,29 +26,51 @@ class LeafletMap extends Component<LeafletMapProps, LeafletMapState> {
   private leaflet: any = null;
   private markers: Map<string, any> = new Map(); // Store markers by icao24
   private isInitialized = false;
+  private resizeObserver: ResizeObserver | null = null;
 
   constructor(props: LeafletMapProps) {
     super(props);
     this.state = {
       selectedAircraft: null,
+      currentZoom: MAP_CONFIG.DEFAULT_ZOOM,
     };
   }
 
   componentDidMount() {
     this.initializeMap();
+    // Set up resize observer for the map container
+    if (this.mapRef.current) {
+      this.resizeObserver = new ResizeObserver(() => {
+        if (this.map) {
+          this.map.invalidateSize();
+          this.updateMarkersForZoom(this.state.currentZoom);
+        }
+      });
+      this.resizeObserver.observe(this.mapRef.current);
+    }
   }
 
-  componentDidUpdate(prevProps: LeafletMapProps) {
+  componentDidUpdate(prevProps: LeafletMapProps, prevState: LeafletMapState) {
     if (prevProps.aircraft !== this.props.aircraft) {
       if (!this.isInitialized) {
         this.initializeMap(); // Initialize only if needed
       }
       this.updateAircraftMarkers();
     }
+
+    // Update markers if zoom level changed
+    if (prevState.currentZoom !== this.state.currentZoom) {
+      this.updateMarkersForZoom(this.state.currentZoom);
+    }
   }
 
   componentWillUnmount() {
     console.log('[LeafletMap] Component unmounting...');
+    // Clean up resize observer
+    if (this.resizeObserver && this.mapRef.current) {
+      this.resizeObserver.unobserve(this.mapRef.current);
+      this.resizeObserver = null;
+    }
     this.destroyMap();
   }
 
@@ -91,8 +119,11 @@ class LeafletMap extends Component<LeafletMapProps, LeafletMapState> {
       this.markerLayer = L.layerGroup().addTo(this.map);
 
       // Add click handler to map for deselecting aircraft
-      this.map.on('click', () => {
-        this.setState({ selectedAircraft: null });
+      this.map.on('click', this.handleMapClick);
+
+      // Add zoom change handler
+      this.map.on('zoomend', () => {
+        this.setState({ currentZoom: this.map.getZoom() });
       });
 
       this.isInitialized = true;
@@ -105,6 +136,53 @@ class LeafletMap extends Component<LeafletMapProps, LeafletMapState> {
       this.props.onError(
         `Failed to initialize map: ${error instanceof Error ? error.message : 'Unknown error'}`
       );
+    }
+  }
+
+  // Update marker sizes and content based on zoom level
+  updateMarkersForZoom(zoomLevel: number) {
+    if (
+      !this.map ||
+      !this.markerLayer ||
+      !this.leaflet ||
+      !this.isInitialized
+    ) {
+      return;
+    }
+
+    // Update existing markers with new sizes and content
+    for (const [icao24, marker] of this.markers.entries()) {
+      const aircraft = this.props.aircraft.find((a) => a.icao24 === icao24);
+      if (aircraft) {
+        const isSelected = this.state.selectedAircraft?.icao24 === icao24;
+
+        // Update icon to reflect zoom level
+        marker.setIcon(
+          createAircraftIcon(aircraft, {
+            isSelected,
+            zoomLevel,
+          })
+        );
+
+        // Update popup content
+        const popup = marker.getPopup();
+        if (popup) {
+          popup.setContent(createPopupContent(aircraft, zoomLevel));
+        }
+
+        // Update tooltip content
+        const tooltip = marker.getTooltip();
+        if (tooltip) {
+          tooltip.setContent(createTooltipContent(aircraft, zoomLevel));
+
+          // Show permanent tooltips for selected aircraft at higher zoom levels
+          if (isSelected && zoomLevel > 8) {
+            tooltip.options.permanent = true;
+          } else {
+            tooltip.options.permanent = false;
+          }
+        }
+      }
     }
   }
 
@@ -121,6 +199,7 @@ class LeafletMap extends Component<LeafletMapProps, LeafletMapState> {
     try {
       const L = this.leaflet;
       const { aircraft } = this.props;
+      const currentZoom = this.state.currentZoom;
 
       console.log('[LeafletMap] Updating aircraft positions:', aircraft.length);
 
@@ -157,34 +236,50 @@ class LeafletMap extends Component<LeafletMapProps, LeafletMapState> {
           // Update popup content
           const popup = marker.getPopup();
           if (popup) {
-            popup.setContent(this.createPopupContent(plane));
+            popup.setContent(createPopupContent(plane, currentZoom));
           }
 
           // Update tooltip content
           const tooltip = marker.getTooltip();
           if (tooltip) {
-            tooltip.setContent(this.createTooltipContent(plane));
+            tooltip.setContent(createTooltipContent(plane, currentZoom));
+
+            // Update permanence based on selection and zoom
+            if (isSelected && currentZoom > 8) {
+              tooltip.options.permanent = true;
+            } else {
+              tooltip.options.permanent = false;
+            }
           }
 
-          // Update icon to reflect selection state
-          marker.setIcon(this.createAircraftIcon(plane, isSelected));
+          // Update icon to reflect selection state and zoom level
+          marker.setIcon(
+            createAircraftIcon(plane, {
+              isSelected,
+              zoomLevel: currentZoom,
+            })
+          );
         } else {
           // Create new marker
           const marker = L.marker([plane.latitude, plane.longitude], {
-            icon: this.createAircraftIcon(plane, isSelected),
+            icon: createAircraftIcon(plane, {
+              isSelected,
+              zoomLevel: currentZoom,
+            }),
             riseOnHover: true,
             zIndexOffset: isSelected ? 1000 : 0,
           });
 
           // Bind popup
-          marker.bindPopup(this.createPopupContent(plane));
+          marker.bindPopup(createPopupContent(plane, currentZoom));
 
           // Bind tooltip
-          marker.bindTooltip(this.createTooltipContent(plane), {
+          marker.bindTooltip(createTooltipContent(plane, currentZoom), {
             direction: 'top',
             offset: [0, -12],
             opacity: 0.9,
             className: 'aircraft-tooltip',
+            permanent: isSelected && currentZoom > 8,
           });
 
           // Add click handler

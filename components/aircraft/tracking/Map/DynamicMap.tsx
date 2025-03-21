@@ -2,6 +2,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 import type { ExtendedAircraft } from '@/types/base';
 import { MAP_CONFIG } from '@/config/map';
+import {
+  getIconSizeForZoom,
+  createTooltipContent,
+  createPopupContent,
+} from '../Map/components/AircraftIcon/AircraftIcon';
 
 export interface DynamicMapProps {
   aircraft: ExtendedAircraft[];
@@ -10,10 +15,14 @@ export interface DynamicMapProps {
 
 const DynamicMap: React.FC<DynamicMapProps> = ({ aircraft, onError }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
-  const mapInstanceRef = useRef<any>(null); // Store map instance in a ref instead of state
+  const mapInstanceRef = useRef<any>(null); // Store map instance in a ref
   const markerLayerRef = useRef<any>(null); // Store marker layer in a ref
+  const markersRef = useRef<Map<string, any>>(new Map()); // Track markers by icao24
   const leafletRef = useRef<any>(null); // Store Leaflet instance in a ref
   const [isMapInitialized, setIsMapInitialized] = useState(false);
+  const [currentZoom, setCurrentZoom] = useState<number>(
+    MAP_CONFIG.DEFAULT_ZOOM
+  );
 
   // Initialize Leaflet and map
   useEffect(() => {
@@ -32,6 +41,7 @@ const DynamicMap: React.FC<DynamicMapProps> = ({ aircraft, onError }) => {
           mapInstanceRef.current.remove();
           mapInstanceRef.current = null;
           markerLayerRef.current = null;
+          markersRef.current.clear();
         }
 
         // Import Leaflet dynamically
@@ -45,7 +55,7 @@ const DynamicMap: React.FC<DynamicMapProps> = ({ aircraft, onError }) => {
 
         // Create new map instance
         console.log('[DynamicMap] Creating new map instance');
-        mapInstanceRef.current = leaflet.map(mapContainerRef.current, {
+        const mapInstance = leaflet.map(mapContainerRef.current, {
           center: MAP_CONFIG.CENTER,
           zoom: MAP_CONFIG.DEFAULT_ZOOM,
           minZoom: MAP_CONFIG.OPTIONS.minZoom,
@@ -53,6 +63,9 @@ const DynamicMap: React.FC<DynamicMapProps> = ({ aircraft, onError }) => {
           preferCanvas: true,
           worldCopyJump: true,
         });
+
+        mapInstanceRef.current = mapInstance;
+        setCurrentZoom(mapInstance.getZoom());
 
         // Set up base layers
         const layers = {
@@ -79,15 +92,25 @@ const DynamicMap: React.FC<DynamicMapProps> = ({ aircraft, onError }) => {
         };
 
         // Add default layer
-        layers.Topographic.addTo(mapInstanceRef.current);
+        layers.Topographic.addTo(mapInstance);
 
         // Add layer control
-        leaflet.control.layers(layers).addTo(mapInstanceRef.current);
+        leaflet.control.layers(layers).addTo(mapInstance);
 
         // Add marker layer
-        markerLayerRef.current = leaflet
-          .layerGroup()
-          .addTo(mapInstanceRef.current);
+        markerLayerRef.current = leaflet.layerGroup().addTo(mapInstance);
+
+        // Set up zoom change event handler
+        mapInstance.on('zoomend', () => {
+          const newZoom = mapInstance.getZoom();
+          setCurrentZoom(newZoom);
+          updateMarkersForZoom(newZoom);
+        });
+
+        // Set up resize listener for the map
+        mapInstance.on('resize', () => {
+          updateMarkersForZoom(mapInstance.getZoom());
+        });
 
         setIsMapInitialized(true);
         console.log('[DynamicMap] Map initialized successfully');
@@ -107,10 +130,52 @@ const DynamicMap: React.FC<DynamicMapProps> = ({ aircraft, onError }) => {
         mapInstanceRef.current.remove();
         mapInstanceRef.current = null;
         markerLayerRef.current = null;
+        markersRef.current.clear();
         setIsMapInitialized(false);
       }
     };
   }, [onError]); // Only run on mount and when onError changes
+
+  // Function to update markers based on zoom level
+  const updateMarkersForZoom = (zoomLevel: number) => {
+    if (!leafletRef.current || !markerLayerRef.current) return;
+
+    const L = leafletRef.current;
+
+    // Update existing markers
+    markersRef.current.forEach((marker, icao24) => {
+      // Find aircraft data for this marker
+      const plane = aircraft.find((a) => a.icao24 === icao24);
+      if (!plane) return;
+
+      // Get the appropriate icon size for this zoom level
+      const size = getIconSizeForZoom(zoomLevel, false);
+
+      // Update icon
+      marker.setIcon(
+        L.icon({
+          iconUrl: plane.isGovernment
+            ? '/icons/governmentJetIconImg.png'
+            : '/icons/jetIconImg.png',
+          iconSize: [size, size],
+          iconAnchor: [size / 2, size / 2],
+          popupAnchor: [0, -size / 2],
+        })
+      );
+
+      // Update popup with new content
+      const popup = marker.getPopup();
+      if (popup) {
+        popup.setContent(createPopupContent(plane, zoomLevel));
+      }
+
+      // Update tooltip with new content
+      const tooltip = marker.getTooltip();
+      if (tooltip) {
+        tooltip.setContent(createTooltipContent(plane, zoomLevel));
+      }
+    });
+  };
 
   // Update aircraft markers when aircraft data changes
   useEffect(() => {
@@ -124,10 +189,19 @@ const DynamicMap: React.FC<DynamicMapProps> = ({ aircraft, onError }) => {
 
     try {
       const L = leafletRef.current;
+      const currentZoomLevel = currentZoom;
       console.log('[DynamicMap] Updating aircraft positions:', aircraft.length);
 
-      // Clear existing markers
-      markerLayerRef.current.clearLayers();
+      // Track which aircraft are still present
+      const currentIcao24s = new Set(aircraft.map((a) => a.icao24));
+
+      // Remove markers that are no longer present
+      markersRef.current.forEach((marker, icao24) => {
+        if (!currentIcao24s.has(icao24)) {
+          markerLayerRef.current.removeLayer(marker);
+          markersRef.current.delete(icao24);
+        }
+      });
 
       // Filter out aircraft with invalid coordinates
       const validAircraft = aircraft.filter(
@@ -138,36 +212,57 @@ const DynamicMap: React.FC<DynamicMapProps> = ({ aircraft, onError }) => {
           !isNaN(plane.longitude)
       );
 
-      // Add new markers
+      // Add or update markers
       validAircraft.forEach((plane) => {
-        const marker = L.marker([plane.latitude, plane.longitude], {
-          icon: L.icon({
-            iconUrl: plane.isGovernment
-              ? '/icons/governmentJetIconImg.png'
-              : '/icons/jetIconImg.png',
-            iconSize: [24, 24],
-            iconAnchor: [12, 12],
-            popupAnchor: [0, -12],
-          }),
-        });
+        // Determine icon size based on current zoom level
+        const size = getIconSizeForZoom(currentZoomLevel, false);
 
-        // Create popup content
-        const content = `
-          <div class="aircraft-popup p-2">
-            <h3 class="text-lg font-bold mb-2">${plane.icao24.toUpperCase()}</h3>
-            <div class="text-sm space-y-1">
-              <p><span class="font-semibold">Model:</span> ${plane.model || 'Unknown'}</p>
-              <p><span class="font-semibold">Type:</span> ${plane.type || 'Unknown'}</p>
-              <p><span class="font-semibold">Altitude:</span> ${Math.round(plane.altitude || 0)} ft</p>
-              <p><span class="font-semibold">Speed:</span> ${Math.round(plane.velocity || 0)} knots</p>
-              <p><span class="font-semibold">Heading:</span> ${Math.round(plane.heading || 0)}°</p>
-              ${plane['N-NUMBER'] ? `<p><span class="font-semibold">N-Number:</span> ${plane['N-NUMBER']}</p>` : ''}
-            </div>
-          </div>
-        `;
+        if (markersRef.current.has(plane.icao24)) {
+          // Update existing marker
+          const marker = markersRef.current.get(plane.icao24);
+          marker.setLatLng([plane.latitude, plane.longitude]);
 
-        marker.bindPopup(content);
-        markerLayerRef.current.addLayer(marker);
+          // Update popup content
+          const popup = marker.getPopup();
+          if (popup) {
+            popup.setContent(createPopupContent(plane, currentZoomLevel));
+          }
+
+          // Update tooltip
+          const tooltip = marker.getTooltip();
+          if (tooltip) {
+            tooltip.setContent(createTooltipContent(plane, currentZoomLevel));
+          }
+        } else {
+          // Create new marker
+          const marker = L.marker([plane.latitude, plane.longitude], {
+            icon: L.icon({
+              iconUrl: plane.isGovernment
+                ? '/icons/governmentJetIconImg.png'
+                : '/icons/jetIconImg.png',
+              iconSize: [size, size],
+              iconAnchor: [size / 2, size / 2],
+              popupAnchor: [0, -size / 2],
+            }),
+          });
+
+          // Create popup content
+          const popupContent = createPopupContent(plane, currentZoomLevel);
+          marker.bindPopup(popupContent);
+
+          // Create tooltip
+          const tooltipContent = createTooltipContent(plane, currentZoomLevel);
+          marker.bindTooltip(tooltipContent, {
+            direction: 'top',
+            offset: [0, -size / 2],
+            opacity: 0.9,
+            className: 'aircraft-tooltip',
+          });
+
+          // Store the marker and add to layer
+          markersRef.current.set(plane.icao24, marker);
+          markerLayerRef.current.addLayer(marker);
+        }
       });
 
       // Auto-fit bounds if we have aircraft
@@ -184,13 +279,15 @@ const DynamicMap: React.FC<DynamicMapProps> = ({ aircraft, onError }) => {
       console.error('[DynamicMap] Error updating aircraft:', error);
       onError('Failed to update aircraft positions');
     }
-  }, [aircraft, isMapInitialized, onError]);
+  }, [aircraft, isMapInitialized, onError, currentZoom]);
 
   // Force map re-initialization on window resize
   useEffect(() => {
     const handleResize = () => {
       if (mapInstanceRef.current) {
         mapInstanceRef.current.invalidateSize();
+        // Update markers after resize
+        updateMarkersForZoom(mapInstanceRef.current.getZoom());
       }
     };
 

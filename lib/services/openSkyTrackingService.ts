@@ -14,24 +14,48 @@ interface TrackingCache {
 }
 const trackingCache: Map<string, TrackingCache> = new Map();
 
-async function processBatchedRequests<T>(
+async function processBatchedRequests<T, R>(
   items: T[],
-  batchProcessor: (batch: T[]) => Promise<any>,
+  batchProcessor: (batch: T[]) => Promise<R[]>,
   batchSize: number
-): Promise<any[]> {
-  const results: any[] = [];
+): Promise<R[]> {
+  // Initialize results as empty array
+  let allResults: R[] = [];
 
+  // Create batches
+  const batches: T[][] = [];
   for (let i = 0; i < items.length; i += batchSize) {
-    const batch = items.slice(i, i + batchSize);
+    batches.push(items.slice(i, i + batchSize));
+  }
+
+  console.log(`Processing ${items.length} items in ${batches.length} batches`);
+
+  // Process each batch sequentially
+  for (let i = 0; i < batches.length; i++) {
+    const batch = batches[i];
     try {
+      console.log(
+        `Processing batch ${i + 1}/${batches.length} (${batch.length} items)`
+      );
       const batchResult = await batchProcessor(batch);
-      results.push(...batchResult);
+
+      // Make sure batchResult is an array before spreading
+      if (Array.isArray(batchResult)) {
+        allResults = [...allResults, ...batchResult];
+      } else {
+        console.warn(`Batch ${i + 1} returned non-array result. Skipping.`);
+      }
+
+      console.log(
+        `Batch ${i + 1} complete, got ${Array.isArray(batchResult) ? batchResult.length : 0} results`
+      );
     } catch (error) {
-      console.error('Batch processing error:', error);
+      console.error(`Error processing batch ${i + 1}:`, error);
+      // Continue with next batch
     }
   }
 
-  return results;
+  return allResults;
 }
 
 /**
@@ -351,54 +375,70 @@ class OpenSkyTrackingService {
     })) as ExtendedAircraft[];
   }
 
-  /**
-   * Get live aircraft data from OpenSky
-   */
   private async getLiveAircraftData(
     manufacturer: string,
     icao24s: string[]
   ): Promise<Aircraft[]> {
     const cacheKey = `live-${manufacturer}`;
-    const cached = trackingCache.get(cacheKey);
 
+    // Check cache first
+    const cached = trackingCache.get(cacheKey);
     if (cached && Date.now() - cached.timestamp < cached.ttl) {
       console.log(`[OpenSky] Using cached live data for ${manufacturer}`);
       return cached.data;
     }
 
+    // Check if request is already in progress
     if (activeRequests.has(cacheKey)) {
       console.log(
         `[OpenSky] Using existing live data request for ${manufacturer}`
       );
-      return activeRequests.get(cacheKey)!;
+      try {
+        return await activeRequests.get(cacheKey)!;
+      } catch (error) {
+        console.error(`[OpenSky] Error from existing request:`, error);
+        activeRequests.delete(cacheKey);
+      }
     }
 
-    const request = new Promise<Aircraft[]>(async (resolve, reject) => {
+    // Create a separate function for the actual data fetching
+    const fetchData = async (): Promise<Aircraft[]> => {
       try {
-        const BATCH_SIZE = 900; // Keep below SQLite's 999 limit
-
+        const BATCH_SIZE = 900;
         console.log(`[OpenSky] Fetching live aircraft data in batches...`);
-        const aircraftResults = await processBatchedRequests(
+
+        // Process batches without using Promise.race
+        const aircraftResults = await processBatchedRequests<string, Aircraft>(
           icao24s,
           async (batch) => {
-            const response = await fetch('/api/tracking/live', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                manufacturer,
-                icao24s: batch,
-                includeStatic: true,
-              }),
-            });
+            try {
+              const response = await fetch('/api/tracking/live', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  manufacturer,
+                  icao24s: batch,
+                  includeStatic: true,
+                }),
+              });
 
-            if (!response.ok) {
-              throw new Error(
-                `Failed to fetch live data: ${response.statusText}`
-              );
+              if (!response.ok) {
+                throw new Error(
+                  `Failed to fetch live data: ${response.status} ${response.statusText}`
+                );
+              }
+
+              const data = await response.json();
+              if (!data || !Array.isArray(data.aircraft)) {
+                console.warn('[OpenSky] Unexpected response format:', data);
+                return [];
+              }
+
+              return data.aircraft || [];
+            } catch (fetchError) {
+              console.error('[OpenSky] Batch fetch error:', fetchError);
+              return []; // Return empty array for this batch
             }
-
-            const data = await response.json();
-            return data.aircraft || [];
           },
           BATCH_SIZE
         );
@@ -410,17 +450,41 @@ class OpenSkyTrackingService {
           ttl: 20000, // 20 seconds
         });
 
-        resolve(aircraftResults);
+        return aircraftResults;
       } catch (error) {
         console.error(`[OpenSky] Error fetching live aircraft data:`, error);
-        reject(error);
-      } finally {
-        activeRequests.delete(cacheKey);
+        return []; // Return empty array on error
       }
+    };
+
+    // Create request promise and add timeout separately
+    let timeoutId: NodeJS.Timeout;
+
+    const requestPromise = new Promise<Aircraft[]>((resolve) => {
+      // Set a timeout to resolve with empty array after 60 seconds
+      timeoutId = setTimeout(() => {
+        console.warn('[OpenSky] Request timed out after 60 seconds');
+        resolve([]);
+      }, 60000);
+
+      // Execute the fetch
+      fetchData().then((result) => {
+        clearTimeout(timeoutId);
+        resolve(result);
+      });
     });
 
-    activeRequests.set(cacheKey, request);
-    return request;
+    // Store the request
+    activeRequests.set(cacheKey, requestPromise);
+
+    try {
+      // Wait for the request to complete
+      const result = await requestPromise;
+      return result;
+    } finally {
+      // Always clean up
+      activeRequests.delete(cacheKey);
+    }
   }
 
   /**
@@ -495,7 +559,7 @@ class OpenSkyTrackingService {
   /**
    * Update this method to call updateTrackedAircraftState
    */
-  public async refreshPositionsOnly(): Promise<Aircraft[]> {
+  public async refreshPositionsOnly(preserveView = false): Promise<Aircraft[]> {
     if (!this.trackingActive || !this.currentManufacturer) {
       console.warn('[OpenSky] No active tracking session to refresh');
       return [];

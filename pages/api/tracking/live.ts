@@ -2,9 +2,10 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import dbManager from '../../../lib/db/DatabaseManager';
 import { Aircraft } from '@/types/base';
+import openSkyProxyHandler from '../proxy/opensky';
 
-// Cache for OpenSky API responses
-const OPENSKY_CACHE = new Map<string, { data: any; timestamp: number }>();
+// Cache for API responses
+const TRACKING_CACHE = new Map<string, { data: any; timestamp: number }>();
 const CACHE_TTL = 15000; // 15 seconds
 
 export default async function handler(
@@ -17,34 +18,53 @@ export default async function handler(
 
   const { icao24s, manufacturer, includeStatic = false } = req.body;
 
+  console.log(
+    `[API] Received request for ${icao24s?.length || 0} aircraft from ${manufacturer || 'unknown manufacturer'}`
+  );
+  console.log(`[API] Static data inclusion: ${includeStatic ? 'Yes' : 'No'}`);
+
   if (!icao24s || !Array.isArray(icao24s) || icao24s.length === 0) {
+    console.log('[API] Invalid request: Missing or empty icao24s array');
     return res.status(400).json({
       error: 'Valid icao24s array required',
     });
   }
 
+  // Show a sample of 5 ICAOs in the request
+  const sampleIcaos = icao24s.slice(0, 5);
+  console.log(
+    `[API] Sample ICAOs in request: ${sampleIcaos.join(', ')}${icao24s.length > 5 ? '...' : ''}`
+  );
+
   try {
-    // Get live data from OpenSky API
-    const liveData = await fetchOpenSkyData(icao24s);
+    // Get live data using the proxy API
+    const liveData = await fetchLiveAircraftData(icao24s);
+    console.log(
+      `[API] Received ${liveData.length} aircraft with position data`
+    );
 
     // If static data is requested, fetch it from the database
     let staticAircraft: Record<string, any> = {};
 
-    if (includeStatic) {
+    if (includeStatic && liveData.length > 0) {
       // Get ICAO24s that have position data
       const liveIcao24s = liveData.map((a) => a.icao24);
 
-      if (liveIcao24s.length > 0) {
-        const staticData = await dbManager.getAircraftByIcao24s(liveIcao24s);
+      console.log(
+        `[API] Fetching static data for ${liveIcao24s.length} aircraft`
+      );
+      const staticData = await dbManager.getAircraftByIcao24s(liveIcao24s);
+      console.log(
+        `[API] Retrieved static data for ${staticData.length} aircraft`
+      );
 
-        // Create a lookup map for faster merging
-        staticAircraft = staticData.reduce((map, aircraft) => {
-          if (aircraft.icao24) {
-            map[aircraft.icao24.toLowerCase()] = aircraft;
-          }
-          return map;
-        }, {});
-      }
+      // Create a lookup map for faster merging
+      staticAircraft = staticData.reduce((map, aircraft) => {
+        if (aircraft.icao24) {
+          map[aircraft.icao24.toLowerCase()] = aircraft;
+        }
+        return map;
+      }, {});
     }
 
     // Merge live and static data
@@ -65,6 +85,10 @@ export default async function handler(
       };
     });
 
+    console.log(
+      `[API] Returning ${mergedAircraft.length} merged aircraft records`
+    );
+
     return res.status(200).json({
       aircraft: mergedAircraft,
       count: mergedAircraft.length,
@@ -72,139 +96,170 @@ export default async function handler(
     });
   } catch (error) {
     console.error('[API] Error fetching tracking data:', error);
+
+    // Return empty result to prevent frontend errors
     return res.status(500).json({
       error: 'Failed to fetch tracking data',
       message: error instanceof Error ? error.message : 'Unknown error',
+      aircraft: [],
+      count: 0,
+      timestamp: new Date().toISOString(),
     });
   }
 }
 
 /**
- * Fetch data from OpenSky API with caching
+ * Fetch live aircraft data using the OpenSky proxy
+ * Handles batching and rate limits through the proxy
  */
-async function fetchOpenSkyData(icao24s: string[]): Promise<Aircraft[]> {
+async function fetchLiveAircraftData(icao24s: string[]): Promise<Aircraft[]> {
   // Generate a cache key based on ICAO24s
   const cacheKey = icao24s.sort().join(',');
 
   // Check cache first
-  const cached = OPENSKY_CACHE.get(cacheKey);
+  const cached = TRACKING_CACHE.get(cacheKey);
   if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-    console.log('[API] Using cached OpenSky data');
+    console.log(
+      '[API] Using cached tracking data from',
+      new Date(cached.timestamp).toLocaleTimeString()
+    );
     return cached.data;
   }
 
-  // Prepare batches of ICAO24s (OpenSky has limits)
-  const batchSize = 100;
-  const batches = [];
+  // Prepare batches (100 ICAOs per batch as per the proxy's limit)
+  const BATCH_SIZE = 100;
+  const batches: string[][] = [];
 
-  for (let i = 0; i < icao24s.length; i += batchSize) {
-    batches.push(icao24s.slice(i, i + batchSize));
+  for (let i = 0; i < icao24s.length; i += BATCH_SIZE) {
+    batches.push(icao24s.slice(i, i + BATCH_SIZE));
   }
 
-  console.log(`[API] Fetching OpenSky data in ${batches.length} batches`);
+  console.log(
+    `[API] Processing ${icao24s.length} ICAOs in ${batches.length} batches`
+  );
 
-  try {
-    // Process batches
-    const results = await Promise.all(
-      batches.map((batch) => fetchOpenSkyBatch(batch))
-    );
+  // Process batches sequentially to respect rate limits
+  const results: Aircraft[] = [];
 
-    // Combine results
-    const combinedResults = results.flat();
+  for (let i = 0; i < batches.length; i++) {
+    const batch = batches[i];
+    try {
+      console.log(
+        `[API] Processing batch ${i + 1}/${batches.length} (${batch.length} ICAOs)`
+      );
 
-    // Cache the results
-    OPENSKY_CACHE.set(cacheKey, {
-      data: combinedResults,
-      timestamp: Date.now(),
-    });
+      // Sample of ICAOs in this batch
+      const sampleIcaos = batch.slice(0, 5);
+      console.log(
+        `[API] Sample ICAOs in batch: ${sampleIcaos.join(', ')}${batch.length > 5 ? '...' : ''}`
+      );
 
-    return combinedResults;
-  } catch (error) {
-    console.error('[API] Error fetching from OpenSky:', error);
-    throw error;
+      // Call the proxy endpoint
+      const batchResults = await fetchAircraftBatch(batch);
+
+      // Add to overall results
+      results.push(...batchResults);
+
+      // Log results
+      console.log(
+        `[API] Batch ${i + 1} returned ${batchResults.length} aircraft with position data`
+      );
+
+      // Add a small delay between batches to be nice to the proxy
+      if (i < batches.length - 1) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+    } catch (error) {
+      console.error(`[API] Error processing batch ${i + 1}:`, error);
+      // Continue with the next batch instead of failing completely
+    }
   }
-}
 
-/**
- * Fetch a batch of ICAO24s from OpenSky
- */
-async function fetchOpenSkyBatch(icao24Batch: string[]): Promise<Aircraft[]> {
-  // Note: Replace with your actual OpenSky API endpoint and auth if needed
-  const endpoint = 'https://opensky-network.org/api/states/all';
-
-  // Create the querystring with ICAO24s
-  const params = new URLSearchParams();
-  params.append('icao24', icao24Batch.join(','));
-
-  // Create an AbortController for timeout
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 10000);
-
-  const response = await fetch(`${endpoint}?${params.toString()}`, {
-    headers: {
-      // Add any required auth headers here
-    },
-    signal: controller.signal,
+  // Cache the combined results
+  TRACKING_CACHE.set(cacheKey, {
+    data: results,
+    timestamp: Date.now(),
   });
 
-  clearTimeout(timeoutId);
-
-  if (!response.ok) {
-    throw new Error(`OpenSky API error: ${response.statusText}`);
-  }
-
-  const data = await response.json();
-
-  // Process OpenSky API response format and convert to our Aircraft format
-  return processOpenSkyResponse(data);
+  return results;
 }
 
 /**
- * Process OpenSky API response into Aircraft objects
+ * Fetch a single batch of aircraft data using the proxy API
  */
-function processOpenSkyResponse(response: any): Aircraft[] {
-  if (!response.states || !Array.isArray(response.states)) {
+async function fetchAircraftBatch(icao24Batch: string[]): Promise<Aircraft[]> {
+  // Get base URL from environment variable or use a default
+  const baseUrl =
+    process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3001';
+
+  // Call our proxy API with absolute URL
+  const response = await fetch(`${baseUrl}/api/proxy/opensky`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ icao24s: icao24Batch }),
+  });
+
+  if (!response.ok) {
+    // If we hit a rate limit, handle it gracefully
+    if (response.status === 429) {
+      const data = await response.json();
+      const retryAfter = data.retryAfter || 60;
+      console.log(`[API] Rate limited by proxy. Retry after ${retryAfter}s`);
+
+      // If we're dealing with a rate limit, wait and retry once
+      await new Promise((resolve) => setTimeout(resolve, retryAfter * 1000));
+
+      // Retry the request
+      const retryResponse = await fetch('/api/proxy/opensky', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ icao24s: icao24Batch }),
+      });
+
+      if (!retryResponse.ok) {
+        console.error(
+          `[API] Retry failed with status: ${retryResponse.status}`
+        );
+        return []; // Return empty array on retry failure
+      }
+
+      const retryData = await retryResponse.json();
+      return processProxyResponse(retryData);
+    }
+
+    // For other errors, log and return empty array
+    console.error(
+      `[API] Proxy API error: ${response.status} ${response.statusText}`
+    );
     return [];
   }
 
-  return response.states
-    .filter((state: any) => state && Array.isArray(state) && state.length >= 8)
-    .map((state: any[]) => {
-      // OpenSky API returns an array with specific indexes
-      const [
-        icao24,
-        callsign,
-        origin_country,
-        time_position,
-        last_contact,
-        longitude,
-        latitude,
-        altitude,
-        on_ground,
-        velocity,
-        heading,
-        vertical_rate,
-        // ... other fields we might not need
-      ] = state;
+  const data = await response.json();
+  return processProxyResponse(data);
+}
 
-      // Only include aircraft with valid position data
-      if (!latitude || !longitude) {
-        return null;
-      }
+/**
+ * Process the response from the OpenSky proxy API
+ */
+function processProxyResponse(response: any): Aircraft[] {
+  if (
+    !response.success ||
+    !response.data ||
+    !Array.isArray(response.data.states)
+  ) {
+    console.warn('[API] Invalid response format from proxy:', response);
+    return [];
+  }
 
-      return {
-        icao24,
-        callsign: callsign?.trim(),
-        origin_country,
-        last_contact,
-        longitude,
-        latitude,
-        altitude: altitude || 0,
-        on_ground: !!on_ground,
-        velocity: velocity || 0,
-        heading: heading || 0,
-        vertical_rate: vertical_rate || 0,
-      };
-    })
-    .filter(Boolean) as Aircraft[];
+  // The proxy already formats the data, so we can use it directly
+  return response.data.states.filter((state: any) => {
+    // Ensure we only return aircraft with valid position data
+    return (
+      state &&
+      typeof state.latitude === 'number' &&
+      typeof state.longitude === 'number'
+    );
+  });
 }

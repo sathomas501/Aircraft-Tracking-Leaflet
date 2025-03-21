@@ -1,7 +1,7 @@
 import dynamic from 'next/dynamic';
 import { useEffect, useState } from 'react';
 import { SelectOption } from '@/types/base';
-import manufacturersService from '@/lib/services/tracking-services/ManufacturersService';
+import manufacturersService from '@/lib/services/ManufacturersService';
 
 const MapWithNoSSR = dynamic(
   () =>

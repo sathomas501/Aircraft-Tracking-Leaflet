@@ -3,7 +3,7 @@ import React from 'react';
 import Head from 'next/head';
 import MapComponent from '../components/aircraft/tracking/Map/MapComponent';
 import { SelectOption } from '@/types/base';
-import manufacturersService from '../lib/services/tracking-services/ManufacturersService';
+import manufacturersService from '../lib/services/ManufacturersService';
 
 interface HomePageProps {
   initialManufacturers?: SelectOption[];
