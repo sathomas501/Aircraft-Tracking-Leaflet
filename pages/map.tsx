@@ -7,7 +7,7 @@ import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 
 // Dynamically import the map component
 const AircraftTrackingMap = dynamic(
-  () => import('../components/tracking/map/AircrafTrackingMap'),
+  () => import('@/components/tracking/map/AircraftTrackingMap'),
   {
     ssr: false,
     loading: () => <LoadingSpinner message="Loading map..." />,

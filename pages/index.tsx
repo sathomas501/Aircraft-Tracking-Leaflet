@@ -15,7 +15,7 @@ interface HomePageState {
 }
 
 const MapComponent = dynamic(
-  () => import('../components/aircraft/tracking/Map/MapComponent'),
+  () => import('../components/tracking/map/AircraftTrackingMap'),
   { ssr: false }
 );
 

@@ -2,7 +2,7 @@
 import React from 'react';
 import dynamic from 'next/dynamic';
 import { EnhancedMapProvider } from '../context/EnhancedMapContext';
-import ContextUnifiedSelector from '../selector/ContextUnifiedSelector';
+import EnhancedUnifiedSelector from '../selector/EnhancedUnifiedSelector'; // Keep the same import name
 import type { SelectOption } from '@/types/base';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 
@@ -14,16 +14,12 @@ const EnhancedMap = dynamic(() => import('./EnhancedReactBaseMap'), {
 
 interface AircraftTrackingMapProps {
   manufacturers: SelectOption[];
-  onError: (message: string) => void;
+  onError?: (message: string) => void; // Make onError optional
 }
 
-/**
- * The main aircraft tracking map component.
- * This is the primary entry point for the aircraft tracking functionality.
- */
 const AircraftTrackingMap: React.FC<AircraftTrackingMapProps> = ({
   manufacturers,
-  onError,
+  onError = () => {}, // Provide default implementation
 }) => {
   return (
     <EnhancedMapProvider manufacturers={manufacturers} onError={onError}>
@@ -31,10 +27,8 @@ const AircraftTrackingMap: React.FC<AircraftTrackingMapProps> = ({
         {/* Map Component */}
         <EnhancedMap onError={onError} />
 
-        {/* Unified Selector */}
-        <div className="absolute top-0 left-0 right-0 z-10 max-w-sm ml-4 mt-4">
-          <ContextUnifiedSelector manufacturers={manufacturers} />
-        </div>
+        {/* Aircraft Selector */}
+        <EnhancedUnifiedSelector manufacturers={manufacturers} />
       </div>
     </EnhancedMapProvider>
   );

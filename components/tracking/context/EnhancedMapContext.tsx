@@ -3,266 +3,241 @@ import React, {
   createContext,
   useContext,
   useState,
-  useCallback,
   useEffect,
+  useCallback,
+  useRef,
 } from 'react';
-import type { ReactNode } from 'react';
-import type { ExtendedAircraft } from '@/types/base';
-import type { Map as LeafletMap } from 'leaflet';
-import type { SelectOption } from '@/types/base';
-import type { AircraftModel } from '@/types/aircraft-models';
+import L from 'leaflet';
+import type { SelectOption, ExtendedAircraft } from '@/types/base';
+import type { AircraftModel } from '../../../types/aircraft-models';
 import openSkyTrackingService from '@/lib/services/openSkyTrackingService';
 
-// Define the context type
+// Define context interface
 interface EnhancedMapContextType {
   // Map state
-  mapInstance: LeafletMap | null;
-  setMapInstance: (map: LeafletMap | null) => void;
-  selectedAircraft: ExtendedAircraft | null;
+  mapInstance: L.Map | null;
+  setMapInstance: (map: L.Map | null) => void;
   zoomLevel: number;
-  isLoading: boolean;
-  isRefreshing: boolean;
-  preserveView: boolean;
-  lastRefreshed: string | null;
+  setZoomLevel: (zoom: number) => void;
+
+  // Aircraft data
+  displayedAircraft: ExtendedAircraft[];
+  selectedAircraft: ExtendedAircraft | null;
+  selectAircraft: (aircraft: ExtendedAircraft | null) => void;
 
   // Selection state
   selectedManufacturer: string | null;
   selectedModel: string | null;
-  displayedAircraft: ExtendedAircraft[];
   activeModels: AircraftModel[];
   totalActive: number;
+
+  // Loading state
+  isLoading: boolean;
+  isRefreshing: boolean;
   trackingStatus: string;
+  lastRefreshed: string | null;
 
   // Actions
-  selectAircraft: (aircraft: ExtendedAircraft | null) => void;
-  refreshPositions: () => Promise<void>;
-  fullRefresh: () => Promise<void>;
   selectManufacturer: (manufacturer: string | null) => Promise<void>;
   selectModel: (model: string | null) => void;
   reset: () => Promise<void>;
+  refreshPositions: () => Promise<void>;
+  fullRefresh: () => Promise<void>;
 }
 
-// Create the context
-const EnhancedMapContext = createContext<EnhancedMapContextType | undefined>(
-  undefined
-);
+// Create context with default values
+const EnhancedMapContext = createContext<EnhancedMapContextType>({
+  mapInstance: null,
+  setMapInstance: () => {},
+  zoomLevel: 6,
+  setZoomLevel: () => {},
 
-// Provider component
+  displayedAircraft: [],
+  selectedAircraft: null,
+  selectAircraft: () => {},
+
+  selectedManufacturer: null,
+  selectedModel: null,
+  activeModels: [],
+  totalActive: 0,
+
+  isLoading: false,
+  isRefreshing: false,
+  trackingStatus: '',
+  lastRefreshed: null,
+
+  selectManufacturer: async () => {},
+  selectModel: () => {},
+  reset: async () => {},
+  refreshPositions: async () => {},
+  fullRefresh: async () => {},
+});
+
+// Props for the context provider
 interface EnhancedMapProviderProps {
-  children: ReactNode;
+  children: React.ReactNode;
   manufacturers: SelectOption[];
   onError: (message: string) => void;
 }
 
+// Enhanced Map Provider component
 export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
   children,
   manufacturers,
   onError,
 }) => {
   // Map state
-  const [mapInstance, setMapInstance] = useState<LeafletMap | null>(null);
+  const [mapInstance, setMapInstance] = useState<L.Map | null>(null);
+  const [zoomLevel, setZoomLevel] = useState<number>(6);
+
+  // Aircraft state
+  const [displayedAircraft, setDisplayedAircraft] = useState<
+    ExtendedAircraft[]
+  >([]);
   const [selectedAircraft, setSelectedAircraft] =
     useState<ExtendedAircraft | null>(null);
-  const [zoomLevel, setZoomLevel] = useState<number>(9);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
-  const [preserveView, setPreserveView] = useState<boolean>(false);
-  const [lastRefreshed, setLastRefreshed] = useState<string | null>(null);
 
   // Selection state
   const [selectedManufacturer, setSelectedManufacturer] = useState<
     string | null
   >(null);
   const [selectedModel, setSelectedModel] = useState<string | null>(null);
-  const [displayedAircraft, setDisplayedAircraft] = useState<
-    ExtendedAircraft[]
-  >([]);
   const [activeModels, setActiveModels] = useState<AircraftModel[]>([]);
   const [totalActive, setTotalActive] = useState<number>(0);
+
+  // Loading state
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [trackingStatus, setTrackingStatus] = useState<string>('');
+  const [lastRefreshed, setLastRefreshed] = useState<string | null>(null);
 
-  // ID to track refresh operations
-  const [currentRefreshId, setCurrentRefreshId] = useState<number | null>(null);
+  // Refs for tracking subscriptions
+  const unsubscribeAircraftRef = useRef<(() => void) | null>(null);
+  const unsubscribeStatusRef = useRef<(() => void) | null>(null);
 
-  // Subscribe to aircraft updates from service
+  // Initialize tracking service and subscriptions
+  // In the EnhancedMapContext.tsx file, modify the useEffect to use stopTracking:
+
   useEffect(() => {
-    const unsubscribeAircraft = openSkyTrackingService.subscribeToAircraft(
+    // Subscribe to aircraft updates
+    unsubscribeAircraftRef.current = openSkyTrackingService.subscribeToAircraft(
       () => {
         updateAircraftDisplay();
       }
     );
 
-    const unsubscribeStatus = openSkyTrackingService.subscribeToStatus(
-      (status) => {
+    // Subscribe to status updates
+    unsubscribeStatusRef.current = openSkyTrackingService.subscribeToStatus(
+      (status: string) => {
         setTrackingStatus(status);
         setIsLoading(openSkyTrackingService.isLoading());
       }
     );
 
+    // IMPORTANT: Add this to clear any existing tracking when component mounts
+    openSkyTrackingService.stopTracking();
+
+    // Cleanup on unmount
     return () => {
-      if (unsubscribeAircraft) unsubscribeAircraft();
-      if (unsubscribeStatus) unsubscribeStatus();
+      if (unsubscribeAircraftRef.current) {
+        unsubscribeAircraftRef.current();
+      }
+      if (unsubscribeStatusRef.current) {
+        unsubscribeStatusRef.current();
+      }
     };
   }, []);
 
-  // Update aircraft display based on model filter
+  // Update aircraft display based on selected model
   const updateAircraftDisplay = useCallback(() => {
     // Get extended aircraft based on selected model
-    const aircraft = openSkyTrackingService.getExtendedAircraft(
+    const extendedAircraft = openSkyTrackingService.getExtendedAircraft(
       selectedModel || undefined
     );
 
     // Get model stats from the service
-    const { models, totalActive } = openSkyTrackingService.getModelStats();
+    const { models, totalActive: total } =
+      openSkyTrackingService.getModelStats();
 
-    setDisplayedAircraft(aircraft);
+    setDisplayedAircraft(extendedAircraft);
     setActiveModels(models);
-    setTotalActive(totalActive);
+    setTotalActive(total);
     setIsLoading(openSkyTrackingService.isLoading());
   }, [selectedModel]);
 
-  // Select aircraft
-  const selectAircraft = useCallback(
-    (aircraft: ExtendedAircraft | null) => {
-      setSelectedAircraft(aircraft);
+  // Update display when model selection changes
+  useEffect(() => {
+    updateAircraftDisplay();
+  }, [selectedModel, updateAircraftDisplay]);
 
-      // If map exists and aircraft has position, pan to it
-      if (mapInstance && aircraft?.latitude && aircraft?.longitude) {
-        mapInstance.panTo([aircraft.latitude, aircraft.longitude]);
-      }
-    },
-    [mapInstance]
-  );
-
-  // Select manufacturer
-  const selectManufacturer = useCallback(
-    async (manufacturer: string | null) => {
-      setSelectedManufacturer(manufacturer);
-      setSelectedModel(null);
-      setIsLoading(true);
-      setLastRefreshed(null);
-
-      try {
-        // Track the new manufacturer, ensuring it's always a string
-        await openSkyTrackingService.trackManufacturer(manufacturer ?? '');
-
-        // Update the lastRefreshed timestamp after successful tracking
-        setLastRefreshed(new Date().toLocaleTimeString());
-      } catch (error) {
-        onError(
-          `Error tracking manufacturer: ${error instanceof Error ? error.message : 'Unknown error'}`
-        );
-      } finally {
-        setIsLoading(false);
-      }
-    },
-    [onError]
-  );
-
-  // Select model
-  const selectModel = useCallback(
-    (model: string | null) => {
-      setSelectedModel(model);
-      updateAircraftDisplay();
-    },
-    [updateAircraftDisplay]
-  );
-
-  // Reset selection
-  const reset = useCallback(async () => {
-    await selectManufacturer(null);
-  }, [selectManufacturer]);
-
-  // Refresh positions
-  const refreshPositions = useCallback(async () => {
-    if (!selectedManufacturer || isRefreshing) {
-      console.log(
-        '[EnhancedMapContext] Refresh skipped - already refreshing or no manufacturer selected'
-      );
-      return;
-    }
-
-    console.log('[EnhancedMapContext] Starting position refresh');
-
-    // Set a unique ID for this refresh operation
-    const refreshId = Date.now();
-    setCurrentRefreshId(refreshId);
-
-    setIsRefreshing(true);
-    setPreserveView(true);
-    setTrackingStatus('Updating aircraft positions...');
-
-    // Disable map bounds fitting
-    const originalFitBounds = mapInstance?.fitBounds;
-    if (mapInstance) {
-      mapInstance.fitBounds = function () {
-        console.log('fitBounds disabled during refresh');
-        return this;
-      };
-    }
+  // Handle manufacturer selection
+  const selectManufacturer = async (manufacturer: string | null) => {
+    setSelectedManufacturer(manufacturer);
+    setSelectedModel(null);
+    setIsLoading(true);
+    setLastRefreshed(null);
 
     try {
-      console.log('[EnhancedMapContext] Calling service refresh method');
+      // Track the new manufacturer, ensuring it's always a string
+      await openSkyTrackingService.trackManufacturer(manufacturer ?? '');
 
-      // Call the service method
-      if (typeof openSkyTrackingService.refreshPositionsOnly === 'function') {
-        await openSkyTrackingService.refreshPositionsOnly();
-      } else {
-        await openSkyTrackingService.refreshNow();
-      }
-
-      // Only update state if this is still the current refresh operation
-      if (currentRefreshId === refreshId) {
-        console.log('[EnhancedMapContext] Refresh completed successfully');
-        setLastRefreshed(new Date().toLocaleTimeString());
-        setTrackingStatus(
-          `${displayedAircraft.length} aircraft tracked, positions updated`
-        );
-      } else {
-        console.log('[EnhancedMapContext] Refresh superseded by newer refresh');
-      }
+      // Update the lastRefreshed timestamp after successful tracking
+      setLastRefreshed(new Date().toLocaleTimeString());
     } catch (error) {
-      console.error('[EnhancedMapContext] Refresh error:', error);
+      onError(
+        `Error tracking manufacturer: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Handle model selection
+  const selectModel = (model: string | null) => {
+    setSelectedModel(model);
+  };
+
+  // Handle aircraft selection
+  const selectAircraft = (aircraft: ExtendedAircraft | null) => {
+    setSelectedAircraft(aircraft);
+  };
+
+  // Reset all selections
+  const reset = async () => {
+    await selectManufacturer(null);
+  };
+
+  // Method to refresh only the positions of active aircraft
+  const refreshPositions = async () => {
+    if (isRefreshing || !selectedManufacturer) return;
+
+    setIsRefreshing(true);
+    setTrackingStatus('Updating aircraft positions...');
+
+    try {
+      // Call the service
+      await openSkyTrackingService.refreshPositionsOnly();
+
+      setLastRefreshed(new Date().toLocaleTimeString());
+      setTrackingStatus(
+        `Positions updated for ${displayedAircraft.length} aircraft`
+      );
+    } catch (error) {
       onError(
         `Error refreshing positions: ${error instanceof Error ? error.message : 'Unknown error'}`
       );
     } finally {
-      // Only reset state if this is still the current refresh
-      if (currentRefreshId === refreshId) {
-        console.log('[EnhancedMapContext] Resetting refresh state');
-
-        // Restore original fitBounds with a delay
-        setTimeout(() => {
-          if (mapInstance && originalFitBounds) {
-            console.log('[EnhancedMapContext] Restoring fitBounds');
-            mapInstance.fitBounds = originalFitBounds;
-          }
-        }, 2000);
-
-        // Reset the refreshing state
+      setTimeout(() => {
         setIsRefreshing(false);
-
-        // Reset preserve view flag after a delay
-        setTimeout(() => {
-          setPreserveView(false);
-        }, 500);
-      }
+      }, 500);
     }
-  }, [
-    currentRefreshId,
-    displayedAircraft.length,
-    isRefreshing,
-    mapInstance,
-    onError,
-    selectedManufacturer,
-  ]);
+  };
 
-  // Full refresh
-  const fullRefresh = useCallback(async () => {
+  // Method for full tracking refresh
+  const fullRefresh = async () => {
     if (!selectedManufacturer || isRefreshing) return;
 
     setIsRefreshing(true);
-    setPreserveView(false);
     setTrackingStatus('Performing full refresh...');
 
     try {
@@ -278,69 +253,44 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
     } finally {
       setIsRefreshing(false);
     }
-  }, [displayedAircraft.length, isRefreshing, onError, selectedManufacturer]);
+  };
 
-  // Combine all values and functions to be provided by the context
-  const value: EnhancedMapContextType = {
-    // Map state
+  // Create context value
+  const contextValue: EnhancedMapContextType = {
     mapInstance,
     setMapInstance,
-    selectedAircraft,
     zoomLevel,
-    isLoading,
-    isRefreshing,
-    preserveView,
-    lastRefreshed,
+    setZoomLevel,
 
-    // Selection state
+    displayedAircraft,
+    selectedAircraft,
+    selectAircraft,
+
     selectedManufacturer,
     selectedModel,
-    displayedAircraft,
     activeModels,
     totalActive,
-    trackingStatus,
 
-    // Actions
-    selectAircraft,
-    refreshPositions,
-    fullRefresh,
+    isLoading,
+    isRefreshing,
+    trackingStatus,
+    lastRefreshed,
+
     selectManufacturer,
     selectModel,
     reset,
+    refreshPositions,
+    fullRefresh,
   };
 
-  // Listen for map zoom changes
-  useEffect(() => {
-    if (!mapInstance) return;
-
-    const handleZoom = () => {
-      setZoomLevel(mapInstance.getZoom());
-    };
-
-    mapInstance.on('zoomend', handleZoom);
-    setZoomLevel(mapInstance.getZoom());
-
-    return () => {
-      mapInstance.off('zoomend', handleZoom);
-    };
-  }, [mapInstance]);
-
   return (
-    <EnhancedMapContext.Provider value={value}>
+    <EnhancedMapContext.Provider value={contextValue}>
       {children}
     </EnhancedMapContext.Provider>
   );
 };
 
-// Custom hook to use the map context
-export const useEnhancedMapContext = () => {
-  const context = useContext(EnhancedMapContext);
-  if (context === undefined) {
-    throw new Error(
-      'useEnhancedMapContext must be used within an EnhancedMapProvider'
-    );
-  }
-  return context;
-};
+// Custom hook to use the context
+export const useEnhancedMapContext = () => useContext(EnhancedMapContext);
 
 export default EnhancedMapContext;
