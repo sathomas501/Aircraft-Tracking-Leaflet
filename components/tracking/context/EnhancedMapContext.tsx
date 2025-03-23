@@ -51,7 +51,6 @@ const EnhancedMapContext = createContext<EnhancedMapContextType>({
   setMapInstance: () => {},
   zoomLevel: 6,
   setZoomLevel: () => {},
-
   displayedAircraft: [],
   selectedAircraft: null,
   selectAircraft: () => {},

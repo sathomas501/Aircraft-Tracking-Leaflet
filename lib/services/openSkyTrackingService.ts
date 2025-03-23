@@ -586,6 +586,7 @@ class OpenSkyTrackingService {
       return this.trackedAircraft;
     }
 
+    this.isRefreshingPositions = true; // Set flag to true
     // Use the setRefreshInProgress function instead of directly setting window property
     setRefreshInProgress(true);
     console.log('[OpenSky] Refreshing positions only for tracked aircraft');
@@ -625,15 +626,16 @@ class OpenSkyTrackingService {
       return this.trackedAircraft; // Return current data on error
     } finally {
       this.loading = false;
+      this.isRefreshingPositions = false; // Reset the flag in finally block
 
       // Make sure we don't reset too quickly (ensure at least 500ms passed)
       const elapsedTime = Date.now() - refreshStartTime;
       const resetDelay = Math.max(0, 500 - elapsedTime);
 
-      // Reset in the finally block to ensure it always happens
+      // Reset the prevent bounds fit flag after a delay
       setTimeout(() => {
-        (window as any).__preventMapBoundsFit = false;
-      }, 1000);
+        setRefreshInProgress(false); // Use the function instead of direct assignment
+      }, resetDelay + 500); // Add a bit more buffer time
     }
   }
 }
