@@ -2,17 +2,35 @@
 import React, { useEffect } from 'react';
 import {
   MapContainer,
+  useMapEvents,
   TileLayer,
   useMap,
   LayersControl,
   ZoomControl,
 } from 'react-leaflet';
-import { useEnhancedMapContext } from '../context/EnhancedMapContext';
 import { MAP_CONFIG } from '@/config/map';
-import * as AircraftMarkerModule from '../../aircraft/tracking/Map/components/AircraftMarker';
 import EnhancedContextAircraftInfoPanel from './components/EnhancedContextAircraftInfoPanel';
+import EnhancedContextAircraftMarker from '../map/EnhancedContextAircraftMarker';
+import EnhancedContextMapControls from './components/EnhancedContextMapControls';
+import TrailToggle from './components/TrailToggle'; // Import the trail toggle component
+import { useEnhancedMapContext } from '../context/EnhancedMapContext';
+import { ExtendedAircraft } from '@/types/base';
+import L from 'leaflet';
 
-const AircraftMarker = AircraftMarkerModule.default;
+const MapEvents: React.FC = () => {
+  const { setZoomLevel } = useEnhancedMapContext();
+
+  // Use useMapEvents hook to handle map events
+  const map = useMapEvents({
+    zoomend: () => {
+      const zoom = map.getZoom();
+      setZoomLevel(zoom);
+    },
+  });
+
+  return null;
+};
+
 // Inner component to connect the map instance to context
 const MapControllerInner: React.FC = () => {
   const { setMapInstance } = useEnhancedMapContext();
@@ -37,7 +55,8 @@ export interface ReactBaseMapProps {
 }
 
 const EnhancedReactBaseMap: React.FC<ReactBaseMapProps> = ({ onError }) => {
-  const { displayedAircraft, isRefreshing } = useEnhancedMapContext();
+  const { displayedAircraft, isRefreshing, setZoomLevel } =
+    useEnhancedMapContext();
 
   // Filter aircraft with valid coordinates
   const validAircraft = displayedAircraft.filter(
@@ -48,6 +67,11 @@ const EnhancedReactBaseMap: React.FC<ReactBaseMapProps> = ({ onError }) => {
       !isNaN(plane.longitude)
   );
 
+  // Handle zoom change to update context
+  const handleZoomChange = (map: L.Map) => {
+    setZoomLevel(map.getZoom());
+  };
+
   return (
     <div className="relative w-full h-full">
       <MapContainer
@@ -57,8 +81,10 @@ const EnhancedReactBaseMap: React.FC<ReactBaseMapProps> = ({ onError }) => {
         zoomControl={false}
       >
         <MapControllerInner />
+        <MapEvents /> {/* Add the event handler component */}
         <ZoomControl position="bottomright" />
-
+        <MapControllerInner />
+        <ZoomControl position="bottomright" />
         <LayersControl position="topright">
           <LayersControl.BaseLayer checked name="OpenStreetMap">
             <TileLayer
@@ -83,13 +109,20 @@ const EnhancedReactBaseMap: React.FC<ReactBaseMapProps> = ({ onError }) => {
             />
           </LayersControl.BaseLayer>
         </LayersControl>
-
         {/* Render aircraft markers */}
-        {validAircraft.map((plane) => (
-          <AircraftMarker key={plane.icao24} aircraft={plane} />
+        {validAircraft.map((aircraft: ExtendedAircraft) => (
+          <EnhancedContextAircraftMarker
+            key={aircraft.icao24}
+            aircraft={aircraft}
+          />
         ))}
+        {/* Map Controls */}
+        <EnhancedContextMapControls />
+        {/* Add the Trail Toggle component */}
+        <TrailToggle />
       </MapContainer>
-      \{/* Selected aircraft info panel */}
+
+      {/* Selected aircraft info panel */}
       <EnhancedContextAircraftInfoPanel />
     </div>
   );

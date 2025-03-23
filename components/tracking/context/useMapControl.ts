@@ -1,6 +1,6 @@
 // components/tracking/context/useMapControl.ts
 import { useEffect, useCallback, useRef } from 'react';
-import { useMapContext } from './MapContext';
+import { useEnhancedMapContext } from './EnhancedMapContext';
 import type { Map as LeafletMap } from 'leaflet';
 
 /**
@@ -9,7 +9,7 @@ import type { Map as LeafletMap } from 'leaflet';
  */
 export function useMapControl() {
   const { setMapInstance, setZoomLevel, preserveView, selectedAircraft } =
-    useMapContext();
+    useEnhancedMapContext();
 
   const mapRef = useRef<LeafletMap | null>(null);
 

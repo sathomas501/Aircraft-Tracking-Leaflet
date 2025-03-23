@@ -12,6 +12,14 @@ import type { SelectOption, ExtendedAircraft } from '@/types/base';
 import type { AircraftModel } from '../../../types/aircraft-models';
 import openSkyTrackingService from '@/lib/services/openSkyTrackingService';
 
+// Define trail position interface
+interface AircraftPosition {
+  latitude: number;
+  longitude: number;
+  altitude: number | null;
+  timestamp: number;
+}
+
 // Define context interface
 interface EnhancedMapContextType {
   // Map state
@@ -37,12 +45,21 @@ interface EnhancedMapContextType {
   trackingStatus: string;
   lastRefreshed: string | null;
 
+  // Trail state
+  trailsEnabled: boolean;
+  maxTrailLength: number;
+  aircraftTrails: Map<string, AircraftPosition[]>;
+
   // Actions
   selectManufacturer: (manufacturer: string | null) => Promise<void>;
   selectModel: (model: string | null) => void;
   reset: () => Promise<void>;
   refreshPositions: () => Promise<void>;
   fullRefresh: () => Promise<void>;
+
+  // Trail actions
+  toggleTrails: () => void;
+  setMaxTrailLength: (length: number) => void;
 }
 
 // Create context with default values
@@ -65,11 +82,20 @@ const EnhancedMapContext = createContext<EnhancedMapContextType>({
   trackingStatus: '',
   lastRefreshed: null,
 
+  // Trail default values
+  trailsEnabled: false,
+  maxTrailLength: 10,
+  aircraftTrails: new Map(),
+
   selectManufacturer: async () => {},
   selectModel: () => {},
   reset: async () => {},
   refreshPositions: async () => {},
   fullRefresh: async () => {},
+
+  // Trail actions
+  toggleTrails: () => {},
+  setMaxTrailLength: () => {},
 });
 
 // Props for the context provider
@@ -110,20 +136,32 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
   const [trackingStatus, setTrackingStatus] = useState<string>('');
   const [lastRefreshed, setLastRefreshed] = useState<string | null>(null);
 
+  // Trail state
+  const [trailsEnabled, setTrailsEnabled] = useState<boolean>(false);
+  const [maxTrailLength, setMaxTrailLength] = useState<number>(10);
+  const [aircraftTrails, setAircraftTrails] = useState<
+    Map<string, AircraftPosition[]>
+  >(new Map());
+
   // Refs for tracking subscriptions
   const unsubscribeAircraftRef = useRef<(() => void) | null>(null);
   const unsubscribeStatusRef = useRef<(() => void) | null>(null);
 
   // Initialize tracking service and subscriptions
-  // In the EnhancedMapContext.tsx file, modify the useEffect to use stopTracking:
-
   useEffect(() => {
-    // Subscribe to aircraft updates
-    unsubscribeAircraftRef.current = openSkyTrackingService.subscribeToAircraft(
-      () => {
-        updateAircraftDisplay();
+    // Subscribe to tracking updates that include trail data
+    const handleTrackingUpdate = (data: any) => {
+      updateAircraftDisplay();
+
+      // Update trail data if present
+      if (data.trails) {
+        setAircraftTrails(data.trails);
       }
-    );
+    };
+
+    // Subscribe to aircraft updates
+    unsubscribeAircraftRef.current =
+      openSkyTrackingService.subscribe(handleTrackingUpdate);
 
     // Subscribe to status updates
     unsubscribeStatusRef.current = openSkyTrackingService.subscribeToStatus(
@@ -133,8 +171,12 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
       }
     );
 
-    // IMPORTANT: Add this to clear any existing tracking when component mounts
+    // IMPORTANT: Clear any existing tracking when component mounts
     openSkyTrackingService.stopTracking();
+
+    // Initialize trail settings from service
+    setTrailsEnabled(openSkyTrackingService.areTrailsEnabled());
+    setMaxTrailLength(openSkyTrackingService.getMaxTrailLength());
 
     // Cleanup on unmount
     return () => {
@@ -254,6 +296,19 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
     }
   };
 
+  // Toggle trails on/off
+  const toggleTrails = useCallback(() => {
+    const newTrailsEnabled = !trailsEnabled;
+    setTrailsEnabled(newTrailsEnabled);
+    openSkyTrackingService.setTrailsEnabled(newTrailsEnabled);
+  }, [trailsEnabled]);
+
+  // Set maximum trail length
+  const handleSetMaxTrailLength = useCallback((length: number) => {
+    setMaxTrailLength(length);
+    openSkyTrackingService.setMaxTrailLength(length);
+  }, []);
+
   // Create context value
   const contextValue: EnhancedMapContextType = {
     mapInstance,
@@ -275,11 +330,20 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
     trackingStatus,
     lastRefreshed,
 
+    // Trail state
+    trailsEnabled,
+    maxTrailLength,
+    aircraftTrails,
+
     selectManufacturer,
     selectModel,
     reset,
     refreshPositions,
     fullRefresh,
+
+    // Trail actions
+    toggleTrails,
+    setMaxTrailLength: handleSetMaxTrailLength,
   };
 
   return (

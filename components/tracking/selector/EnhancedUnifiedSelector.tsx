@@ -45,7 +45,6 @@ interface ModelSelectionProps {
 }
 
 // Header sub-component for the selector
-// Header sub-component for the selector
 const SelectorHeader: React.FC<SelectorHeaderProps> = ({
   selectedManufacturer,
   isCollapsed,
@@ -59,10 +58,12 @@ const SelectorHeader: React.FC<SelectorHeaderProps> = ({
       className="bg-indigo-600 text-white px-4 py-3 flex justify-between items-center cursor-grab drag-handle"
       onMouseDown={startDragging}
     >
-      <h2 className="font-semibold flex items-center space-x-2">
+      <h2 className="font-semibold flex items-center justify-center space-x-2 text-center w-full">
         {selectedManufacturer ? (
-          // Just display the manufacturer name without aircraft count
-          <span className="truncate max-w-44">{getManufacturerLabel()}</span>
+          // Display only the manufacturer name without aircraft count
+          <span className="truncate max-w-44 mx-auto">
+            {getManufacturerLabel()}
+          </span>
         ) : (
           <span className="flex items-center">
             <svg
@@ -775,7 +776,9 @@ const EnhancedUnifiedSelector: React.FC<EnhancedUnifiedSelectorProps> = ({
 
   const getManufacturerLabel = () => {
     const found = manufacturers.find((m) => m.value === selectedManufacturer);
-    return found ? found.label : 'Select Manufacturer';
+    return found
+      ? found.label.replace(/\s*\(\d+\s+aircraft\)$/, '')
+      : 'Select Manufacturer';
   };
 
   // Get currently active models for the model tag display

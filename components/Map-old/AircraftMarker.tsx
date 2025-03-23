@@ -1,12 +1,12 @@
 // EnhancedAircraftMarker.tsx
 import React, { useEffect, useState } from 'react';
 import { Marker, Popup, Tooltip, useMap } from 'react-leaflet';
-import type { Aircraft } from '@/types/base';
+import type { Aircraft } from '../../types/base';
 import {
   createAircraftIcon,
   createTooltipContent,
   createPopupContent,
-} from '../../Map/components/AircraftIcon/AircraftIcon';
+} from '../tracking/map/AircraftIcon/AircraftIcon';
 
 interface EnhancedAircraftMarkerProps {
   aircraft: Aircraft & {
@@ -64,7 +64,7 @@ export const EnhancedAircraftMarker: React.FC<EnhancedAircraftMarkerProps> = ({
   return (
     <Marker
       position={[aircraft.latitude, aircraft.longitude]}
-      icon={icon}
+      icon={icon || undefined} // Convert null to undefined
       eventHandlers={{
         click: handleClick,
       }}

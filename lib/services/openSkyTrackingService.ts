@@ -14,6 +14,20 @@ interface TrackingCache {
 }
 const trackingCache: Map<string, TrackingCache> = new Map();
 
+// Define a trail interface to store position history
+interface AircraftPosition {
+  latitude: number;
+  longitude: number;
+  altitude: number | null;
+  timestamp: number;
+}
+
+interface AircraftTrail {
+  icao24: string;
+  positions: AircraftPosition[];
+  maxPositions: number; // Maximum trail length
+}
+
 async function processBatchedRequests<T, R>(
   items: T[],
   batchProcessor: (batch: T[]) => Promise<R[]>,
@@ -94,6 +108,28 @@ class OpenSkyTrackingService {
   private lastRefreshTime: number = 0;
   private modelStats: Map<string, { active: number; total: number }> =
     new Map();
+  private trails: Map<string, AircraftTrail> = new Map();
+  private trailsEnabled: boolean = false;
+  private maxTrailLength: number = 10; // Default trail length
+  private trackedIcao24s: Set<string> = new Set();
+  private lastFullRefreshTime: number = 0;
+  private fullRefreshInterval: number = 3600000;
+  private activeIcao24s: Set<string> = new Set();
+  private updateTrackedIcao24sSet(): void {
+    // Clear the current set
+    this.trackedIcao24s.clear();
+
+    // Add all valid ICAO24 codes from tracked aircraft
+    this.trackedAircraft.forEach((aircraft) => {
+      if (aircraft.icao24) {
+        this.trackedIcao24s.add(aircraft.icao24);
+      }
+    });
+
+    console.log(
+      `[OpenSky] Updated tracked ICAO24s set: ${this.trackedIcao24s.size} aircraft`
+    );
+  }
 
   private constructor() {}
 
@@ -184,10 +220,135 @@ class OpenSkyTrackingService {
     }
   }
 
+  public getTrackedIcao24s(): string[] {
+    return Array.from(this.trackedIcao24s);
+  }
+
+  public isAircraftTracked(icao24: string): boolean {
+    return this.trackedIcao24s.has(icao24);
+  }
+  /**
+   * Enable or disable aircraft trails
+   */
+  public setTrailsEnabled(enabled: boolean): void {
+    this.trailsEnabled = enabled;
+
+    // Clear trails if disabling
+    if (!enabled) {
+      this.trails.clear();
+      this.notifySubscribers();
+    }
+
+    console.log(
+      `[OpenSky] Aircraft trails ${enabled ? 'enabled' : 'disabled'}`
+    );
+  }
+
+  /**
+   * Check if trails are enabled
+   */
+  public areTrailsEnabled(): boolean {
+    return this.trailsEnabled;
+  }
+
+  /**
+   * Set maximum trail length (number of positions to store)
+   */
+  public setMaxTrailLength(length: number): void {
+    this.maxTrailLength = Math.max(2, Math.min(50, length)); // Clamp between 2 and 50
+
+    // Update existing trails to match new length
+    this.trails.forEach((trail) => {
+      trail.maxPositions = this.maxTrailLength;
+      if (trail.positions.length > this.maxTrailLength) {
+        trail.positions = trail.positions.slice(-this.maxTrailLength);
+      }
+    });
+
+    this.notifySubscribers();
+    console.log(
+      `[OpenSky] Trail length set to ${this.maxTrailLength} positions`
+    );
+  }
+
+  /**
+   * Get maximum trail length
+   */
+  public getMaxTrailLength(): number {
+    return this.maxTrailLength;
+  }
+
+  /**
+   * Update aircraft trails based on current position data
+   */
+  private updateTrails(): void {
+    if (!this.trailsEnabled) return;
+
+    const currentTime = Date.now();
+
+    // Update trails for each aircraft
+    this.trackedAircraft.forEach((aircraft) => {
+      if (!aircraft.icao24 || !aircraft.latitude || !aircraft.longitude) return;
+
+      // Get or create trail for this aircraft
+      let trail = this.trails.get(aircraft.icao24);
+      if (!trail) {
+        trail = {
+          icao24: aircraft.icao24,
+          positions: [],
+          maxPositions: this.maxTrailLength,
+        };
+        this.trails.set(aircraft.icao24, trail);
+      }
+
+      // Check if position has changed significantly before adding to trail
+      const lastPos = trail.positions[trail.positions.length - 1];
+      const positionChanged =
+        !lastPos ||
+        Math.abs(lastPos.latitude - aircraft.latitude) > 0.0001 ||
+        Math.abs(lastPos.longitude - aircraft.longitude) > 0.0001;
+
+      // Only add position if it has changed significantly
+      if (positionChanged) {
+        // Add new position
+        trail.positions.push({
+          latitude: aircraft.latitude,
+          longitude: aircraft.longitude,
+          altitude: aircraft.altitude || null,
+          timestamp: currentTime,
+        });
+
+        // Keep trail at max length
+        if (trail.positions.length > trail.maxPositions) {
+          trail.positions = trail.positions.slice(-trail.maxPositions);
+        }
+      }
+    });
+  }
+
+  /**
+   * Get trail for a specific aircraft
+   */
+  public getAircraftTrails(icao24: string): AircraftPosition[] {
+    return this.trails.get(icao24)?.positions || [];
+  }
+
+  /**
+   * Get all aircraft trails
+   */
+  public getAllTrails(): Map<string, AircraftPosition[]> {
+    const result = new Map<string, AircraftPosition[]>();
+    this.trails.forEach((trail, icao24) => {
+      result.set(icao24, trail.positions);
+    });
+    return result;
+  }
+
   /**
    * Start tracking a manufacturer's aircraft
    */
   public async trackManufacturer(manufacturer: string): Promise<Aircraft[]> {
+    console.log('OPTIMIZATION: trackManufacturer called');
     if (this.trackingActive && this.currentManufacturer === manufacturer) {
       console.log(`[OpenSky] Already tracking ${manufacturer}`);
       return this.trackedAircraft;
@@ -204,15 +365,46 @@ class OpenSkyTrackingService {
     this.currentManufacturer = manufacturer;
     this.trackingActive = true;
 
+    // Clear active set
+    this.activeIcao24s.clear();
+
     // Initial fetch
     await this.fetchAndUpdateAircraft(manufacturer);
 
-    // Remove auto-refresh; refresh will now be triggered manually
+    // Initialize our active aircraft set
+    this.updateActiveAircraftSet(this.trackedAircraft);
+
+    // Set the initial full refresh time
+    this.lastFullRefreshTime = Date.now();
+
     console.log(
-      `[OpenSky] Tracking started for ${manufacturer}, manual refresh required.`
+      `[OpenSky] Tracking started for ${manufacturer}, ${this.trackedAircraft.length} aircraft`
     );
 
     return this.trackedAircraft;
+  }
+
+  public getRefreshStats(): {
+    lastRefreshTime: number;
+    lastFullRefreshTime: number;
+    nextFullRefreshDue: number;
+    fullRefreshInterval: number;
+    trackedAircraftCount: number;
+  } {
+    const nextFullRefreshDue =
+      this.lastFullRefreshTime + this.fullRefreshInterval;
+    const minutesUntilNextFull = Math.max(
+      0,
+      Math.floor((nextFullRefreshDue - Date.now()) / 60000)
+    );
+
+    return {
+      lastRefreshTime: this.lastRefreshTime,
+      lastFullRefreshTime: this.lastFullRefreshTime,
+      nextFullRefreshDue: nextFullRefreshDue,
+      fullRefreshInterval: this.fullRefreshInterval,
+      trackedAircraftCount: this.trackedAircraft.length,
+    };
   }
 
   // Update this whenever aircraft data changes
@@ -288,6 +480,7 @@ class OpenSkyTrackingService {
     }
 
     this.trackedAircraft = [];
+    this.activeIcao24s.clear(); // Clear active set
     this.notifySubscribers();
   }
 
@@ -304,6 +497,7 @@ class OpenSkyTrackingService {
       if (icao24s.length === 0) {
         console.log(`[OpenSky] No ICAO codes found for ${manufacturer}`);
         this.trackedAircraft = [];
+        this.trackedIcao24s.clear(); // Clear tracking set
         this.notifySubscribers();
         return;
       }
@@ -314,8 +508,11 @@ class OpenSkyTrackingService {
         icao24s
       );
 
+      this.updateTrails();
+
       // Update tracked aircraft and notify subscribers
       this.trackedAircraft = liveAircraft;
+      this.updateTrackedIcao24sSet(); // Update our tracking set
       this.lastRefreshTime = Date.now();
       this.notifySubscribers();
 
@@ -328,6 +525,23 @@ class OpenSkyTrackingService {
         error
       );
     }
+  }
+
+  /**
+   * Helper method to get current state of tracking
+   */
+  public getTrackingStatus(): {
+    active: boolean;
+    manufacturer: string | null;
+    count: number;
+    lastRefresh: number;
+  } {
+    return {
+      active: this.trackingActive,
+      manufacturer: this.currentManufacturer,
+      count: this.trackedAircraft.length,
+      lastRefresh: this.lastRefreshTime,
+    };
   }
 
   /**
@@ -396,22 +610,24 @@ class OpenSkyTrackingService {
 
   private async getLiveAircraftData(
     manufacturer: string,
-    icao24s: string[]
+    icao24s: string[],
+    includeStatic: boolean = true
   ): Promise<Aircraft[]> {
-    const cacheKey = `live-${manufacturer}`;
+    // Generate a more specific cache key that includes whether this is a position-only update
+    const cacheKey = `live-${manufacturer}-${includeStatic ? 'full' : 'pos'}-${icao24s.length}`;
 
     // Check cache first
     const cached = trackingCache.get(cacheKey);
     if (cached && Date.now() - cached.timestamp < cached.ttl) {
-      console.log(`[OpenSky] Using cached live data for ${manufacturer}`);
+      console.log(
+        `[OpenSky] Using cached data for ${manufacturer} (${icao24s.length} aircraft)`
+      );
       return cached.data;
     }
 
     // Check if request is already in progress
     if (activeRequests.has(cacheKey)) {
-      console.log(
-        `[OpenSky] Using existing live data request for ${manufacturer}`
-      );
+      console.log(`[OpenSky] Using existing request for ${manufacturer}`);
       try {
         return await activeRequests.get(cacheKey)!;
       } catch (error) {
@@ -423,7 +639,7 @@ class OpenSkyTrackingService {
     // Create a separate function for the actual data fetching
     const fetchData = async (): Promise<Aircraft[]> => {
       try {
-        const BATCH_SIZE = 900;
+        const BATCH_SIZE = 100; // Smaller batch size for more responsive updates
         console.log(`[OpenSky] Fetching live aircraft data in batches...`);
 
         // Process batches without using Promise.race
@@ -437,7 +653,7 @@ class OpenSkyTrackingService {
                 body: JSON.stringify({
                   manufacturer,
                   icao24s: batch,
-                  includeStatic: true,
+                  includeStatic, // We can turn this off for position-only updates
                 }),
               });
 
@@ -462,11 +678,14 @@ class OpenSkyTrackingService {
           BATCH_SIZE
         );
 
+        // Shorter cache TTL for position-only updates to keep data fresh
+        const ttl = includeStatic ? 20000 : 10000; // 20s for full data, 10s for positions only
+
         // Cache the result
         trackingCache.set(cacheKey, {
           data: aircraftResults,
           timestamp: Date.now(),
-          ttl: 20000, // 20 seconds
+          ttl,
         });
 
         return aircraftResults;
@@ -476,15 +695,20 @@ class OpenSkyTrackingService {
       }
     };
 
-    // Create request promise and add timeout separately
+    // Create request promise with timeout
     let timeoutId: NodeJS.Timeout;
 
     const requestPromise = new Promise<Aircraft[]>((resolve) => {
-      // Set a timeout to resolve with empty array after 60 seconds
+      // Shorter timeout for position-only updates
+      const timeoutDuration = includeStatic ? 60000 : 30000; // 60s for full data, 30s for positions
+
+      // Set a timeout to resolve with empty array after timeout duration
       timeoutId = setTimeout(() => {
-        console.warn('[OpenSky] Request timed out after 60 seconds');
+        console.warn(
+          `[OpenSky] Request timed out after ${timeoutDuration / 1000} seconds`
+        );
         resolve([]);
-      }, 60000);
+      }, timeoutDuration);
 
       // Execute the fetch
       fetchData().then((result) => {
@@ -505,7 +729,6 @@ class OpenSkyTrackingService {
       activeRequests.delete(cacheKey);
     }
   }
-
   /**
    * Notify all subscribers of changes
    */
@@ -515,12 +738,11 @@ class OpenSkyTrackingService {
       manufacturer: this.currentManufacturer,
       count: this.trackedAircraft.length,
       timestamp: this.lastRefreshTime,
+      trails: this.trailsEnabled ? this.getAllTrails() : null,
     };
 
     this.subscribers.forEach((callback) => callback(data));
   }
-
-  // In OpenSkyTrackingService.ts
 
   /**
    * Manually refresh only position data for currently tracked aircraft
@@ -580,63 +802,317 @@ class OpenSkyTrackingService {
    */
   private isRefreshingPositions = false;
 
+  /**
+   * Enhanced refreshPositionsOnly method with periodic full refresh
+   */
   public async refreshPositionsOnly(): Promise<Aircraft[]> {
+    console.log('OPTIMIZATION: refreshPositionsOnly called');
     if (this.isRefreshingPositions) {
-      console.log('Already refreshing positions, skipping');
+      console.log('[OpenSky] Already refreshing positions, skipping');
       return this.trackedAircraft;
     }
 
-    this.isRefreshingPositions = true; // Set flag to true
-    // Use the setRefreshInProgress function instead of directly setting window property
-    setRefreshInProgress(true);
-    console.log('[OpenSky] Refreshing positions only for tracked aircraft');
+    // If we're not tracking anything, there's nothing to refresh
+    if (!this.trackingActive || !this.currentManufacturer) {
+      console.log('[OpenSky] No active tracking or manufacturer to refresh');
+      return this.trackedAircraft;
+    }
 
+    this.isRefreshingPositions = true;
+    setRefreshInProgress(true);
     this.loading = true;
-    const refreshStartTime = Date.now(); // Track when we started
+    const refreshStartTime = Date.now();
 
     try {
-      // Get the ICAO codes of currently tracked aircraft
-      const activeIcaos = this.trackedAircraft
-        .map((aircraft) => aircraft.icao24)
-        .filter((icao) => icao); // Filter out any undefined
+      // Check if we need to do a full refresh based on the time interval
+      const timeSinceFullRefresh = Date.now() - this.lastFullRefreshTime;
+      const needsFullRefresh = timeSinceFullRefresh >= this.fullRefreshInterval;
 
-      if (activeIcaos.length === 0) {
-        console.log('[OpenSky] No active aircraft to refresh');
-        return [];
+      if (needsFullRefresh) {
+        console.log(
+          '[OpenSky] Performing periodic full refresh to check for new aircraft'
+        );
+
+        // Do a complete refresh by calling fetchAndUpdateAircraft
+        await this.fetchAndUpdateAircraft(this.currentManufacturer);
+
+        // Update our active aircraft set
+        this.updateActiveAircraftSet(this.trackedAircraft);
+
+        // Update our last full refresh time
+        this.lastFullRefreshTime = Date.now();
+
+        // Return the updated aircraft list
+        return this.trackedAircraft;
       }
 
-      // Only get live data for these aircraft without re-fetching from database
-      const updatedAircraft = await this.getLiveAircraftData(
-        this.currentManufacturer ?? '', // Use empty string as fallback if null
-        activeIcaos
+      // Otherwise, do an optimized position-only update for known active aircraft
+      console.log(
+        '[OpenSky] Performing position-only refresh for active aircraft'
       );
 
-      // Update tracked aircraft
-      this.trackedAircraft = updatedAircraft;
+      // Get ICAO24 codes of currently active aircraft
+      const activeIcaos = Array.from(this.activeIcao24s);
 
-      // Update state and notify subscribers
-      this.updateTrackedAircraftState();
+      if (activeIcaos.length === 0) {
+        console.log(
+          '[OpenSky] No active aircraft to refresh, performing full refresh'
+        );
+
+        // If we don't have any active aircraft, do a full refresh
+        await this.fetchAndUpdateAircraft(this.currentManufacturer);
+        this.updateActiveAircraftSet(this.trackedAircraft);
+        this.lastFullRefreshTime = Date.now();
+        return this.trackedAircraft;
+      }
 
       console.log(
-        `[OpenSky] Refreshed positions for ${updatedAircraft.length} aircraft`
+        `[OpenSky] Refreshing positions for ${activeIcaos.length} active aircraft`
       );
-      return updatedAircraft;
+
+      // Request position updates ONLY for aircraft we know are active
+      const updatedAircraft = await this.getLiveAircraftData(
+        this.currentManufacturer,
+        activeIcaos,
+        false // Don't include static data for position updates
+      );
+
+      console.log(
+        `[OpenSky] Received updates for ${updatedAircraft.length} active aircraft`
+      );
+
+      // Prune aircraft that no longer have position data
+      this.pruneInactiveAircraft(activeIcaos, updatedAircraft);
+
+      // Update our active aircraft set with any new position data
+      this.updateActiveAircraftSet(updatedAircraft);
+
+      // Merge with existing tracked aircraft
+      this.mergePositionUpdates(updatedAircraft);
+
+      // Update trails
+      this.updateTrails();
+
+      // Update state and notify subscribers
+      this.lastRefreshTime = Date.now();
+      this.notifySubscribers();
+
+      return this.trackedAircraft;
     } catch (error) {
-      console.error('[OpenSky] Error refreshing positions:', error);
+      console.error('[OpenSky] Error during refresh:', error);
       return this.trackedAircraft; // Return current data on error
     } finally {
       this.loading = false;
-      this.isRefreshingPositions = false; // Reset the flag in finally block
-
-      // Make sure we don't reset too quickly (ensure at least 500ms passed)
-      const elapsedTime = Date.now() - refreshStartTime;
-      const resetDelay = Math.max(0, 500 - elapsedTime);
+      this.isRefreshingPositions = false;
 
       // Reset the prevent bounds fit flag after a delay
+      const elapsedTime = Date.now() - refreshStartTime;
+      const resetDelay = Math.max(0, 500 - elapsedTime);
       setTimeout(() => {
-        setRefreshInProgress(false); // Use the function instead of direct assignment
-      }, resetDelay + 500); // Add a bit more buffer time
+        setRefreshInProgress(false);
+      }, resetDelay + 500);
     }
+  }
+
+  /**
+   * Get position updates for specific ICAO24 codes
+   * This method makes a focused API request for just position data
+   */
+  private async getPositionUpdates(icao24s: string[]): Promise<Aircraft[]> {
+    const cacheKey = `positions-${icao24s.length}`;
+
+    // Check if request is already in progress
+    if (activeRequests.has(cacheKey)) {
+      console.log('[OpenSky] Using existing position update request');
+      try {
+        return await activeRequests.get(cacheKey)!;
+      } catch (error) {
+        console.error('[OpenSky] Error from existing position request:', error);
+        activeRequests.delete(cacheKey);
+      }
+    }
+
+    // Function to fetch the position data
+    const fetchPositions = async (): Promise<Aircraft[]> => {
+      try {
+        const BATCH_SIZE = 100; // Smaller batch size for position-only updates
+        console.log(`[OpenSky] Fetching position updates in batches...`);
+
+        // Process batches
+        const positionResults = await processBatchedRequests<string, Aircraft>(
+          icao24s,
+          async (batch) => {
+            try {
+              // Use a dedicated endpoint for position-only updates
+              const response = await fetch('/api/tracking/positions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  icao24s: batch,
+                }),
+              });
+
+              if (!response.ok) {
+                throw new Error(
+                  `Failed to fetch positions: ${response.status} ${response.statusText}`
+                );
+              }
+
+              const data = await response.json();
+              if (!data || !Array.isArray(data.aircraft)) {
+                console.warn(
+                  '[OpenSky] Unexpected position response format:',
+                  data
+                );
+                return [];
+              }
+
+              return data.aircraft || [];
+            } catch (fetchError) {
+              console.error(
+                '[OpenSky] Batch position fetch error:',
+                fetchError
+              );
+              return [];
+            }
+          },
+          BATCH_SIZE
+        );
+
+        return positionResults;
+      } catch (error) {
+        console.error(`[OpenSky] Error fetching position updates:`, error);
+        return [];
+      }
+    };
+
+    // Create request promise with timeout
+    let timeoutId: NodeJS.Timeout;
+
+    const requestPromise = new Promise<Aircraft[]>((resolve) => {
+      // Set a timeout to resolve with empty array after 30 seconds
+      // Position-only updates should be faster, so we use a shorter timeout
+      timeoutId = setTimeout(() => {
+        console.warn(
+          '[OpenSky] Position update request timed out after 30 seconds'
+        );
+        resolve([]);
+      }, 30000);
+
+      // Execute the fetch
+      fetchPositions().then((result) => {
+        clearTimeout(timeoutId);
+        resolve(result);
+      });
+    });
+
+    // Store the request
+    activeRequests.set(cacheKey, requestPromise);
+
+    try {
+      // Wait for the request to complete
+      return await requestPromise;
+    } finally {
+      // Always clean up
+      activeRequests.delete(cacheKey);
+    }
+  }
+
+  /**
+   * Updates the set of active aircraft based on position data
+   */
+  private updateActiveAircraftSet(aircraft: Aircraft[]): void {
+    aircraft.forEach((plane) => {
+      if (plane.icao24 && plane.latitude && plane.longitude) {
+        this.activeIcao24s.add(plane.icao24.toLowerCase());
+      }
+    });
+
+    console.log(
+      `[OpenSky] Active aircraft set has ${this.activeIcao24s.size} aircraft`
+    );
+  }
+
+  /**
+   * Removes aircraft from active set if they no longer have position data
+   */
+  private pruneInactiveAircraft(
+    requestedIcaos: string[],
+    receivedAircraft: Aircraft[]
+  ): void {
+    const receivedIcaos = new Set<string>();
+    receivedAircraft.forEach((aircraft) => {
+      if (aircraft.icao24 && aircraft.latitude && aircraft.longitude) {
+        receivedIcaos.add(aircraft.icao24.toLowerCase());
+      }
+    });
+
+    let removedCount = 0;
+    requestedIcaos.forEach((icao) => {
+      if (!receivedIcaos.has(icao.toLowerCase())) {
+        this.activeIcao24s.delete(icao.toLowerCase());
+        removedCount++;
+      }
+    });
+
+    if (removedCount > 0) {
+      console.log(`[OpenSky] Removed ${removedCount} aircraft from active set`);
+    }
+  }
+
+  /**
+   * Merges position updates with existing aircraft data
+   */
+  private mergePositionUpdates(positionUpdates: Aircraft[]): void {
+    const positionMap = new Map<string, Aircraft>();
+    positionUpdates.forEach((aircraft) => {
+      if (aircraft.icao24) {
+        positionMap.set(aircraft.icao24.toLowerCase(), aircraft);
+      }
+    });
+
+    let updatedCount = 0;
+
+    this.trackedAircraft = this.trackedAircraft.map((aircraft) => {
+      if (!aircraft.icao24) return aircraft;
+
+      const icao = aircraft.icao24.toLowerCase();
+      const positionUpdate = positionMap.get(icao);
+
+      if (
+        positionUpdate &&
+        positionUpdate.latitude &&
+        positionUpdate.longitude
+      ) {
+        updatedCount++;
+        return {
+          ...aircraft,
+          latitude: positionUpdate.latitude,
+          longitude: positionUpdate.longitude,
+          altitude: positionUpdate.altitude,
+          velocity: positionUpdate.velocity,
+          heading: positionUpdate.heading,
+          on_ground: positionUpdate.on_ground,
+          lastSeen: positionUpdate.lastSeen || Date.now(),
+        };
+      }
+
+      return aircraft;
+    });
+
+    console.log(`[OpenSky] Updated positions for ${updatedCount} aircraft`);
+  }
+
+  /**
+   * Sets the interval between full refreshes
+   */
+  public setFullRefreshInterval(minutes: number): void {
+    const minMinutes = 10;
+    const validMinutes = Math.max(minMinutes, minutes);
+    this.fullRefreshInterval = validMinutes * 60 * 1000;
+    console.log(
+      `[OpenSky] Full refresh interval set to ${validMinutes} minutes`
+    );
   }
 }
 
