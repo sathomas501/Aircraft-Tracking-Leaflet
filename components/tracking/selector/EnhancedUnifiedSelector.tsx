@@ -29,9 +29,7 @@ const EnhancedUnifiedSelector: React.FC<EnhancedUnifiedSelectorProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [isManufacturerMenuOpen, setIsManufacturerMenuOpen] = useState(false);
   const [isModelMenuOpen, setIsModelMenuOpen] = useState(false);
-  const [recentManufacturers, setRecentManufacturers] = useState<
-    SelectOption[]
-  >([]);
+  const [dropdownVisible, setDropdownVisible] = useState(false);
 
   // Drag state
   const [position, setPosition] = useState({ x: 20, y: 20 });
@@ -42,55 +40,43 @@ const EnhancedUnifiedSelector: React.FC<EnhancedUnifiedSelectorProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const manufacturerMenuRef = useRef<HTMLDivElement>(null);
   const modelMenuRef = useRef<HTMLDivElement>(null);
+  const dropdownButtonRef = useRef<HTMLButtonElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
-  // Load recent manufacturers from localStorage
+  // Filter manufacturers by search term
+  const filteredManufacturers = manufacturers.filter((manufacturer) =>
+    manufacturer.label.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  // Update compact mode based on manufacturer selection
   useEffect(() => {
-    // Load recent manufacturers but don't auto-select
-    try {
-      const saved = localStorage.getItem('recentManufacturers');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
-          setRecentManufacturers(parsed.slice(0, 5));
+    setIsCompact(!!selectedManufacturer);
+  }, [selectedManufacturer]);
+
+  // Handle dropdown visibility with a delay to ensure proper rendering
+  useEffect(() => {
+    if (isManufacturerMenuOpen) {
+      // Short delay to ensure DOM is ready
+      setTimeout(() => {
+        setDropdownVisible(true);
+        // Focus the search input if available
+        if (searchInputRef.current) {
+          searchInputRef.current.focus();
         }
-      }
-
-      // Clear any stored 'lastSelectedManufacturer' if it exists
-      localStorage.removeItem('lastSelectedManufacturer');
-    } catch (error) {
-      console.error('Failed to load recent manufacturers:', error);
+      }, 50);
+    } else {
+      setDropdownVisible(false);
     }
-  }, []);
-
-  // Save manufacturer selection to recent list
-  useEffect(() => {
-    if (!selectedManufacturer) return;
-
-    const selectedManufacturerObj = manufacturers.find(
-      (m) => m.value === selectedManufacturer
-    );
-
-    if (!selectedManufacturerObj) return;
-
-    try {
-      const updated = [
-        selectedManufacturerObj,
-        ...recentManufacturers.filter((m) => m.value !== selectedManufacturer),
-      ].slice(0, 5);
-
-      setRecentManufacturers(updated);
-      localStorage.setItem('recentManufacturers', JSON.stringify(updated));
-    } catch (error) {
-      console.error('Failed to save recent manufacturers:', error);
-    }
-  }, [selectedManufacturer, manufacturers, recentManufacturers]);
+  }, [isManufacturerMenuOpen]);
 
   // Close menus when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (
         manufacturerMenuRef.current &&
-        !manufacturerMenuRef.current.contains(event.target as Node)
+        !manufacturerMenuRef.current.contains(event.target as Node) &&
+        dropdownButtonRef.current &&
+        !dropdownButtonRef.current.contains(event.target as Node)
       ) {
         setIsManufacturerMenuOpen(false);
       }
@@ -108,11 +94,6 @@ const EnhancedUnifiedSelector: React.FC<EnhancedUnifiedSelectorProps> = ({
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, []);
-
-  // Update compact mode based on manufacturer selection
-  useEffect(() => {
-    setIsCompact(!!selectedManufacturer);
-  }, [selectedManufacturer]);
 
   // Dragging functionality
   useEffect(() => {
@@ -161,11 +142,6 @@ const EnhancedUnifiedSelector: React.FC<EnhancedUnifiedSelectorProps> = ({
     }
   };
 
-  // Filter manufacturers by search term
-  const filteredManufacturers = manufacturers.filter((manufacturer) =>
-    manufacturer.label.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
   // Group models alphabetically for easier selection
   const groupedModels = activeModels.reduce(
     (groups: Record<string, AircraftModel[]>, model) => {
@@ -210,7 +186,7 @@ const EnhancedUnifiedSelector: React.FC<EnhancedUnifiedSelectorProps> = ({
         top: `${position.y}px`,
         zIndex: 1000,
       }}
-      className="bg-white rounded-lg shadow-xl border border-gray-200 overflow-hidden w-80 transition-all duration-300 select-none"
+      className="bg-white rounded-lg shadow-xl border border-gray-200 overflow-visible w-80 transition-all duration-300 select-none"
     >
       {/* Header */}
       <div
@@ -300,20 +276,16 @@ const EnhancedUnifiedSelector: React.FC<EnhancedUnifiedSelectorProps> = ({
             /* Manufacturer Selection View */
             <div className="p-4">
               <div className="mb-4">
-                <div className="mb-2 flex justify-between items-center">
+                <div className="mb-2">
                   <label className="text-sm font-medium text-gray-700">
                     Select Manufacturer
                   </label>
-                  {recentManufacturers.length > 0 && (
-                    <span className="text-xs text-gray-500">
-                      {recentManufacturers.length} recent
-                    </span>
-                  )}
                 </div>
 
-                {/* Manufacturer Dropdown */}
+                {/* Manufacturer Dropdown - Enhanced */}
                 <div className="relative" ref={manufacturerMenuRef}>
                   <button
+                    ref={dropdownButtonRef}
                     className={`w-full flex items-center justify-between px-3 py-2 border ${
                       isManufacturerMenuOpen
                         ? 'border-indigo-500 ring-1 ring-indigo-300'
@@ -364,28 +336,43 @@ const EnhancedUnifiedSelector: React.FC<EnhancedUnifiedSelectorProps> = ({
                           d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
                         />
                       </svg>
-                      Click to see top {manufacturers.length} available
+                      Click to see all {manufacturers.length} available
                       manufacturers
                     </div>
                   )}
 
-                  {/* Manufacturer Menu */}
+                  {/* Manufacturer Menu - Fixed Implementation */}
                   {isManufacturerMenuOpen && (
                     <div
-                      className="absolute z-20 mt-1 w-full bg-white shadow-lg rounded-md border border-gray-200 max-h-64 overflow-auto"
-                      style={{ minHeight: '100px' }}
+                      className="fixed z-50 border border-gray-200 rounded-md shadow-lg bg-white"
+                      style={{
+                        width: manufacturerMenuRef.current?.offsetWidth || 300,
+                        top: dropdownButtonRef.current
+                          ? dropdownButtonRef.current.getBoundingClientRect()
+                              .bottom + 5
+                          : 'auto',
+                        left: dropdownButtonRef.current
+                          ? dropdownButtonRef.current.getBoundingClientRect()
+                              .left
+                          : 'auto',
+                        maxHeight: '60vh',
+                        display: dropdownVisible ? 'block' : 'none',
+                        overflow: 'hidden',
+                      }}
                     >
                       {/* Search input */}
-                      <div className="sticky top-0 bg-white p-2 border-b">
+                      <div className="sticky top-0 bg-white p-2 border-b z-10">
                         <div className="relative">
                           <input
+                            ref={searchInputRef}
                             type="text"
                             className="w-full pl-8 pr-2 py-2 border border-gray-300 rounded-md"
                             placeholder="Search manufacturers..."
                             value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
+                            onChange={(e) => {
+                              setSearchTerm(e.target.value);
+                            }}
                             onClick={(e) => e.stopPropagation()}
-                            autoFocus
                           />
                           <svg
                             xmlns="http://www.w3.org/2000/svg"
@@ -402,92 +389,19 @@ const EnhancedUnifiedSelector: React.FC<EnhancedUnifiedSelectorProps> = ({
                             />
                           </svg>
                         </div>
-                        {!selectedManufacturer && !isManufacturerMenuOpen && (
-                          <div className="mt-1 text-xs text-gray-500 flex items-center">
-                            <svg
-                              xmlns="http://www.w3.org/2000/svg"
-                              className="h-3 w-3 mr-1"
-                              fill="none"
-                              viewBox="0 0 24 24"
-                              stroke="currentColor"
-                            >
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={2}
-                                d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                              />
-                            </svg>
-                            Click to see top {manufacturers.length} available
-                            manufacturers
-                          </div>
-                        )}
+                        <div className="mt-1 text-xs text-gray-500 flex items-center">
+                          Showing {filteredManufacturers.length} of{' '}
+                          {manufacturers.length} manufacturers
+                        </div>
                       </div>
 
-                      {/* Recent Manufacturers */}
-                      {recentManufacturers.length > 0 && searchTerm === '' && (
-                        <div>
-                          <div className="px-3 py-1 text-xs text-gray-500 bg-gray-50 font-medium">
-                            Recent
-                          </div>
-                          {recentManufacturers.map((manufacturer) => (
-                            <div
-                              key={`recent-${manufacturer.value}`}
-                              className="px-3 py-2 hover:bg-indigo-50 cursor-pointer flex items-center"
-                              onClick={() =>
-                                selectManufacturerAndClose(manufacturer.value)
-                              }
-                            >
-                              <div className="w-1 h-5 bg-indigo-400 rounded-full mr-2"></div>
-                              <span className="text-gray-800">
-                                {manufacturer.label}
-                              </span>
-                            </div>
-                          ))}
-                          <div className="border-b my-1"></div>
-                        </div>
-                      )}
-
-                      {/* Popular Manufacturers */}
-                      {searchTerm === '' && (
-                        <div>
-                          <div className="px-3 py-1 text-xs text-gray-500 bg-gray-50 font-medium">
-                            Popular Manufacturers
-                          </div>
-                          {manufacturers
-                            .filter((m) =>
-                              [
-                                'boeing',
-                                'airbus',
-                                'cessna',
-                                'bombardier',
-                                'embraer',
-                              ].includes(m.value.toLowerCase())
-                            )
-                            .slice(0, 5)
-                            .map((manufacturer) => (
-                              <div
-                                key={`popular-${manufacturer.value}`}
-                                className="px-3 py-2 hover:bg-indigo-50 cursor-pointer flex items-center"
-                                onClick={() =>
-                                  selectManufacturerAndClose(manufacturer.value)
-                                }
-                              >
-                                <span className="text-gray-800">
-                                  {manufacturer.label}
-                                </span>
-                              </div>
-                            ))}
-                          <div className="border-b my-1"></div>
-                        </div>
-                      )}
-
-                      {/* All Manufacturers */}
+                      {/* Manufacturer List */}
                       <div
-                        className={searchTerm ? '' : 'max-h-52 overflow-y-auto'}
+                        className="overflow-y-auto"
+                        style={{ maxHeight: 'calc(60vh - 70px)' }}
                       >
                         {searchTerm !== '' && (
-                          <div className="px-3 py-1 text-xs text-gray-500 bg-gray-50">
+                          <div className="px-3 py-1 text-xs text-gray-500 bg-gray-50 sticky top-0 z-10">
                             {filteredManufacturers.length} results
                           </div>
                         )}
@@ -583,7 +497,7 @@ const EnhancedUnifiedSelector: React.FC<EnhancedUnifiedSelectorProps> = ({
                   </div>
                 </div>
 
-                {/* Model Dropdown */}
+                {/* Model Dropdown - Fixed Version */}
                 <div className="relative" ref={modelMenuRef}>
                   <button
                     className={`w-full flex items-center justify-between px-3 py-2 border ${
@@ -614,8 +528,13 @@ const EnhancedUnifiedSelector: React.FC<EnhancedUnifiedSelectorProps> = ({
 
                   {/* Model Menu */}
                   {isModelMenuOpen && (
-                    <div className="absolute z-20 mt-1 w-full bg-white shadow-lg rounded-md border border-gray-200 max-h-64 overflow-y-auto">
-                      <div className="sticky top-0 bg-white border-b">
+                    <div
+                      className="absolute z-20 mt-1 w-full bg-white shadow-lg rounded-md border border-gray-200 overflow-y-auto"
+                      style={{
+                        maxHeight: '400px',
+                      }}
+                    >
+                      <div className="sticky top-0 bg-white border-b z-10">
                         <div
                           className="px-3 py-2 hover:bg-indigo-50 cursor-pointer font-medium"
                           onClick={() => handleModelSelect('')}
@@ -629,7 +548,7 @@ const EnhancedUnifiedSelector: React.FC<EnhancedUnifiedSelectorProps> = ({
                         .sort(([a], [b]) => a.localeCompare(b))
                         .map(([letter, models]) => (
                           <div key={letter}>
-                            <div className="px-3 py-1 text-xs text-gray-500 bg-gray-50 sticky top-10">
+                            <div className="px-3 py-1 text-xs text-gray-500 bg-gray-50 sticky top-10 z-10">
                               {letter}
                             </div>
                             {models
@@ -719,7 +638,7 @@ const EnhancedUnifiedSelector: React.FC<EnhancedUnifiedSelectorProps> = ({
                   </div>
 
                   {/* Top models by popularity */}
-                  <div className="flex flex-wrap gap-1 mt-1">
+                  <div className="flex flex-wrap gap-1 mt-1 max-h-24 overflow-y-auto">
                     {modelsByPopularity.map((model) => (
                       <div
                         key={model.model}
