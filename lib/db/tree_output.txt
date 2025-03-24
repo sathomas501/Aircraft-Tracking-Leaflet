@@ -1,0 +1,5 @@
+📂 db
+├── 📄 DatabaseManager.ts
+├── 📄 static.db
+├── 📄 static.db-shm
+└── 📄 static.db-wal

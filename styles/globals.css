@@ -452,17 +452,6 @@
 /* === Leaflet Overrides (Outside layers) === */
 
 /* Basic Leaflet container */
-.leaflet-container {
-  width: 100% !important;
-  height: 100% !important;
-  touch-action: auto !important;
-  cursor: grab;
-  z-index: 10;
-}
-
-.leaflet-container:active {
-  cursor: grabbing;
-}
 
 /* Z-index overrides for Leaflet panes */
 .leaflet-map-pane {
@@ -589,4 +578,275 @@
   .aircraft-info-panel {
     max-width: 400px;
   }
+}
+
+/* === Aircraft Markers === */
+.aircraft-marker {
+  @apply flex justify-center items-center;
+  transition:
+    width 0.3s ease,
+    height 0.3s ease,
+    transform 0.3s ease,
+    filter 0.3s ease;
+  /* Fix flickering by preventing pointer events */
+  pointer-events: none !important;
+  /* Ensure markers stay on top */
+  z-index: 1000 !important;
+
+  &:hover {
+    transform: scale(1.1);
+  }
+
+  &.selected {
+    @apply z-10;
+    filter: drop-shadow(0 0 5px #4a80f5);
+    transform: scale(1.1);
+    /* Higher z-index for selected aircraft */
+    z-index: 1010 !important;
+  }
+
+  &.grounded {
+    @apply opacity-70;
+  }
+
+  &.new {
+    animation: moveIn 0.6s ease-out;
+  }
+
+  img {
+    @apply w-full h-full;
+    transform-origin: center;
+    transition: transform 0.3s ease;
+  }
+}
+
+.custom-aircraft-marker {
+  background: none;
+  border: none;
+  /* Fix flickering by preventing pointer events */
+  pointer-events: none !important;
+}
+
+.aircraft-icon {
+  @apply flex justify-center items-center;
+  transition: transform 0.3s ease-out;
+  /* Fix flickering by preventing pointer events */
+  pointer-events: none !important;
+  /* Ensure icons stay on top */
+  z-index: 1000 !important;
+
+  &:hover {
+    animation: floatEffect 2s ease-in-out infinite;
+  }
+
+  &.selected {
+    z-index: 1000 !important;
+
+    img {
+      filter: drop-shadow(0 0 5px #4a80f5);
+    }
+  }
+
+  &.grounded img {
+    opacity: 0.7;
+  }
+
+  &.loading img {
+    animation: rotate 2s linear infinite;
+  }
+}
+
+/* Touch target for aircraft markers */
+.aircraft-touch-target {
+  position: absolute;
+  width: 44px;
+  height: 44px;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  /* Allow pointer events on the touch target */
+  pointer-events: auto !important;
+  /* Make it invisible */
+  background: transparent;
+  z-index: 999;
+  /* Debug styles - uncomment to see the touch target area */
+  /* background: rgba(255, 0, 0, 0.2); */
+}
+
+/* === Leaflet Overrides (Cursor and Aircraft Markers) === */
+
+/*
+ * CURSOR FIXES
+ * These need to be outside of Tailwind layers to override Leaflet's default styles
+ */
+.leaflet-container,
+.leaflet-grab,
+.leaflet-interactive {
+  /* Use crosshair - clean professional cursor for map applications */
+  cursor: crosshair !important;
+}
+
+.leaflet-dragging .leaflet-grab,
+.leaflet-dragging .leaflet-interactive,
+.leaflet-container:active {
+  /* Use move cursor when actively dragging */
+  cursor: move !important;
+}
+
+/* Keep pointer for controls and buttons */
+.leaflet-control-zoom a,
+.leaflet-control-layers-toggle,
+.leaflet-popup-close-button,
+.leaflet-container .leaflet-control-attribution {
+  cursor: pointer !important;
+}
+
+/* Ensure touch target has pointer cursor */
+.aircraft-touch-target {
+  cursor: pointer !important;
+}
+
+/*
+ * AIRCRAFT MARKER FIXES
+ * Prevent flickering by managing pointer events and z-index
+ */
+.aircraft-marker,
+.custom-aircraft-marker,
+.aircraft-icon,
+.leaflet-marker-icon.leaflet-interactive {
+  pointer-events: none !important;
+}
+
+/* Touch target for aircraft markers */
+.aircraft-touch-target {
+  position: absolute;
+  width: 44px;
+  height: 44px;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: auto !important;
+  background: transparent;
+  z-index: 999;
+}
+
+/* Fix popup and tooltip z-index to ensure they appear above markers */
+.leaflet-popup {
+  z-index: 1200 !important;
+}
+
+/* Selected aircraft should have higher z-index */
+.aircraft-marker.selected,
+.aircraft-icon.selected {
+  z-index: 1010 !important;
+}
+
+/* Extreme anti-flicker CSS */
+
+/* Make ALL marker elements completely immune to pointer events */
+.leaflet-marker-pane,
+.leaflet-marker-icon,
+.leaflet-marker-shadow,
+.leaflet-marker-icon.leaflet-interactive,
+.leaflet-marker-pane *,
+div[class^='leaflet-marker'],
+div[class*=' leaflet-marker'],
+.aircraft-marker,
+.aircraft-icon,
+.custom-aircraft-marker {
+  pointer-events: none !important;
+}
+
+/* Absolutely ensure the marker has no events */
+.leaflet-marker-icon::before,
+.leaflet-marker-icon::after,
+.leaflet-marker-icon *,
+.leaflet-marker-icon img {
+  pointer-events: none !important;
+}
+
+/* Remove all the Leaflet interaction classes */
+.leaflet-marker-icon.leaflet-interactive {
+  cursor: inherit !important;
+}
+
+/* Increase the touch target size and ensure it has pointer events */
+.aircraft-touch-target {
+  position: absolute;
+  width: 48px; /* Slightly larger */
+  height: 48px; /* Slightly larger */
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: auto !important;
+  cursor: pointer !important;
+  background: transparent;
+  z-index: 999;
+  /* Uncomment for debugging */
+  /* background-color: rgba(255, 0, 0, 0.2); */
+}
+
+/* Ensure selected markers stay on top */
+.aircraft-marker.selected,
+.aircraft-icon.selected,
+.leaflet-marker-icon.selected {
+  z-index: 2000 !important; /* Even higher to ensure on top */
+}
+
+/* Target any marker with an image */
+.leaflet-marker-icon img {
+  pointer-events: none !important;
+}
+
+/* Completely disable touch actions on marker elements */
+.leaflet-marker-icon {
+  touch-action: none !important;
+}
+
+/* Higher z-index for popups to ensure they're above markers */
+.leaflet-popup-pane {
+  z-index: 2500 !important;
+}
+
+.leaflet-popup {
+  z-index: 2500 !important;
+}
+
+/* Tooltip visibility control */
+.aircraft-tooltip.hidden {
+  opacity: 0 !important;
+  display: none !important;
+}
+
+.aircraft-tooltip.visible {
+  opacity: 0.9 !important;
+  display: block !important;
+}
+
+/* Ensure tooltips have correct z-index and pointer events */
+.leaflet-tooltip-pane {
+  z-index: 2200 !important;
+  pointer-events: none !important;
+}
+
+.leaflet-tooltip {
+  pointer-events: none !important;
+  z-index: 2200 !important;
+}
+
+/* Ensure tooltips don't interfere with marker interaction */
+.aircraft-tooltip {
+  pointer-events: none !important;
+  z-index: 2200 !important;
+  background-color: white !important;
+  border: 1px solid rgba(0, 0, 0, 0.2) !important;
+  border-radius: 4px !important;
+  padding: 8px !important;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
+}
+
+/* Make interaction area have proper cursor */
+.aircraft-touch-area {
+  cursor: pointer !important;
+  pointer-events: auto !important;
 }

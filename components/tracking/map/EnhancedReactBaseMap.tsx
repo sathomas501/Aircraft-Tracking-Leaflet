@@ -12,9 +12,11 @@ import { MAP_CONFIG } from '@/config/map';
 import EnhancedContextAircraftInfoPanel from './components/EnhancedContextAircraftInfoPanel';
 import EnhancedContextAircraftMarker from '../map/EnhancedContextAircraftMarker';
 import EnhancedContextMapControls from './components/EnhancedContextMapControls';
-import TrailToggle from './components/TrailToggle'; // Import the trail toggle component
+import TrailToggle from './components/TrailToggle';
+import LeafletTouchFix from './components/LeafletTouchFix'; // Import the touch fix component
 import { useEnhancedMapContext } from '../context/EnhancedMapContext';
 import { ExtendedAircraft } from '@/types/base';
+import MapControllerWithOptions from './MapControllerWithOptions';
 import L from 'leaflet';
 
 const MapEvents: React.FC = () => {
@@ -40,9 +42,27 @@ const MapControllerInner: React.FC = () => {
     console.log('[EnhancedReactBaseMap] Registering map with context');
     setMapInstance(map);
 
+    // Apply Leaflet fixes to prevent flickering
+    const fixLeafletInteractions = () => {
+      // Ensure all marker interactions are properly disabled
+      document.querySelectorAll('.leaflet-marker-icon').forEach((marker) => {
+        marker.classList.remove('leaflet-interactive');
+        if (marker instanceof HTMLElement) {
+          marker.style.pointerEvents = 'none';
+        }
+      });
+    };
+
+    // Apply fixes immediately and after map interactions
+    fixLeafletInteractions();
+    map.on('moveend', fixLeafletInteractions);
+    map.on('zoomend', fixLeafletInteractions);
+
     return () => {
       console.log('[EnhancedReactBaseMap] Cleaning up map registration');
       setMapInstance(null);
+      map.off('moveend', fixLeafletInteractions);
+      map.off('zoomend', fixLeafletInteractions);
     };
   }, [map, setMapInstance]);
 
@@ -79,12 +99,19 @@ const EnhancedReactBaseMap: React.FC<ReactBaseMapProps> = ({ onError }) => {
         zoom={MAP_CONFIG.DEFAULT_ZOOM}
         className="w-full h-full"
         zoomControl={false}
+        // Fix: Remove the options that aren't in MapContainer props
+        // Use the options below in useEffect after getting the map instance
+        // tap={false}
+        // dragging={true}
+        // trackResize={true}
+        // preferCanvas={true}
+        // renderer={L.canvas()}
       >
+        <MapControllerWithOptions />
         <MapControllerInner />
-        <MapEvents /> {/* Add the event handler component */}
+        <MapEvents />
         <ZoomControl position="bottomright" />
-        <MapControllerInner />
-        <ZoomControl position="bottomright" />
+        <LeafletTouchFix />
         <LayersControl position="topright">
           <LayersControl.BaseLayer checked name="OpenStreetMap">
             <TileLayer

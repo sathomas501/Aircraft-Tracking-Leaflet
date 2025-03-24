@@ -28,7 +28,7 @@ const MapPage: NextPage = () => {
     const fetchManufacturers = async () => {
       try {
         setIsLoading(true);
-        const response = await fetch('/api/aircraft/manufacturers');
+        const response = await fetch('/api/aircraft/tracking/manufacturers');
         if (!response.ok) {
           throw new Error(
             `Failed to fetch manufacturers: ${response.statusText}`

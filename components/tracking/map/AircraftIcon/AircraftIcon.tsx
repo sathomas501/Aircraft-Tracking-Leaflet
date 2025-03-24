@@ -55,14 +55,18 @@ export const createAircraftIcon = (
   else if (aircraft.type === 'helicopter')
     iconUrl = '/icons/helicopterIconImg.png';
 
-  return L.divIcon({
-    className: `aircraft-icon ${isSelected ? 'selected' : ''} ${aircraft.on_ground ? 'grounded' : ''}`,
+  // Create a completely non-interactive div icon
+  const icon = L.divIcon({
+    // Use a custom class that is NOT leaflet-interactive
+    className: `custom-aircraft-marker ${isSelected ? 'selected' : ''} ${aircraft.on_ground ? 'grounded' : ''}`,
     html: `
       <div class="aircraft-marker" style="
         width: ${size}px; 
         height: ${size}px; 
         ${isSelected ? 'filter: drop-shadow(0 0 4px #4a80f5);' : ''}
         transition: all 300ms ease;
+        pointer-events: none !important;
+        z-index: ${isSelected ? 1010 : 1000};
       ">
         <img 
           src="${iconUrl}" 
@@ -71,16 +75,23 @@ export const createAircraftIcon = (
             height: 100%; 
             transform: rotate(${aircraft.heading || 0}deg);
             transition: transform 0.3s ease;
+            pointer-events: none !important;
           "
           alt="Aircraft" 
+          draggable="false"
         />
+        <div class="aircraft-touch-target"></div>
       </div>
     `,
     iconSize: [size, size],
     iconAnchor: [size / 2, size / 2],
     popupAnchor: [0, -size / 2],
     tooltipAnchor: [0, -size / 2],
+    // Critical for preventing flicker:
+    interactive: false,
   });
+
+  return icon;
 };
 
 // Create tooltip content with responsiveness

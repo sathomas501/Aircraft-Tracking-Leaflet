@@ -114,7 +114,7 @@ export async function getServerSideProps() {
   try {
     // Use Node.js fetch for server-side data fetching
     const response = await fetch(
-      `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/aircraft/manufacturers`
+      `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/tracking/manufacturers`
     );
 
     if (!response.ok) {

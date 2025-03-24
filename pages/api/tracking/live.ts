@@ -16,7 +16,12 @@ export default async function handler(
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { icao24s, manufacturer, includeStatic = false } = req.body;
+  const {
+    icao24s,
+    manufacturer,
+    includeStatic = false,
+    activeOnly = false,
+  } = req.body;
 
   console.log(
     `[API] Received request for ${icao24s?.length || 0} aircraft from ${manufacturer || 'unknown manufacturer'}`
@@ -71,6 +76,17 @@ export default async function handler(
     const mergedAircraft = liveData.map((liveAircraft) => {
       const icao = liveAircraft.icao24.toLowerCase();
       const staticData = staticAircraft[icao] || {};
+
+      if (activeOnly) {
+        // Only return aircraft with position data
+        const activeAircraft = mergedAircraft.filter(
+          (aircraft) => aircraft.latitude && aircraft.longitude
+        );
+
+        console.log(
+          `[API] Filtering to ${activeAircraft.length} active aircraft out of ${mergedAircraft.length} total`
+        );
+      }
 
       return {
         ...staticData,

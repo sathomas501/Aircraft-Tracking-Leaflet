@@ -22,9 +22,154 @@ const activeRequests = new Map<string, Promise<Aircraft[]>>();
  */
 class IcaoManagementService {
   private static BATCH_SIZE = 900; // Keep below SQLite's limit
+  private activeIcao24s: Set<string> = new Set();
+  private lastFullRefreshTime: number = 0;
 
   public constructor() {}
 
+  /**
+   * Full refresh interval in milliseconds (default: 1 hour)
+   */
+  private fullRefreshInterval: number = 3600000;
+
+  /**
+   * Flag to enable/disable optimization
+   */
+  private useOptimization: boolean = true;
+
+  /**
+   * Update the set of active aircraft based on live data
+   */
+  public updateActiveAircraftSet(aircraft: Aircraft[]): void {
+    let newCount = 0;
+
+    // Find aircraft with position data
+    aircraft.forEach((plane) => {
+      if (plane.icao24 && plane.latitude && plane.longitude) {
+        if (!this.activeIcao24s.has(plane.icao24.toLowerCase())) {
+          newCount++;
+        }
+        this.activeIcao24s.add(plane.icao24.toLowerCase());
+      }
+    });
+
+    console.log(
+      `[ICAO] Active aircraft set updated: ${this.activeIcao24s.size} total (${newCount} new)`
+    );
+  }
+
+  /**
+   * Get array of active ICAO24 codes
+   */
+  public getActiveIcao24s(): string[] {
+    return Array.from(this.activeIcao24s);
+  }
+
+  /**
+   * Set the optimization state
+   */
+  public setOptimization(enabled: boolean): void {
+    this.useOptimization = enabled;
+    console.log(`[ICAO] Optimization ${enabled ? 'enabled' : 'disabled'}`);
+  }
+
+  /**
+   * Set the full refresh interval
+   */
+  public setFullRefreshInterval(minutes: number): void {
+    const minMinutes = 10;
+    const validMinutes = Math.max(minMinutes, minutes);
+    this.fullRefreshInterval = validMinutes * 60 * 1000;
+    console.log(`[ICAO] Full refresh interval set to ${validMinutes} minutes`);
+  }
+
+  /**
+   * Optimized method to track aircraft with intelligent refresh strategy
+   */
+  public async trackAircraftOptimized(
+    manufacturer: string,
+    forceFullRefresh: boolean = false
+  ): Promise<Aircraft[]> {
+    console.log(`[ICAO] Starting optimized tracking for ${manufacturer}`);
+
+    // Determine if we need a full refresh
+    const timeSinceFullRefresh = Date.now() - this.lastFullRefreshTime;
+    const needsFullRefresh =
+      forceFullRefresh ||
+      !this.useOptimization ||
+      this.activeIcao24s.size === 0 ||
+      timeSinceFullRefresh >= this.fullRefreshInterval;
+
+    let results: Aircraft[] = [];
+
+    if (needsFullRefresh) {
+      // Perform a full refresh to discover all aircraft
+      console.log(`[ICAO] Performing full refresh for ${manufacturer}`);
+
+      // Get all ICAO24 codes for this manufacturer
+      const allIcao24s = await this.getIcao24sForManufacturer(manufacturer);
+      console.log(
+        `[ICAO] Found ${allIcao24s.length} total ICAO24s for ${manufacturer}`
+      );
+
+      // Track all aircraft to get position data
+      results = await this.trackAircraft(allIcao24s, manufacturer);
+
+      // Update our set of active aircraft
+      this.updateActiveAircraftSet(results);
+
+      // Update the full refresh timestamp
+      this.lastFullRefreshTime = Date.now();
+
+      console.log(
+        `[ICAO] Full refresh complete. Found ${results.length} aircraft with position data`
+      );
+    } else {
+      // Perform an optimized refresh for only active aircraft
+      const activeIcaos = this.getActiveIcao24s();
+      console.log(
+        `[ICAO] Performing optimized refresh for ${activeIcaos.length} active aircraft`
+      );
+
+      // Only request data for active aircraft
+      results = await this.trackAircraft(activeIcaos, manufacturer);
+
+      // Update our active aircraft set (some may have become inactive)
+      this.updateActiveAircraftSet(results);
+
+      console.log(
+        `[ICAO] Optimized refresh complete. Found ${results.length} aircraft with position data`
+      );
+    }
+
+    return results;
+  }
+
+  /**
+   * Clear active aircraft set and caches
+   */
+  public resetTracking(): void {
+    this.activeIcao24s.clear();
+    this.lastFullRefreshTime = 0;
+    this.clearCache();
+    console.log('[ICAO] Tracking reset');
+  }
+
+  public async refreshActivePositions(
+    manufacturer: string
+  ): Promise<Aircraft[]> {
+    if (this.activeIcao24s.size === 0) {
+      console.log('[ICAO] No active aircraft to refresh');
+      return [];
+    }
+
+    const activeIcaos = Array.from(this.activeIcao24s);
+    console.log(
+      `[ICAO] Refreshing positions for ${activeIcaos.length} active aircraft`
+    );
+
+    return this.trackAircraft(activeIcaos, manufacturer);
+  }
   /**
    * Fetch ICAO24s for a manufacturer, directly from the database.
    */
