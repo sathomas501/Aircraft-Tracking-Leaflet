@@ -26,9 +26,6 @@ const AircraftTrackingMap: React.FC<AircraftTrackingMapProps> = ({
       <div className="relative w-full h-screen">
         {/* Map Component */}
         <EnhancedMap onError={onError} />
-
-        {/* Aircraft Selector */}
-        <EnhancedUnifiedSelector manufacturers={manufacturers} />
       </div>
     </EnhancedMapProvider>
   );

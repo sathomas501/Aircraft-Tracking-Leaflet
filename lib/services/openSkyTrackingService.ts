@@ -349,6 +349,43 @@ class OpenSkyTrackingService {
   }
 
   /**
+   * Refresh specific aircraft by ICAO24 codes
+   */
+  // In OpenSkyTrackingService.ts
+  public async refreshSpecificAircraft(icao24s: string[]): Promise<Aircraft[]> {
+    if (this.isRefreshingPositions) {
+      return this.trackedAircraft;
+    }
+
+    this.isRefreshingPositions = true;
+
+    try {
+      if (!this.currentManufacturer || icao24s.length === 0) {
+        return this.trackedAircraft;
+      }
+
+      // Simple implementation - just get data for specific aircraft
+      const updatedAircraft = await this.getLiveAircraftData(
+        this.currentManufacturer,
+        icao24s,
+        false
+      );
+
+      // Update tracked aircraft
+      this.trackedAircraft = updatedAircraft;
+
+      // Notify subscribers
+      this.notifySubscribers();
+
+      return this.trackedAircraft;
+    } catch (error) {
+      return this.trackedAircraft;
+    } finally {
+      this.isRefreshingPositions = false;
+    }
+  }
+
+  /**
    * Start tracking a manufacturer's aircraft
    */
   public async trackManufacturer(manufacturer: string): Promise<Aircraft[]> {

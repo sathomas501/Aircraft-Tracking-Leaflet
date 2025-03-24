@@ -135,6 +135,10 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [trackingStatus, setTrackingStatus] = useState<string>('');
   const [lastRefreshed, setLastRefreshed] = useState<string | null>(null);
+  // Add this with your other state variables
+  const [lastFullRefreshTime, setLastFullRefreshTime] = useState<number | null>(
+    null
+  );
 
   // Trail state
   const [trailsEnabled, setTrailsEnabled] = useState<boolean>(false);
@@ -278,20 +282,91 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
   const fullRefresh = async () => {
     if (!selectedManufacturer || isRefreshing) return;
 
+    // Set a timeout to force exit from loading state after 10 seconds
+    // This is a safety mechanism
+    const safetyTimeout = setTimeout(() => {
+      setIsRefreshing(false);
+      setTrackingStatus('Refresh timed out');
+    }, 10000);
+
     setIsRefreshing(true);
-    setTrackingStatus('Performing full refresh...');
 
     try {
-      await openSkyTrackingService.refreshNow();
-      setLastRefreshed(new Date().toLocaleTimeString());
-      setTrackingStatus(
-        `Full refresh completed with ${displayedAircraft.length} aircraft`
+      // Get currently tracked aircraft
+      const allTrackedAircraft = openSkyTrackingService.getTrackedAircraft();
+
+      // Get active aircraft (those with position data)
+      const activeAircraft = allTrackedAircraft.filter(
+        (aircraft) => aircraft.icao24 && aircraft.latitude && aircraft.longitude
       );
+
+      const needsFullRefresh =
+        !lastFullRefreshTime || Date.now() - lastFullRefreshTime > 3600000;
+
+      let success = false;
+
+      if (activeAircraft.length === 0 || needsFullRefresh) {
+        // Do a full refresh
+        setTrackingStatus('Performing full refresh...');
+
+        try {
+          await openSkyTrackingService.refreshNow();
+          setLastFullRefreshTime(Date.now());
+          success = true;
+        } catch (error) {
+          // Silently handle this error
+          console.warn('Full refresh failed');
+        }
+      } else {
+        // Do an optimized refresh
+        const activeIcaos = activeAircraft
+          .map((aircraft) => aircraft.icao24)
+          .filter(Boolean) as string[];
+
+        if (activeIcaos.length > 0) {
+          setTrackingStatus(
+            `Refreshing ${activeIcaos.length} active aircraft...`
+          );
+
+          try {
+            await openSkyTrackingService.refreshSpecificAircraft(activeIcaos);
+            success = true;
+          } catch (error) {
+            // Try falling back to a full refresh
+            console.warn('Optimized refresh failed, trying full refresh');
+            try {
+              await openSkyTrackingService.refreshNow();
+              setLastFullRefreshTime(Date.now());
+              success = true;
+            } catch (fallbackError) {
+              // Silently handle this error
+              console.warn('Fallback refresh failed');
+            }
+          }
+        }
+      }
+
+      clearTimeout(safetyTimeout);
+
+      // Only update if the refresh was successful
+      if (success) {
+        const currentCount = openSkyTrackingService.getTrackedAircraft().length;
+        setTrackingStatus(`Refresh completed with ${currentCount} aircraft`);
+        setLastRefreshed(new Date().toLocaleTimeString());
+      } else {
+        setTrackingStatus('Refresh failed');
+      }
     } catch (error) {
-      onError(
-        `Error during full refresh: ${error instanceof Error ? error.message : 'Unknown error'}`
-      );
+      clearTimeout(safetyTimeout);
+
+      // Only show errors to the user if they appear to be significant
+      if (error instanceof Error && error.message !== 'aborted') {
+        onError(`Error during refresh: ${error.message || 'Unknown error'}`);
+      }
+
+      setTrackingStatus('Error during refresh');
     } finally {
+      clearTimeout(safetyTimeout);
       setIsRefreshing(false);
     }
   };

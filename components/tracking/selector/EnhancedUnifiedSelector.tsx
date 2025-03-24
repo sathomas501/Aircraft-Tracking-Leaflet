@@ -3,6 +3,11 @@ import { useEnhancedMapContext } from '../context/EnhancedMapContext';
 import type { SelectOption } from '@/types/base';
 import type { AircraftModel } from '../../../types/aircraft-models';
 
+// Define the props for the EnhancedUnifiedSelector component
+interface EnhancedUnifiedSelectorProps {
+  manufacturers: SelectOption[];
+}
+
 // Define prop interfaces for sub-components
 interface SelectorHeaderProps {
   selectedManufacturer: string | null;
@@ -610,10 +615,6 @@ const ModelSelection: React.FC<ModelSelectionProps> = ({
   );
 };
 
-interface EnhancedUnifiedSelectorProps {
-  manufacturers: SelectOption[];
-}
-
 const EnhancedUnifiedSelector: React.FC<EnhancedUnifiedSelectorProps> = ({
   manufacturers,
 }) => {
@@ -794,6 +795,10 @@ const EnhancedUnifiedSelector: React.FC<EnhancedUnifiedSelectorProps> = ({
         left: `${position.x}px`,
         top: `${position.y}px`,
         zIndex: 1000,
+        // Add these properties to ensure it stays in view
+        maxWidth: 'calc(100vw - 40px)',
+        maxHeight: 'calc(100vh - 40px)',
+        overflow: 'auto',
       }}
       className="bg-white rounded-lg shadow-xl border border-gray-200 overflow-visible w-80 transition-all duration-300 select-none"
     >
