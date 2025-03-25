@@ -11,7 +11,6 @@ import {
 import { MAP_CONFIG } from '@/config/map';
 import EnhancedContextAircraftInfoPanel from './components/EnhancedContextAircraftInfoPanel';
 import EnhancedContextAircraftMarker from '../map/EnhancedContextAircraftMarker';
-import TrailToggle from './components/TrailToggle';
 import LeafletTouchFix from './components/LeafletTouchFix'; // Import the touch fix component
 import { useEnhancedMapContext } from '../context/EnhancedMapContext';
 import { ExtendedAircraft } from '@/types/base';
@@ -152,9 +151,7 @@ const EnhancedReactBaseMap: React.FC<ReactBaseMapProps> = ({ onError }) => {
           borderRadius: '4px',
           boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
         }}
-      >
-        <TrailToggle />
-      </div>
+      ></div>
 
       {manufacturers.length > 0 && (
         <div

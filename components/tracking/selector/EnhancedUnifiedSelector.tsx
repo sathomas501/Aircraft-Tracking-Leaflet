@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useEnhancedMapContext } from '../context/EnhancedMapContext';
 import type { SelectOption } from '@/types/base';
 import type { AircraftModel } from '../../../types/aircraft-models';
+import TrailToggle from '../map/components/TrailToggle';
 
 // Define the props for the EnhancedUnifiedSelector component
 interface EnhancedUnifiedSelectorProps {
@@ -610,6 +611,10 @@ const ModelSelection: React.FC<ModelSelectionProps> = ({
             </span>
           )}
         </button>
+      </div>
+      {/* Add the TrailToggle here */}
+      <div className="mt-4 pt-4 border-t border-gray-200">
+        <TrailToggle />
       </div>
     </div>
   );
