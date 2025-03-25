@@ -120,23 +120,32 @@ export const createTooltipContent = (
 
   // Adjust content based on zoom level
   const fontSize = getTooltipFontSize(zoomLevel);
-  const tooltipWidth = zoomLevel >= 9 ? '180px' : '150px';
 
-  // Create responsive tooltip
+  // Create responsive tooltip with the proper CSS classes
   return `
-    <div class="p-1" style="min-width: ${tooltipWidth}; font-size: ${fontSize};">
-      <div class="font-medium">${aircraft.model || aircraft.TYPE_AIRCRAFT || 'Unknown'}</div>
-      <div class="grid grid-cols-2 gap-x-2 mt-1">
-        <div>Alt: ${formattedAltitude}</div>
-        <div>Speed: ${formattedSpeed}</div>
-        ${aircraft.heading ? `<div class="col-span-2">Heading: ${Math.round(aircraft.heading)}°</div>` : ''}
+    <div class="p-1">
+      <div class="aircraft-callsign">${registration}</div>
+      <div class="aircraft-model">${aircraft.model || aircraft.TYPE_AIRCRAFT || 'Unknown'}</div>
+      <div class="aircraft-data-grid">
+        <div>Alt: <span class="font-medium">${formattedAltitude}</span></div>
+        <div>Speed: <span class="font-medium">${formattedSpeed}</span></div>
+        ${aircraft.heading ? `<div class="col-span-2">Heading: <span class="font-medium">${Math.round(aircraft.heading)}°</span></div>` : ''}
         ${zoomLevel >= 10 && aircraft.manufacturer ? `<div class="col-span-2">${aircraft.manufacturer}</div>` : ''}
       </div>
+      ${
+        aircraft.lastSeen
+          ? `
+        <div class="text-xs text-gray-400 mt-2">
+          Updated: ${new Date(aircraft.lastSeen).toLocaleTimeString()}
+        </div>
+      `
+          : ''
+      }
     </div>
   `;
 };
 
-// Create popup content with responsiveness
+// Updated createPopupContent function to match existing CSS classes
 export const createPopupContent = (
   aircraft: Aircraft & {
     registration?: string;
@@ -164,59 +173,53 @@ export const createPopupContent = (
     ? Math.round(aircraft.velocity) + ' kts'
     : 'N/A';
 
-  // Determine popup width based on zoom
-  const popupWidth = zoomLevel >= 10 ? '250px' : '220px';
-
-  // Create responsive popup
+  // Create responsive popup with the proper CSS classes
   return `
-    <div class="aircraft-popup p-2" style="min-width: ${popupWidth};">
-      <table class="w-full text-sm border-collapse mt-2">
+    <div class="aircraft-popup p-2">
+      <h3>${registration}</h3>
+      <table>
         <tbody>
           <tr>
-            <td class="font-medium pr-2">Model:</td>
+            <td>Model:</td>
             <td>${aircraft.model || aircraft.TYPE_AIRCRAFT || 'Unknown'}</td>
           </tr>
           ${
             aircraft.manufacturer
               ? `
             <tr>
-              <td class="font-medium pr-2">Manufacturer:</td>
+              <td>Manufacturer:</td>
               <td>${aircraft.manufacturer}</td>
             </tr>
           `
               : ''
           }
           <tr>
-            <td class="font-medium pr-2">Altitude:</td>
+            <td>Altitude:</td>
             <td>${formattedAltitude}</td>
           </tr>
           <tr>
-            <td class="font-medium pr-2">Speed:</td>
+            <td>Speed:</td>
             <td>${formattedSpeed}</td>
           </tr>
           ${
             aircraft.heading
               ? `
             <tr>
-              <td class="font-medium pr-2">Heading:</td>
+              <td>Heading:</td>
               <td>${Math.round(aircraft.heading)}°</td>
             </tr>
           `
               : ''
           }
           <tr>
-            <td class="font-medium pr-2">Registration:</td>
-            <td>${registration}</td>
-          </tr>
-          <tr>
-            <td class="font-medium pr-2">ICAO:</td>
+            <td>ICAO:</td>
             <td>${aircraft.icao24}</td>
           </tr>
           ${
             aircraft.owner
               ? `
             <tr>
-              <td class="font-medium pr-2">Owner:</td>
+              <td>Owner:</td>
               <td>${aircraft.owner}</td>
             </tr>
           `
@@ -226,7 +229,7 @@ export const createPopupContent = (
             aircraft.CITY || aircraft.STATE
               ? `
             <tr>
-              <td class="font-medium pr-2">Location:</td>
+              <td>Location:</td>
               <td>${[aircraft.CITY, aircraft.STATE].filter(Boolean).join(', ')}</td>
             </tr>
           `
@@ -236,16 +239,42 @@ export const createPopupContent = (
             aircraft.OWNER_TYPE
               ? `
             <tr>
-              <td class="font-medium pr-2">Owner Type:</td>
+              <td>Owner Type:</td>
               <td>${getOwnerTypeLabel(aircraft.OWNER_TYPE)}</td>
+            </tr>
+          `
+              : ''
+          }
+          ${
+            aircraft.lastSeen
+              ? `
+            <tr>
+              <td>Last Seen:</td>
+              <td>${new Date(aircraft.lastSeen).toLocaleTimeString()}</td>
+            </tr>
+          `
+              : ''
+          }
+          ${
+            aircraft.on_ground !== undefined
+              ? `
+            <tr>
+              <td>Status:</td>
+              <td>
+                ${
+                  aircraft.on_ground
+                    ? '<span class="status-badge on-ground">On Ground</span>'
+                    : '<span class="status-badge in-flight">In Flight</span>'
+                }
+              </td>
             </tr>
           `
               : ''
           }
         </tbody>
       </table>
-      <div class="mt-2 text-xs text-center">
-        <button class="bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600" onclick="this.dispatchEvent(new CustomEvent('select-aircraft', {bubbles: true}))">
+      <div class="popup-actions">
+        <button class="popup-button" onclick="window.dispatchEvent(new CustomEvent('select-aircraft', {detail: '${aircraft.icao24}'}))">
           View Details
         </button>
       </div>

@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '@/styles/globals.css';
 import 'leaflet/dist/leaflet.css';
 import '@/styles/leaflet.css';
+import '@/styles/aircraftMapElements.css';
 import 'react-toastify/dist/ReactToastify.css';
 import { ToastContainer } from 'react-toastify';
 import { Toaster } from 'react-hot-toast';
