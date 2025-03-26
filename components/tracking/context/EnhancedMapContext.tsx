@@ -9,8 +9,15 @@ import React, {
 } from 'react';
 import L from 'leaflet';
 import type { SelectOption, ExtendedAircraft } from '@/types/base';
+import type { CachedAircraftData } from '@/types/base'; // Import your new type
 import type { AircraftModel } from '../../../types/aircraft-models';
 import openSkyTrackingService from '@/lib/services/openSkyTrackingService';
+import {
+  saveAircraftData,
+  loadAircraftData,
+  mergeAircraftData,
+  clearAircraftData,
+} from '../../../utils/AircraftDataPersistance';
 
 // Define trail position interface
 interface AircraftPosition {
@@ -18,6 +25,8 @@ interface AircraftPosition {
   longitude: number;
   altitude: number | null;
   timestamp: number;
+  debugTrailData: () => void;
+  // Debug action
 }
 
 // Define context interface
@@ -32,6 +41,11 @@ interface EnhancedMapContextType {
   displayedAircraft: ExtendedAircraft[];
   selectedAircraft: ExtendedAircraft | null;
   selectAircraft: (aircraft: ExtendedAircraft | null) => void;
+
+  // Data persistence
+  cachedAircraftData: Record<string, CachedAircraftData>;
+  updateAircraftData: (newAircraft: ExtendedAircraft[]) => void;
+  lastPersistenceUpdate: number | null;
 
   // Selection state
   selectedManufacturer: string | null;
@@ -56,10 +70,14 @@ interface EnhancedMapContextType {
   reset: () => Promise<void>;
   refreshPositions: () => Promise<void>;
   fullRefresh: () => Promise<void>;
+  clearCache: () => void;
 
   // Trail actions
   toggleTrails: () => void;
   setMaxTrailLength: (length: number) => void;
+
+  // Debug function
+  debugTrailData: () => void;
 }
 
 // Create context with default values
@@ -71,6 +89,11 @@ const EnhancedMapContext = createContext<EnhancedMapContextType>({
   displayedAircraft: [],
   selectedAircraft: null,
   selectAircraft: () => {},
+
+  // Data persistence defaults
+  cachedAircraftData: {},
+  updateAircraftData: () => {},
+  lastPersistenceUpdate: null,
 
   selectedManufacturer: null,
   selectedModel: null,
@@ -92,10 +115,14 @@ const EnhancedMapContext = createContext<EnhancedMapContextType>({
   reset: async () => {},
   refreshPositions: async () => {},
   fullRefresh: async () => {},
+  clearCache: () => {},
 
   // Trail actions
   toggleTrails: () => {},
   setMaxTrailLength: () => {},
+
+  // Debug function
+  debugTrailData: () => {},
 });
 
 // Props for the context provider
@@ -121,6 +148,14 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
   >([]);
   const [selectedAircraft, setSelectedAircraft] =
     useState<ExtendedAircraft | null>(null);
+
+  // Data persistence state
+  const [cachedAircraftData, setCachedAircraftData] = useState<
+    Record<string, CachedAircraftData>
+  >({});
+  const [lastPersistenceUpdate, setLastPersistenceUpdate] = useState<
+    number | null
+  >(null);
 
   // Selection state
   const [selectedManufacturer, setSelectedManufacturer] = useState<
@@ -150,6 +185,27 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
   // Refs for tracking subscriptions
   const unsubscribeAircraftRef = useRef<(() => void) | null>(null);
   const unsubscribeStatusRef = useRef<(() => void) | null>(null);
+  // Load persisted aircraft data on mount
+  useEffect(() => {
+    const savedData = loadAircraftData();
+    if (savedData) {
+      console.log(
+        `[EnhancedMapContext] Loaded ${Object.keys(savedData).length} aircraft from persistence`
+      );
+      setCachedAircraftData(savedData);
+      setLastPersistenceUpdate(Date.now());
+    }
+  }, []);
+
+  // Save aircraft data when cachedAircraftData changes
+  useEffect(() => {
+    if (Object.keys(cachedAircraftData).length > 0) {
+      console.log(
+        `[EnhancedMapContext] Saving ${Object.keys(cachedAircraftData).length} aircraft to persistence`
+      );
+      saveAircraftData(cachedAircraftData);
+    }
+  }, [cachedAircraftData]);
 
   // Initialize tracking service and subscriptions
   useEffect(() => {
@@ -193,6 +249,57 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
     };
   }, []);
 
+  // Update aircraft data with persistence
+  const updateAircraftData = useCallback(
+    (newAircraftArray: ExtendedAircraft[]) => {
+      // Convert to a map for easier processing
+      const newAircraftMap: Record<string, CachedAircraftData> = {};
+
+      newAircraftArray.forEach((aircraft) => {
+        if (aircraft.icao24) {
+          newAircraftMap[aircraft.icao24] = {
+            ...aircraft,
+            // Ensure required fields for CachedAircraftData are present
+            icao24: aircraft.icao24,
+            latitude: aircraft.latitude || 0,
+            longitude: aircraft.longitude || 0,
+            altitude: aircraft.altitude || 0,
+            velocity: aircraft.velocity || 0,
+            heading: aircraft.heading || 0,
+            on_ground: aircraft.on_ground || false,
+            last_contact: aircraft.last_contact || Date.now(),
+            lastSeen: Date.now(),
+            lastUpdated: Date.now(),
+          } as CachedAircraftData;
+        }
+      });
+
+      // Merge with existing cached data to preserve fields
+      setCachedAircraftData((currentCache) =>
+        mergeAircraftData(currentCache, newAircraftMap)
+      );
+      setLastPersistenceUpdate(Date.now());
+
+      // If the selected aircraft is updated, update the selection
+      if (selectedAircraft && newAircraftMap[selectedAircraft.icao24]) {
+        const updatedAircraft = {
+          ...selectedAircraft,
+          ...newAircraftMap[selectedAircraft.icao24],
+        };
+        setSelectedAircraft(updatedAircraft);
+      }
+    },
+    [selectedAircraft]
+  );
+
+  // Clear persistence cache
+  const clearCache = useCallback(() => {
+    clearAircraftData();
+    setCachedAircraftData({});
+    setLastPersistenceUpdate(null);
+    setTrackingStatus('Cache cleared');
+  }, []);
+
   // Update aircraft display based on selected model
   const updateAircraftDisplay = useCallback(() => {
     // Get extended aircraft based on selected model
@@ -204,11 +311,14 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
     const { models, totalActive: total } =
       openSkyTrackingService.getModelStats();
 
+    // Enhance aircraft data with persistence
+    updateAircraftData(extendedAircraft);
+
     setDisplayedAircraft(extendedAircraft);
     setActiveModels(models);
     setTotalActive(total);
     setIsLoading(openSkyTrackingService.isLoading());
-  }, [selectedModel]);
+  }, [selectedModel, updateAircraftData]);
 
   // Update display when model selection changes
   useEffect(() => {
@@ -245,6 +355,15 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
   // Handle aircraft selection
   const selectAircraft = (aircraft: ExtendedAircraft | null) => {
     setSelectedAircraft(aircraft);
+
+    // If selecting an aircraft, check if we have cached data to enhance it
+    if (aircraft && aircraft.icao24 && cachedAircraftData[aircraft.icao24]) {
+      const enhancedAircraft = {
+        ...aircraft,
+        ...cachedAircraftData[aircraft.icao24],
+      };
+      setSelectedAircraft(enhancedAircraft);
+    }
   };
 
   // Reset all selections
@@ -371,6 +490,26 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
     }
   };
 
+  const debugTrailData = useCallback(() => {
+    console.log('[MapContext] DEBUG - Current trail state:');
+    console.log(`Trails enabled: ${trailsEnabled}`);
+    console.log(`Max trail length: ${maxTrailLength}`);
+    console.log(`Aircraft trails map size: ${aircraftTrails.size}`);
+
+    if (aircraftTrails.size > 0) {
+      console.log('Sample trail data:');
+      const firstIcao = Array.from(aircraftTrails.keys())[0];
+      const firstTrail = aircraftTrails.get(firstIcao);
+      console.log(`Trail for ${firstIcao}: ${firstTrail?.length} positions`);
+      console.log(firstTrail);
+    }
+
+    // Attempt to regenerate trails
+    if (trailsEnabled) {
+      openSkyTrackingService.generateMockTrails();
+    }
+  }, [trailsEnabled, maxTrailLength, aircraftTrails]);
+
   // Toggle trails on/off
   const toggleTrails = useCallback(() => {
     const newTrailsEnabled = !trailsEnabled;
@@ -395,6 +534,11 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
     selectedAircraft,
     selectAircraft,
 
+    // Data persistence
+    cachedAircraftData,
+    updateAircraftData,
+    lastPersistenceUpdate,
+
     selectedManufacturer,
     selectedModel,
     activeModels,
@@ -415,10 +559,12 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
     reset,
     refreshPositions,
     fullRefresh,
+    clearCache,
 
     // Trail actions
     toggleTrails,
     setMaxTrailLength: handleSetMaxTrailLength,
+    debugTrailData,
   };
 
   return (

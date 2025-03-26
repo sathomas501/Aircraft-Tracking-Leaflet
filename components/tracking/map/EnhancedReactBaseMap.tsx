@@ -20,13 +20,14 @@ import EnhancedUnifiedSelector from '../selector/EnhancedUnifiedSelector';
 import type { SelectOption } from '@/types/base';
 import 'leaflet/dist/leaflet.css'; // Make sure this is imported!
 
+// In your EnhancedReactBaseMap.tsx
 const MapEvents: React.FC = () => {
   const { setZoomLevel } = useEnhancedMapContext();
 
-  // Use useMapEvents hook to handle map events
   const map = useMapEvents({
     zoomend: () => {
       const zoom = map.getZoom();
+      console.log('Map zoomed to level:', zoom); // Add this for debugging
       setZoomLevel(zoom);
     },
   });

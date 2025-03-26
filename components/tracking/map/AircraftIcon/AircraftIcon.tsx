@@ -94,7 +94,7 @@ export const createAircraftIcon = (
   return icon;
 };
 
-// Create tooltip content with responsiveness
+// Create tooltip content with improved two-column layout
 export const createTooltipContent = (
   aircraft: Aircraft & {
     registration?: string;
@@ -118,26 +118,56 @@ export const createTooltipContent = (
     ? Math.round(aircraft.velocity) + ' kts'
     : 'N/A';
 
-  // Adjust content based on zoom level
-  const fontSize = getTooltipFontSize(zoomLevel);
+  // Heading (if available)
+  const heading = aircraft.heading ? Math.round(aircraft.heading) + '°' : 'N/A';
 
-  // Create responsive tooltip with the proper CSS classes
+  // Create responsive tooltip with improved two-column layout
   return `
-    <div class="p-1">
+    <div class="aircraft-tooltip-header">
       <div class="aircraft-callsign">${registration}</div>
       <div class="aircraft-model">${aircraft.model || aircraft.TYPE_AIRCRAFT || 'Unknown'}</div>
+    </div>
+    <div class="aircraft-tooltip-content">
       <div class="aircraft-data-grid">
-        <div>Alt: <span class="font-medium">${formattedAltitude}</span></div>
-        <div>Speed: <span class="font-medium">${formattedSpeed}</span></div>
-        ${aircraft.heading ? `<div class="col-span-2">Heading: <span class="font-medium">${Math.round(aircraft.heading)}°</span></div>` : ''}
-        ${zoomLevel >= 10 && aircraft.manufacturer ? `<div class="col-span-2">${aircraft.manufacturer}</div>` : ''}
+        <div>
+          <span class="data-label">Alt:</span>
+          <span class="data-value">${formattedAltitude}</span>
+        </div>
+        <div>
+          <span class="data-label">Heading:</span>
+          <span class="data-value">${heading}</span>
+        </div>
+        <div>
+          <span class="data-label">Speed:</span>
+          <span class="data-value">${formattedSpeed}</span>
+        </div>
+        ${
+          aircraft.on_ground !== undefined
+            ? `
+        <div>
+          <span class="data-label">Status:</span>
+          <span class="data-value">${aircraft.on_ground ? 'Ground' : 'Flight'}</span>
+        </div>
+        `
+            : ''
+        }
+        ${
+          zoomLevel >= 10 && aircraft.manufacturer
+            ? `
+        <div class="aircraft-data-full">
+          <span class="data-label">Mfr:</span>
+          <span class="data-value">${aircraft.manufacturer}</span>
+        </div>
+        `
+            : ''
+        }
       </div>
       ${
         aircraft.lastSeen
           ? `
-        <div class="text-xs text-gray-400 mt-2">
-          Updated: ${new Date(aircraft.lastSeen).toLocaleTimeString()}
-        </div>
+      <div class="text-xs text-gray-400 mt-2">
+        Updated: ${new Date(aircraft.lastSeen).toLocaleTimeString()}
+      </div>
       `
           : ''
       }
@@ -145,7 +175,7 @@ export const createTooltipContent = (
   `;
 };
 
-// Updated createPopupContent function to match existing CSS classes
+// Fixed createPopupContent function to ensure all fields are included
 export const createPopupContent = (
   aircraft: Aircraft & {
     registration?: string;
@@ -155,7 +185,9 @@ export const createPopupContent = (
     CITY?: string;
     STATE?: string;
     OWNER_TYPE?: string;
-    owner?: string;
+    name?: string;
+    city?: string; // Added lowercase alternatives
+    state?: string;
   },
   zoomLevel: number
 ): string => {
@@ -173,107 +205,104 @@ export const createPopupContent = (
     ? Math.round(aircraft.velocity) + ' kts'
     : 'N/A';
 
-  // Create responsive popup with the proper CSS classes
+  // Get city and state (check both uppercase and lowercase properties)
+  const city = aircraft.CITY || aircraft.city || '';
+  const state = aircraft.STATE || aircraft.state || '';
+  const hasLocation = city || state;
+
+  // Format debug info if needed
+  const debugInfo =
+    process.env.NODE_ENV === 'development'
+      ? `<div class="text-xs text-gray-400 mt-2 p-1 bg-gray-100">
+      Keys: ${Object.keys(aircraft).join(', ')}
+    </div>`
+      : '';
+
+  // Create responsive popup with all fields properly included
   return `
-    <div class="aircraft-popup p-2">
-      <h3>${registration}</h3>
-      <table>
-        <tbody>
-          <tr>
-            <td>Model:</td>
-            <td>${aircraft.model || aircraft.TYPE_AIRCRAFT || 'Unknown'}</td>
-          </tr>
-          ${
-            aircraft.manufacturer
-              ? `
-            <tr>
-              <td>Manufacturer:</td>
-              <td>${aircraft.manufacturer}</td>
-            </tr>
-          `
-              : ''
-          }
-          <tr>
-            <td>Altitude:</td>
-            <td>${formattedAltitude}</td>
-          </tr>
-          <tr>
-            <td>Speed:</td>
-            <td>${formattedSpeed}</td>
-          </tr>
-          ${
-            aircraft.heading
-              ? `
-            <tr>
-              <td>Heading:</td>
-              <td>${Math.round(aircraft.heading)}°</td>
-            </tr>
-          `
-              : ''
-          }
-          <tr>
-            <td>ICAO:</td>
-            <td>${aircraft.icao24}</td>
-          </tr>
-          ${
-            aircraft.owner
-              ? `
-            <tr>
-              <td>Owner:</td>
-              <td>${aircraft.owner}</td>
-            </tr>
-          `
-              : ''
-          }
-          ${
-            aircraft.CITY || aircraft.STATE
-              ? `
-            <tr>
-              <td>Location:</td>
-              <td>${[aircraft.CITY, aircraft.STATE].filter(Boolean).join(', ')}</td>
-            </tr>
-          `
-              : ''
-          }
-          ${
-            aircraft.OWNER_TYPE
-              ? `
-            <tr>
-              <td>Owner Type:</td>
-              <td>${getOwnerTypeLabel(aircraft.OWNER_TYPE)}</td>
-            </tr>
-          `
-              : ''
-          }
-          ${
-            aircraft.lastSeen
-              ? `
-            <tr>
-              <td>Last Seen:</td>
-              <td>${new Date(aircraft.lastSeen).toLocaleTimeString()}</td>
-            </tr>
-          `
-              : ''
-          }
-          ${
-            aircraft.on_ground !== undefined
-              ? `
-            <tr>
-              <td>Status:</td>
-              <td>
-                ${
-                  aircraft.on_ground
-                    ? '<span class="status-badge on-ground">On Ground</span>'
-                    : '<span class="status-badge in-flight">In Flight</span>'
-                }
-              </td>
-            </tr>
-          `
-              : ''
-          }
-        </tbody>
-      </table>
-      <div class="popup-actions">
+    <div class="aircraft-popup p-3">
+      <div class="flex justify-between items-center mb-2">
+        <h3 class="text-lg font-bold">${registration}</h3>
+        <button class="text-gray-500 hover:text-gray-700" onclick="window.dispatchEvent(new CustomEvent('close-popup'))">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+      
+      <div class="grid grid-cols-2 gap-y-2 text-sm">
+        <div class="text-gray-600">Model:</div>
+        <div class="font-medium">${aircraft.model || aircraft.TYPE_AIRCRAFT || 'Unknown'}</div>
+        
+        ${
+          aircraft.manufacturer
+            ? `
+        <div class="text-gray-600">Manufacturer:</div>
+        <div class="font-medium">${aircraft.manufacturer}</div>
+        `
+            : ''
+        }
+        
+        <div class="text-gray-600">Altitude:</div>
+        <div class="font-medium">${formattedAltitude}</div>
+        
+        <div class="text-gray-600">Speed:</div>
+        <div class="font-medium">${formattedSpeed}</div>
+        
+        ${
+          aircraft.heading
+            ? `
+        <div class="text-gray-600">Heading:</div>
+        <div class="font-medium">${Math.round(aircraft.heading)}°</div>
+        `
+            : ''
+        }
+        
+        ${
+          aircraft.name
+            ? `
+        <div class="text-gray-600">Name:</div>
+        <div class="font-medium">${aircraft.name}</div>
+        `
+            : ''
+        }
+        
+        ${
+          hasLocation
+            ? `
+        <div class="text-gray-600">Location:</div>
+        <div class="font-medium">${[city, state].filter(Boolean).join(', ')}</div>
+        `
+            : ''
+        }
+        
+        ${
+          aircraft.OWNER_TYPE
+            ? `
+        <div class="text-gray-600">Owner Type:</div>
+        <div class="font-medium">${getOwnerTypeLabel(aircraft.OWNER_TYPE)}</div>
+        `
+            : ''
+        }
+        
+        ${
+          aircraft.on_ground !== undefined
+            ? `
+        <div class="text-gray-600">Status:</div>
+        <div>${
+          aircraft.on_ground
+            ? '<span class="status-badge on-ground">On Ground</span>'
+            : '<span class="status-badge in-flight">In Flight</span>'
+        }</div>
+        `
+            : ''
+        }
+      </div>
+      
+      ${debugInfo}
+      
+      <div class="mt-3 text-center">
         <button class="popup-button" onclick="window.dispatchEvent(new CustomEvent('select-aircraft', {detail: '${aircraft.icao24}'}))">
           View Details
         </button>

@@ -58,9 +58,9 @@ export const AircraftTooltip: React.FC<AircraftTooltipProps> = ({
           <div className="col-span-2 mt-1">{aircraft.manufacturer}</div>
         )}
 
-        {aircraft.owner && (
+        {aircraft.NAME && (
           <div className="col-span-2 mt-1 text-gray-600">
-            Owner: {aircraft.owner}
+            Name: {aircraft.NAME}
           </div>
         )}
       </div>

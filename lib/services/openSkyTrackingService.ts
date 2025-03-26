@@ -288,32 +288,52 @@ class OpenSkyTrackingService {
   private updateTrails(): void {
     if (!this.trailsEnabled) return;
 
+    console.log('[OpenSky] Updating aircraft trails...');
     const currentTime = Date.now();
+    let totalUpdates = 0;
 
     // Update trails for each aircraft
     this.trackedAircraft.forEach((aircraft) => {
       if (!aircraft.icao24 || !aircraft.latitude || !aircraft.longitude) return;
 
+      const icao = aircraft.icao24.toLowerCase();
+
       // Get or create trail for this aircraft
-      let trail = this.trails.get(aircraft.icao24);
+      let trail = this.trails.get(icao);
       if (!trail) {
         trail = {
-          icao24: aircraft.icao24,
+          icao24: icao,
           positions: [],
           maxPositions: this.maxTrailLength,
         };
-        this.trails.set(aircraft.icao24, trail);
+        this.trails.set(icao, trail);
       }
 
-      // Check if position has changed significantly before adding to trail
+      // Check if this is a new position worth adding
       const lastPos = trail.positions[trail.positions.length - 1];
+
+      // Consider adding a new point if:
+      // 1. There's no previous position
+      // 2. The position has changed significantly
+      // 3. It's been more than 30 seconds since the last update
+      const timeSinceLastUpdate = lastPos
+        ? currentTime - lastPos.timestamp
+        : Infinity;
       const positionChanged =
         !lastPos ||
         Math.abs(lastPos.latitude - aircraft.latitude) > 0.0001 ||
         Math.abs(lastPos.longitude - aircraft.longitude) > 0.0001;
+      const altitudeChanged =
+        lastPos &&
+        aircraft.altitude &&
+        Math.abs((lastPos.altitude || 0) - aircraft.altitude) > 100;
 
-      // Only add position if it has changed significantly
-      if (positionChanged) {
+      if (
+        !lastPos ||
+        positionChanged ||
+        altitudeChanged ||
+        timeSinceLastUpdate > 30000
+      ) {
         // Add new position
         trail.positions.push({
           latitude: aircraft.latitude,
@@ -322,12 +342,31 @@ class OpenSkyTrackingService {
           timestamp: currentTime,
         });
 
+        totalUpdates++;
+
         // Keep trail at max length
         if (trail.positions.length > trail.maxPositions) {
           trail.positions = trail.positions.slice(-trail.maxPositions);
         }
       }
     });
+
+    // Clean up trails for aircraft no longer tracked
+    const trackedIcaos = new Set(
+      this.trackedAircraft.map((a) => a.icao24?.toLowerCase()).filter(Boolean)
+    );
+
+    let removed = 0;
+    for (const icao of this.trails.keys()) {
+      if (!trackedIcaos.has(icao)) {
+        this.trails.delete(icao);
+        removed++;
+      }
+    }
+
+    console.log(
+      `[OpenSky] Trail updates: ${totalUpdates} positions added, ${removed} stale trails removed`
+    );
   }
 
   /**
@@ -342,10 +381,140 @@ class OpenSkyTrackingService {
    */
   public getAllTrails(): Map<string, AircraftPosition[]> {
     const result = new Map<string, AircraftPosition[]>();
+
+    if (!this.trailsEnabled) {
+      return result; // Return empty map if trails are disabled
+    }
+
+    // Convert from our internal trail format to the expected output format
     this.trails.forEach((trail, icao24) => {
-      result.set(icao24, trail.positions);
+      // Only include trails with at least 2 positions (needed to draw a line)
+      if (trail.positions.length >= 2) {
+        result.set(icao24, [...trail.positions]); // Ensure we return a copy
+      }
     });
+
+    console.log(`[OpenSky] Providing ${result.size} trails with data`);
     return result;
+  }
+
+  public generateMockTrails(): void {
+    if (!this.trailsEnabled) {
+      console.log(
+        '[OpenSky] Trails are disabled, enable them before generating mock data'
+      );
+      return;
+    }
+
+    console.log('[OpenSky] Generating mock trail data for testing...');
+    const now = Date.now();
+    let count = 0;
+
+    this.trackedAircraft.forEach((aircraft) => {
+      if (!aircraft.icao24 || !aircraft.latitude || !aircraft.longitude) return;
+
+      const icao = aircraft.icao24.toLowerCase();
+      const trail: AircraftPosition[] = [];
+
+      // Generate a trail that goes back in time from the current position
+      for (let i = 0; i < this.maxTrailLength; i++) {
+        // Create a position slightly offset from the current one
+        // to simulate movement in a consistent direction
+        const timeOffset = i * 10000; // 10 seconds between points
+        const latOffset = i * 0.001 * Math.cos(aircraft.heading || 0);
+        const lonOffset = i * 0.001 * Math.sin(aircraft.heading || 0);
+
+        trail.push({
+          latitude: aircraft.latitude - latOffset,
+          longitude: aircraft.longitude - lonOffset,
+          altitude: aircraft.altitude,
+          timestamp: now - timeOffset,
+        });
+      }
+
+      // Sort by timestamp ascending (oldest first)
+      trail.sort((a, b) => a.timestamp - b.timestamp);
+
+      // Store the mock trail
+      this.trails.set(icao, {
+        icao24: icao,
+        positions: trail,
+        maxPositions: this.maxTrailLength,
+      });
+
+      count++;
+    });
+
+    console.log(`[OpenSky] Generated mock trails for ${count} aircraft`);
+    this.notifySubscribers(); // Notify subscribers about the new trail data
+  }
+
+  /**
+   * Force generate trails for all tracked aircraft.
+   * This creates visible trails even if the normal trail collection process isn't working.
+   */
+  public forceGenerateTrails(): void {
+    if (!this.trackingActive) {
+      console.log(
+        '[OpenSky] No active tracking session. Start tracking first.'
+      );
+      return;
+    }
+
+    // Make sure trails are enabled
+    if (!this.trailsEnabled) {
+      this.setTrailsEnabled(true);
+      console.log('[OpenSky] Trails were disabled, enabling them now');
+    }
+
+    console.log('[OpenSky] Forcing trail generation for active aircraft...');
+
+    const now = Date.now();
+    let count = 0;
+
+    // Clear existing trails to avoid conflicts
+    this.trails.clear();
+
+    // Create mock trails for all aircraft
+    this.trackedAircraft.forEach((aircraft) => {
+      if (!aircraft.icao24 || !aircraft.latitude || !aircraft.longitude) return;
+
+      const positions: AircraftPosition[] = [];
+      const icao = aircraft.icao24.toLowerCase();
+
+      // Generate trail points
+      for (let i = 0; i < this.maxTrailLength; i++) {
+        // Create points in a line based on heading
+        const heading = aircraft.heading || 0; // Default to 0 if undefined
+        const angleRad = (heading - 180) * (Math.PI / 180); // Convert to radians, reverse direction
+
+        // Calculate position offset based on index
+        const stepSize = 0.0005; // Adjust for longer/shorter trails
+        const latOffset = Math.cos(angleRad) * stepSize * i;
+        const lonOffset = Math.sin(angleRad) * stepSize * i;
+
+        positions.push({
+          latitude: aircraft.latitude + latOffset,
+          longitude: aircraft.longitude + lonOffset,
+          altitude: aircraft.altitude,
+          timestamp: now - i * 30000, // 30 seconds between points
+        });
+      }
+
+      // Store the trail - use AircraftTrail interface format
+      this.trails.set(icao, {
+        icao24: icao,
+        positions: positions,
+        maxPositions: this.maxTrailLength,
+      });
+
+      count++;
+    });
+
+    console.log(`[OpenSky] Generated trails for ${count} aircraft`);
+
+    // Notify subscribers
+    this.notifySubscribers();
   }
 
   /**
@@ -775,13 +944,31 @@ class OpenSkyTrackingService {
    * Notify all subscribers of changes
    */
   private notifySubscribers(): void {
+    // Prepare the trail data only if trails are enabled
+    const trailData = this.trailsEnabled ? this.getAllTrails() : null;
+
     const data = {
       aircraft: this.trackedAircraft,
       manufacturer: this.currentManufacturer,
       count: this.trackedAircraft.length,
       timestamp: this.lastRefreshTime,
-      trails: this.trailsEnabled ? this.getAllTrails() : null,
+      trails: trailData, // This is now properly formatted for components
     };
+
+    // Log trail data to help with debugging
+    if (trailData) {
+      console.log(
+        `[OpenSky] Notifying subscribers with ${trailData.size} trails`
+      );
+      if (trailData.size > 0) {
+        // Log information about the first trail as a sample
+        const firstIcao = Array.from(trailData.keys())[0];
+        const firstTrail = trailData.get(firstIcao);
+        console.log(
+          `[OpenSky] Sample trail for ${firstIcao}: ${firstTrail?.length} positions`
+        );
+      }
+    }
 
     this.subscribers.forEach((callback) => callback(data));
   }
