@@ -9,26 +9,39 @@ import {
   ZoomControl,
 } from 'react-leaflet';
 import { MAP_CONFIG } from '@/config/map';
-import EnhancedContextAircraftInfoPanel from './components/EnhancedContextAircraftInfoPanel';
-import EnhancedContextAircraftMarker from '../map/EnhancedContextAircraftMarker';
-import LeafletTouchFix from './components/LeafletTouchFix'; // Import the touch fix component
+import LeafletTouchFix from './components/LeafletTouchFix';
 import { useEnhancedMapContext } from '../context/EnhancedMapContext';
 import { ExtendedAircraft } from '@/types/base';
 import MapControllerWithOptions from './MapControllerWithOptions';
 import L from 'leaflet';
 import EnhancedUnifiedSelector from '../selector/EnhancedUnifiedSelector';
 import type { SelectOption } from '@/types/base';
-import 'leaflet/dist/leaflet.css'; // Make sure this is imported!
+import UnifiedAircraftMarker from './UnifiedAircraftMarker';
+import { useEnhancedUI } from '../../tracking/context/EnhancedUIContext';
+import DraggablePanel from '../../ui/DraggablePanel';
+import EnhancedTooltip from '../../ui/EnhancedToolTip';
+import EnhancedTrailSystem from '../../tracking/map/components/EnhancedTrailSystem';
+import TrailControls from '../../tracking/map/components/TrailControls';
+import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
+import openSkyTrackingService from '../../../lib/services/openSkyTrackingService';
+import 'leaflet/dist/leaflet.css';
 
-// In your EnhancedReactBaseMap.tsx
+// Map Events component to handle zoom changes
 const MapEvents: React.FC = () => {
   const { setZoomLevel } = useEnhancedMapContext();
+  const { setIsLoading } = useEnhancedUI();
 
   const map = useMapEvents({
     zoomend: () => {
       const zoom = map.getZoom();
-      console.log('Map zoomed to level:', zoom); // Add this for debugging
+      console.log('Map zoomed to level:', zoom);
       setZoomLevel(zoom);
+    },
+    movestart: () => {
+      setIsLoading(true);
+    },
+    moveend: () => {
+      setIsLoading(false);
     },
   });
 
@@ -80,6 +93,16 @@ const EnhancedReactBaseMap: React.FC<ReactBaseMapProps> = ({ onError }) => {
   const [manufacturers, setManufacturers] = useState<SelectOption[]>([]);
   const { displayedAircraft, isRefreshing, setZoomLevel } =
     useEnhancedMapContext();
+  const {
+    selectAircraft,
+    openPanel,
+    closePanel,
+    panels,
+    isLoading,
+    trailSettings,
+    updateTrailSettings,
+    toggleTrails,
+  } = useEnhancedUI();
 
   // Fetch manufacturers
   useEffect(() => {
@@ -105,14 +128,58 @@ const EnhancedReactBaseMap: React.FC<ReactBaseMapProps> = ({ onError }) => {
       !isNaN(plane.longitude)
   );
 
-  // Handle zoom change to update context
-  const handleZoomChange = (map: L.Map) => {
-    setZoomLevel(map.getZoom());
+  // Handle aircraft selection
+  const handleMarkerClick = (aircraft: ExtendedAircraft) => {
+    selectAircraft(aircraft);
   };
 
-  // In EnhancedReactBaseMap.tsx
+  // Handle opening the settings panel
+  const handleOpenSettings = () => {
+    openPanel('settings', null, { x: 20, y: 20 }, 'Map Settings');
+  };
+
+  // Handle trail settings change
+  const handleTrailSettingsChange = (settings: {
+    maxTrailLength: number;
+    fadeTime: number;
+    selectedOnly: boolean;
+  }) => {
+    // Update UI context settings
+    updateTrailSettings(settings);
+
+    // Also update the tracking service settings
+    openSkyTrackingService.setMaxTrailLength(settings.maxTrailLength);
+  };
+
+  // Handle trail toggle
+  const handleToggleTrails = () => {
+    // Toggle trails in UI context
+    toggleTrails();
+
+    // Also toggle in tracking service
+    const newState = !openSkyTrackingService.areTrailsEnabled();
+    openSkyTrackingService.setTrailsEnabled(newState);
+
+    // Force generate trails if enabling
+    if (newState) {
+      openSkyTrackingService.forceGenerateTrails();
+    }
+  };
+
+  // Force refresh trails
+  const handleRefreshTrails = () => {
+    openSkyTrackingService.forceGenerateTrails();
+  };
+
   return (
     <div className="relative w-full h-full">
+      {/* Loading indicator */}
+      {isLoading && (
+        <div className="absolute top-2 right-2 z-50 bg-white rounded-md py-1 px-3 shadow-md">
+          <LoadingSpinner size="sm" message="Loading..." />
+        </div>
+      )}
+
       {/* Map Container */}
       <MapContainer
         center={MAP_CONFIG.CENTER}
@@ -131,44 +198,105 @@ const EnhancedReactBaseMap: React.FC<ReactBaseMapProps> = ({ onError }) => {
         <LeafletTouchFix />
         <LayersControl position="topright">{/* Layer options */}</LayersControl>
 
-        {/* Aircraft markers */}
+        {/* Aircraft trails - only render if enabled */}
+        {trailSettings.enabled && (
+          <EnhancedTrailSystem
+            maxTrailLength={trailSettings.maxTrailLength}
+            fadeTime={trailSettings.fadeTime}
+            selectedOnly={trailSettings.selectedOnly}
+          />
+        )}
+
+        {/* Aircraft markers using our unified marker component */}
         {validAircraft.map((aircraft: ExtendedAircraft) => (
-          <EnhancedContextAircraftMarker
+          <UnifiedAircraftMarker
             key={aircraft.icao24}
             aircraft={aircraft}
+            onMarkerClick={handleMarkerClick}
           />
         ))}
       </MapContainer>
 
-      {/* UI Components - positioned with inline styles for reliability */}
-      <div
-        style={{
-          position: 'fixed',
-          bottom: '20px',
-          left: '20px',
-          zIndex: 9999,
-          background: 'white',
-          padding: '8px',
-          borderRadius: '4px',
-          boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
-        }}
-      ></div>
+      {/* UI Components using our unified system */}
+      <div className="absolute bottom-5 left-5 z-50">
+        <EnhancedTooltip content="Current status" position="top">
+          <div className="bg-white p-2 rounded-md shadow-md">
+            <span className="text-sm font-medium">
+              {isRefreshing
+                ? 'Refreshing...'
+                : `${validAircraft.length} aircraft`}
+            </span>
+          </div>
+        </EnhancedTooltip>
+      </div>
 
-      {manufacturers.length > 0 && (
-        <div
-          style={{
-            position: 'fixed',
-            top: '20px',
-            left: '20px',
-            zIndex: 9999,
-          }}
+      {/* Map controls */}
+      <div className="absolute bottom-5 right-5 z-50 flex flex-col gap-2">
+        {/* Trail controls */}
+        <TrailControls
+          enabled={trailSettings.enabled}
+          onToggle={handleToggleTrails}
+          onSettingsChange={handleTrailSettingsChange}
+        />
+
+        {/* Refresh trails button */}
+        {trailSettings.enabled && (
+          <EnhancedTooltip content="Refresh Trails" position="left">
+            <button
+              onClick={handleRefreshTrails}
+              className="bg-blue-100 text-blue-700 p-2 rounded-full shadow-md hover:bg-blue-200"
+            >
+              🔄
+            </button>
+          </EnhancedTooltip>
+        )}
+
+        {/* Settings control */}
+        <EnhancedTooltip content="Settings" position="left">
+          <button
+            onClick={handleOpenSettings}
+            className="bg-white p-2 rounded-full shadow-md hover:bg-gray-100"
+          >
+            ⚙️
+          </button>
+        </EnhancedTooltip>
+      </div>
+
+      {/* Settings panel */}
+      {panels.settings.isOpen && (
+        <DraggablePanel
+          isOpen={panels.settings.isOpen}
+          onClose={() => closePanel('settings')}
+          title="Map Settings"
+          initialPosition={panels.settings.position}
+          className="bg-white rounded-lg shadow-lg"
         >
+          <div className="p-4">
+            <h3 className="font-medium mb-2">Display Options</h3>
+            {/* Settings content would go here */}
+          </div>
+        </DraggablePanel>
+      )}
+
+      {/* Custom panel for trail settings */}
+      {panels.custom.isOpen && panels.custom.customContent && (
+        <DraggablePanel
+          isOpen={panels.custom.isOpen}
+          onClose={() => closePanel('custom')}
+          title={panels.custom.title || 'Custom Panel'}
+          initialPosition={panels.custom.position}
+          className="bg-white rounded-lg shadow-lg"
+        >
+          {panels.custom.customContent}
+        </DraggablePanel>
+      )}
+
+      {/* Manufacturer filter using our draggable panel */}
+      {manufacturers.length > 0 && (
+        <div className="absolute top-5 left-5 z-50">
           <EnhancedUnifiedSelector manufacturers={manufacturers} />
         </div>
       )}
-
-      {/* Aircraft info panel */}
-      <EnhancedContextAircraftInfoPanel />
     </div>
   );
 };

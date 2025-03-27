@@ -1,4 +1,4 @@
-// AircraftIcon.tsx
+// components/tracking/utils/AircraftIcon.tsx
 import type { Aircraft } from '@/types/base';
 
 interface AircraftIconOptions {
@@ -319,6 +319,7 @@ export const getOwnerTypeLabel = (ownerType: string): string => {
     '3': 'Corporation',
     '4': 'Co-Owned',
     '5': 'Government',
+    '7': 'LLC',
     '8': 'Non-Citizen Corporation',
     '9': 'Non-Citizen Co-Owned',
   };
