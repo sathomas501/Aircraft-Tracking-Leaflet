@@ -89,18 +89,22 @@ const EnhancedContextAircraftMarker: React.FC<
   return (
     <>
       {/* Render trail if enabled and available */}
+      // In EnhancedContextAircraftMarker.tsx
       {trailsEnabled && trail && trail.length >= 2 && (
         <AircraftTrail
-          positions={trail}
+          positions={trail.map((pos) => ({
+            lat: typeof pos.latitude === 'number' ? pos.latitude : 0,
+            lng: typeof pos.longitude === 'number' ? pos.longitude : 0,
+            altitude: pos.altitude,
+            timestamp: pos.timestamp || Date.now(),
+          }))}
           color={isSelected ? '#3388ff' : '#3388ff80'}
           weight={isSelected ? 3 : 2}
           opacity={isSelected ? 0.9 : 0.65}
-          zIndexOffset={isSelected ? 900 : 0}
           fadeEffect={true}
           selected={isSelected}
         />
       )}
-
       {/* Single marker approach - no more duplicates */}
       <Marker
         ref={markerRef}

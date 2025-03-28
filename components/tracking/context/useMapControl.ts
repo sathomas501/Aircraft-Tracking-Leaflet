@@ -8,7 +8,8 @@ import type { Map as LeafletMap } from 'leaflet';
  * Provides methods to register the map instance and handle map events
  */
 export function useMapControl() {
-  const { setMapInstance, setZoomLevel, preserveView, selectedAircraft } =
+  // Remove preserveView from destructuring since it doesn't exist
+  const { setMapInstance, setZoomLevel, selectedAircraft } =
     useEnhancedMapContext();
 
   const mapRef = useRef<LeafletMap | null>(null);
@@ -42,7 +43,8 @@ export function useMapControl() {
   // Handle auto-fitting bounds for aircraft
   const fitToBounds = useCallback(
     (bounds: any, options = {}) => {
-      if (!mapRef.current || preserveView) return;
+      if (!mapRef.current) return;
+      // Remove the preserveView check since it doesn't exist
 
       mapRef.current.fitBounds(bounds, {
         padding: [50, 50],
@@ -50,7 +52,7 @@ export function useMapControl() {
         ...options,
       });
     },
-    [preserveView]
+    [] // Remove preserveView from dependencies
   );
 
   // Focus on selected aircraft

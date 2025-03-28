@@ -93,13 +93,22 @@ const EnhancedUIContext = createContext<EnhancedUIContextState | undefined>(
   undefined
 );
 
-// Default panel positions
+// Default panel positions with fallback values for server-side rendering
 const DEFAULT_POSITIONS = {
-  aircraftInfo: { x: window.innerWidth - 300, y: 20 },
+  aircraftInfo: {
+    x: typeof window !== 'undefined' ? window.innerWidth - 300 : 700,
+    y: 20,
+  },
   settings: { x: 20, y: 20 },
   filters: { x: 20, y: 20 },
-  details: { x: window.innerWidth / 2 - 300, y: 50 },
-  custom: { x: window.innerWidth / 2 - 200, y: 100 },
+  details: {
+    x: typeof window !== 'undefined' ? window.innerWidth / 2 - 300 : 400,
+    y: 50,
+  },
+  custom: {
+    x: typeof window !== 'undefined' ? window.innerWidth / 2 - 200 : 300,
+    y: 100,
+  },
 };
 
 // Default trail settings

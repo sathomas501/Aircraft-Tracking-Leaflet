@@ -21,7 +21,6 @@ import { useEnhancedUI } from '../../tracking/context/EnhancedUIContext';
 import DraggablePanel from '../../ui/DraggablePanel';
 import EnhancedTooltip from '../../ui/EnhancedToolTip';
 import EnhancedTrailSystem from '../../tracking/map/components/EnhancedTrailSystem';
-import TrailControls from '../../tracking/map/components/TrailControls';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 import openSkyTrackingService from '../../../lib/services/openSkyTrackingService';
 import 'leaflet/dist/leaflet.css';
@@ -231,36 +230,6 @@ const EnhancedReactBaseMap: React.FC<ReactBaseMapProps> = ({ onError }) => {
       </div>
 
       {/* Map controls */}
-      <div className="absolute bottom-5 right-5 z-50 flex flex-col gap-2">
-        {/* Trail controls */}
-        <TrailControls
-          enabled={trailSettings.enabled}
-          onToggle={handleToggleTrails}
-          onSettingsChange={handleTrailSettingsChange}
-        />
-
-        {/* Refresh trails button */}
-        {trailSettings.enabled && (
-          <EnhancedTooltip content="Refresh Trails" position="left">
-            <button
-              onClick={handleRefreshTrails}
-              className="bg-blue-100 text-blue-700 p-2 rounded-full shadow-md hover:bg-blue-200"
-            >
-              🔄
-            </button>
-          </EnhancedTooltip>
-        )}
-
-        {/* Settings control */}
-        <EnhancedTooltip content="Settings" position="left">
-          <button
-            onClick={handleOpenSettings}
-            className="bg-white p-2 rounded-full shadow-md hover:bg-gray-100"
-          >
-            ⚙️
-          </button>
-        </EnhancedTooltip>
-      </div>
 
       {/* Settings panel */}
       {panels.settings.isOpen && (

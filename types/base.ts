@@ -195,6 +195,7 @@ export interface CachedAircraftData {
   lastUpdated: number;
 
   // Static data
+  registration?: string;
   'N-NUMBER'?: string;
   manufacturer?: string;
   model?: string;

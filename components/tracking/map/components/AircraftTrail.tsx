@@ -1,117 +1,87 @@
 // components/tracking/map/components/AircraftTrail.tsx
 import React, { useMemo } from 'react';
 import { Polyline } from 'react-leaflet';
-import L from 'leaflet';
+import { LatLngExpression } from 'leaflet';
 
-interface AircraftPosition {
-  latitude: number;
-  longitude: number;
-  altitude: number | null;
-  timestamp: number;
-}
-
+// Define the AircraftTrail props interface
 interface AircraftTrailProps {
-  positions: AircraftPosition[];
+  positions: Array<{
+    lat: number;
+    lng: number;
+    timestamp?: number;
+    altitude?: number | null;
+  }>;
   color?: string;
   weight?: number;
   opacity?: number;
   zIndexOffset?: number;
-  fadeEffect?: boolean; // Whether to apply a fade effect to older positions
-  dashArray?: string; // Optional dash pattern for the line
-  selected?: boolean; // Whether this aircraft is selected
-}
-
-interface SegmentOptions {
-  positions: L.LatLngTuple[];
-  options: L.PathOptions;
+  fadeEffect?: boolean;
+  selected?: boolean;
 }
 
 const AircraftTrail: React.FC<AircraftTrailProps> = ({
   positions,
   color = '#3388ff',
   weight = 2,
-  opacity = 0.8,
+  opacity = 0.7,
   zIndexOffset = 0,
   fadeEffect = true,
-  dashArray = '',
   selected = false,
 }) => {
-  // Skip rendering if there are not enough positions for a trail
-  if (!positions || positions.length < 2) return null;
-
-  // Convert positions to LatLngTuples for Leaflet
-  const latLngs = useMemo(() => {
-    return positions.map(
-      (pos) => [pos.latitude, pos.longitude] as L.LatLngTuple
-    );
+  // Convert positions to the format expected by Leaflet
+  const trailPositions: LatLngExpression[] = useMemo(() => {
+    return positions.map((pos) => [pos.lat, pos.lng]);
   }, [positions]);
 
-  // For fade effect, create multiple polylines with decreasing opacity
-  if (fadeEffect) {
-    // Calculate segments with decreasing opacity
-    const segments = useMemo<SegmentOptions[]>(() => {
-      const result: SegmentOptions[] = [];
-      const totalSegments = Math.min(positions.length - 1, 5); // Max 5 segments
+  // Create fade gradient effect if enabled
+  const colorOptions = useMemo(() => {
+    if (!fadeEffect || positions.length < 2) {
+      return { color, weight, opacity };
+    }
 
-      for (let i = 0; i < totalSegments; i++) {
-        const segmentSize = Math.ceil((positions.length - 1) / totalSegments);
-        const startIdx = i * segmentSize;
-        const endIdx = Math.min(startIdx + segmentSize + 1, positions.length);
+    // Create an array of colors with decreasing opacity for fade effect
+    const colors: Record<string, any>[] = [];
+    const segments = positions.length - 1;
 
-        // Calculate opacity based on segment position (older segments are more transparent)
-        const segmentOpacity = opacity * (0.5 + 0.5 * (i / totalSegments));
+    for (let i = 0; i < segments; i++) {
+      const segmentOpacity = selected
+        ? opacity * (0.3 + (0.7 * i) / segments) // Selected trails are more visible
+        : opacity * (0.1 + (0.9 * i) / segments); // Normal fade
 
-        // Create a valid PathOptions object
-        const pathOptions: L.PathOptions = {
-          color,
-          weight: selected ? weight + 1 : weight,
-          opacity: segmentOpacity,
-          dashArray,
-        };
+      colors.push({
+        color,
+        weight,
+        opacity: segmentOpacity,
+      });
+    }
 
-        // The pane property can be used to control layering
-        // 'overlayPane' is the default pane for polylines
-        // You can add custom panes with different z-indexes via the map object if needed
+    return colors;
+  }, [positions, color, weight, opacity, fadeEffect, selected]);
 
-        result.push({
-          positions: latLngs.slice(startIdx, endIdx),
-          options: pathOptions,
-        });
-      }
+  // If no positions or not enough for a line, don't render
+  if (!positions || positions.length < 2) {
+    return null;
+  }
 
-      return result;
-    }, [positions, color, weight, opacity, dashArray, selected, latLngs]);
-
-    // Render multiple polylines with decreasing opacity
+  // If fade effect is enabled and we have gradient colors
+  if (fadeEffect && Array.isArray(colorOptions)) {
+    // For fade effect, we render multiple line segments with decreasing opacity
     return (
       <>
-        {segments.map((segment, index) => (
+        {positions.slice(0, -1).map((_, index) => (
           <Polyline
             key={`segment-${index}`}
-            positions={segment.positions}
-            pathOptions={segment.options}
-            // Optional: Use bubblingMouseEvents={false} to prevent events from passing through
-            bubblingMouseEvents={false}
+            positions={[trailPositions[index], trailPositions[index + 1]]}
+            pathOptions={colorOptions[index]}
           />
         ))}
       </>
     );
   }
 
-  // Simple single polyline without fade effect
-  const pathOptions: L.PathOptions = {
-    color,
-    weight: selected ? weight + 1 : weight,
-    opacity,
-    dashArray,
-  };
-
+  // For simple trail with no fade, render a single polyline
   return (
-    <Polyline
-      positions={latLngs}
-      pathOptions={pathOptions}
-      bubblingMouseEvents={false}
-    />
+    <Polyline positions={trailPositions} pathOptions={colorOptions as any} />
   );
 };
 
