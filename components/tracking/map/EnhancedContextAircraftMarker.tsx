@@ -8,7 +8,6 @@ import {
   createPopupContent,
 } from './AircraftIcon/AircraftIcon';
 import type { ExtendedAircraft } from '@/types/base';
-import type { CachedAircraftData } from '@/types/base';
 import L from 'leaflet';
 import AircraftTrail from './components/AircraftTrail';
 

@@ -1,6 +1,6 @@
 // components/tracking/panels/UnifiedAircraftInfoPanel.tsx
 import React from 'react';
-import DraggablePanel from '../../../ui/DraggablePanel';
+import DraggablePanel from '../../DraggablePanel';
 import { useEnhancedUI } from '../../../tracking/context/EnhancedUIContext';
 
 // Helper function to convert owner type cod/es to readable labels

@@ -17,7 +17,7 @@ import {
   loadAircraftData,
   mergeAircraftData,
   clearAircraftData,
-} from '../../../utils/AircraftDataPersistance';
+} from '../persistence/AircraftDataPersistence';
 
 // Define trail position interface
 interface AircraftPosition {

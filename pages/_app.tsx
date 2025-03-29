@@ -10,7 +10,7 @@ import { ToastContainer, toast } from 'react-toastify';
 import { Toaster } from 'react-hot-toast';
 import { EnhancedUIProvider } from '@/components/tracking/context/EnhancedUIContext';
 import { EnhancedMapProvider } from '@/components/tracking/context/EnhancedMapContext';
-import { DataPersistenceProvider } from '@/components/tracking/context/DataPersistenceManager';
+import { DataPersistenceProvider } from '../components/tracking/persistence/DataPersistenceManager';
 
 function MyApp({ Component, pageProps }: AppProps) {
   return (

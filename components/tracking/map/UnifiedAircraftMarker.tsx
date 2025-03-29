@@ -5,7 +5,7 @@ import L from 'leaflet';
 import { ExtendedAircraft } from '@/types/base';
 import { useEnhancedMapContext } from '../context/EnhancedMapContext';
 import { useEnhancedUI } from '../context/EnhancedUIContext';
-import { useDataPersistence } from '../context/DataPersistenceManager';
+import { useDataPersistence } from '../persistence/DataPersistenceManager';
 import {
   createAircraftIcon,
   createTooltipContent,

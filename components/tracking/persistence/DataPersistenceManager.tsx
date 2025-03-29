@@ -20,7 +20,7 @@ import {
   saveTrailState,
   loadTrailState,
   getSessionId,
-} from '../../../utils/AircraftDataPersistance';
+} from '../persistence/AircraftDataPersistence';
 
 // Define Trail Position type
 interface TrailPosition {
@@ -79,12 +79,7 @@ export const DataPersistenceProvider: React.FC<{ children: ReactNode }> = ({
   >({});
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
   const [cacheSize, setCacheSize] = useState<number>(0);
-  const [sessionId, setSessionId] = useState<string>('temp_session');
-
-  // Initialize session ID after component mounts (client-side only)
-  useEffect(() => {
-    setSessionId(getSessionId());
-  }, []);
+  const [sessionId] = useState<string>(getSessionId());
 
   // Load data on initial mount
   useEffect(() => {
@@ -178,13 +173,6 @@ export const DataPersistenceProvider: React.FC<{ children: ReactNode }> = ({
           (enhanced as any)[field] = cached[field];
         }
       });
-
-      // Ensure ExtendedAircraft required fields are present
-      enhanced.type = enhanced.type || enhanced.TYPE_AIRCRAFT || 'unknown';
-      enhanced.isGovernment =
-        enhanced.isGovernment || enhanced.OWNER_TYPE === 'GOVERNMENT';
-      enhanced.isTracked =
-        enhanced.isTracked !== undefined ? enhanced.isTracked : true;
 
       return enhanced;
     },

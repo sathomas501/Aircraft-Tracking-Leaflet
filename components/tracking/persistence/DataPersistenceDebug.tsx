@@ -1,6 +1,6 @@
 // components/tracking/map/DataPersistenceDebug.tsx
 import React, { useState, useEffect } from 'react';
-import { useDataPersistence } from '../context/DataPersistenceManager';
+import { useDataPersistence } from './DataPersistenceManager';
 import { useEnhancedMapContext } from '../context/EnhancedMapContext';
 
 const DataPersistenceDebug: React.FC = () => {
