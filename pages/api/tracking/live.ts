@@ -63,6 +63,18 @@ export default async function handler(
         `[API] Retrieved static data for ${staticData.length} aircraft`
       );
 
+      const { batchIndex, totalBatches } = req.body;
+
+      // Then modify your logging to include this information
+      if (batchIndex && totalBatches) {
+        console.log(
+          `[API] Processing batch ${batchIndex}/${totalBatches} (${icao24s.length} ICAOs)`
+        );
+      } else {
+        // Fall back to the existing logging
+        console.log(`[API] Processing batch 1/1 (${icao24s.length} ICAOs)`);
+      }
+
       // Create a lookup map for faster merging
       staticAircraft = staticData.reduce((map, aircraft) => {
         if (aircraft.icao24) {

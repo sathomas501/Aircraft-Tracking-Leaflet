@@ -1,7 +1,7 @@
 // components/tracking/map/MapWithDataPersistence.tsx
 import React from 'react';
-import EnhancedReactBaseMap from './EnhancedReactBaseMap';
-import DataPersistenceDebug from '../map/DataPersistenceDebug';
+import EnhancedReactBaseMap from '../map/EnhancedReactBaseMap';
+import DataPersistenceDebug from '../persistence/DataPersistenceDebug';
 import { useEnhancedMapContext } from '../context/EnhancedMapContext';
 
 interface MapWithDataPersistenceProps {
