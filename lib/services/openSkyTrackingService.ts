@@ -1,6 +1,6 @@
 // lib/services/OpenSkyTrackingService.ts
 
-import { ExtendedAircraft, Aircraft, SelectOption } from '@/types/base';
+import { Aircraft, SelectOption } from '@/types/base';
 import { AircraftModel } from '@/types/aircraft-models';
 
 // Track active requests to prevent duplicate calls
@@ -20,6 +20,15 @@ interface AircraftPosition {
   longitude: number;
   altitude: number | null;
   timestamp: number;
+}
+
+interface ExtendedAircraft extends Aircraft, CachedAircraftData {}
+
+interface CachedAircraftData {
+  markerData?: any;
+  popupData?: any;
+  tooltipData?: any;
+  // Other cache-specific fields can go here
 }
 
 interface AircraftTrail {
@@ -117,6 +126,7 @@ class OpenSkyTrackingService {
   private activeIcao24s: Set<string> = new Set();
   private activeAircraftIds: Set<string> = new Set();
   private lastActiveRefreshTime: number = 0;
+  private persistentAircraftCache: Map<string, ExtendedAircraft> = new Map();
 
   private updateTrackedIcao24sSet(): void {
     // Clear the current set
@@ -678,6 +688,7 @@ class OpenSkyTrackingService {
   /**
    * Stop tracking aircraft
    */
+  // Clear cache when stopping tracking
   public stopTracking(): void {
     console.log('[OpenSky] Stopping tracking');
     this.trackingActive = false;
@@ -690,6 +701,7 @@ class OpenSkyTrackingService {
 
     this.trackedAircraft = [];
     this.activeIcao24s.clear(); // Clear active set
+    this.persistentAircraftCache.clear(); // Clear the persistent cache
     this.notifySubscribers();
   }
 
@@ -821,35 +833,17 @@ class OpenSkyTrackingService {
     manufacturer: string,
     icao24s: string[],
     includeStatic: boolean = true,
-    activeOnly: boolean = false // Add this parameter
+    activeOnly: boolean = false
   ): Promise<Aircraft[]> {
-    // Generate a more specific cache key that includes whether this is a position-only update
+    // Keep your existing method code but modify the part where you process results
     const cacheKey = `live-${manufacturer}-${includeStatic ? 'full' : 'pos'}-${icao24s.length}`;
+    // ... existing code ...
 
-    // Check cache first
-    const cached = trackingCache.get(cacheKey);
-    if (cached && Date.now() - cached.timestamp < cached.ttl) {
-      console.log(
-        `[OpenSky] Using cached data for ${manufacturer} (${icao24s.length} aircraft)`
-      );
-      return cached.data;
-    }
-
-    // Check if request is already in progress
-    if (activeRequests.has(cacheKey)) {
-      console.log(`[OpenSky] Using existing request for ${manufacturer}`);
+    // Modify your existing fetchData function or add this processing after you get the results
+    const fetchDataWithCaching = async (): Promise<Aircraft[]> => {
       try {
-        return await activeRequests.get(cacheKey)!;
-      } catch (error) {
-        console.error(`[OpenSky] Error from existing request:`, error);
-        activeRequests.delete(cacheKey);
-      }
-    }
-
-    // Create a separate function for the actual data fetching
-    const fetchData = async (): Promise<Aircraft[]> => {
-      try {
-        const BATCH_SIZE = 100; // Smaller batch size for more responsive updates
+        // Use your existing code to fetch data
+        const BATCH_SIZE = 100;
         console.log(`[OpenSky] Fetching live aircraft data in batches...`);
 
         // Process batches without using Promise.race
@@ -864,7 +858,7 @@ class OpenSkyTrackingService {
                   manufacturer,
                   icao24s: batch,
                   includeStatic,
-                  activeOnly, // Add this parameter
+                  activeOnly,
                 }),
               });
 
@@ -889,31 +883,70 @@ class OpenSkyTrackingService {
           BATCH_SIZE
         );
 
-        // Shorter cache TTL for position-only updates to keep data fresh
-        const ttl = includeStatic ? 20000 : 10000; // 20s for full data, 10s for positions only
+        // Process the returned aircraft and merge with cached data
+        const processedAircraft = aircraftResults.map((aircraft: Aircraft) => {
+          if (!aircraft.icao24) return aircraft;
+
+          const icao = aircraft.icao24.toLowerCase();
+          const cachedAircraft = this.persistentAircraftCache.get(icao);
+
+          if (cachedAircraft) {
+            // Merge new data with cached data, prioritizing new position data
+            const mergedAircraft = {
+              ...cachedAircraft, // Start with cached data
+              ...aircraft, // Apply new aircraft data
+              // Ensure any special fields from cache are preserved
+              // TypeScript will now recognize these properties from our ExtendedAircraft interface
+              markerData: cachedAircraft.markerData,
+              popupData: cachedAircraft.popupData,
+              tooltipData: cachedAircraft.tooltipData,
+            } as ExtendedAircraft;
+
+            // Update cache
+            this.persistentAircraftCache.set(icao, mergedAircraft);
+
+            return mergedAircraft;
+          }
+
+          // No cached data, store this aircraft in the cache
+          const extendedAircraft = aircraft as ExtendedAircraft;
+          this.persistentAircraftCache.set(icao, extendedAircraft);
+          return extendedAircraft;
+        });
 
         // Cache the result
+        const ttl = includeStatic ? 20000 : 10000; // 20s for full data, 10s for positions only
         trackingCache.set(cacheKey, {
-          data: aircraftResults,
+          data: processedAircraft,
           timestamp: Date.now(),
           ttl,
         });
 
-        return aircraftResults;
+        return processedAircraft;
       } catch (error) {
         console.error(`[OpenSky] Error fetching live aircraft data:`, error);
-        return []; // Return empty array on error
+
+        // On error, return cached data if available
+        if (this.persistentAircraftCache.size > 0) {
+          console.log(
+            `[OpenSky] Returning ${this.persistentAircraftCache.size} cached aircraft on error`
+          );
+          return Array.from(this.persistentAircraftCache.values());
+        }
+
+        return []; // Return empty array on error with no cache
       }
     };
 
-    // Create request promise with timeout
+    // Replace your existing fetchData function with fetchDataWithCaching
+    // or call it after your existing fetchData function
+
+    // Use an approach similar to your existing code
     let timeoutId: NodeJS.Timeout;
 
     const requestPromise = new Promise<Aircraft[]>((resolve) => {
-      // Shorter timeout for position-only updates
-      const timeoutDuration = includeStatic ? 60000 : 30000; // 60s for full data, 30s for positions
+      const timeoutDuration = includeStatic ? 60000 : 30000;
 
-      // Set a timeout to resolve with empty array after timeout duration
       timeoutId = setTimeout(() => {
         console.warn(
           `[OpenSky] Request timed out after ${timeoutDuration / 1000} seconds`
@@ -921,22 +954,17 @@ class OpenSkyTrackingService {
         resolve([]);
       }, timeoutDuration);
 
-      // Execute the fetch
-      fetchData().then((result) => {
+      fetchDataWithCaching().then((result) => {
         clearTimeout(timeoutId);
         resolve(result);
       });
     });
 
-    // Store the request
     activeRequests.set(cacheKey, requestPromise);
 
     try {
-      // Wait for the request to complete
-      const result = await requestPromise;
-      return result;
+      return await requestPromise;
     } finally {
-      // Always clean up
       activeRequests.delete(cacheKey);
     }
   }
@@ -1049,7 +1077,7 @@ class OpenSkyTrackingService {
     this.isRefreshingPositions = true;
     setRefreshInProgress(true);
     this.loading = true;
-    const refreshStartTime = Date.now(); // Define refreshStartTime
+    const refreshStartTime = Date.now();
 
     try {
       // Check if we should do a full refresh or just active aircraft
@@ -1105,7 +1133,7 @@ class OpenSkyTrackingService {
 
         // Only request data for active aircraft
         const updatedAircraft = await this.getLiveAircraftData(
-          manufacturer, // Using non-null manufacturer
+          manufacturer,
           activeIcaos,
           false, // No need for static data during position updates
           true // activeOnly - ensure we only get aircraft with position data
@@ -1305,20 +1333,31 @@ class OpenSkyTrackingService {
 
     let updatedCount = 0;
 
+    // Update trackedAircraft with merged data
     this.trackedAircraft = this.trackedAircraft.map((aircraft) => {
       if (!aircraft.icao24) return aircraft;
 
       const icao = aircraft.icao24.toLowerCase();
       const positionUpdate = positionMap.get(icao);
 
+      // If we have a position update, merge it with existing data
       if (
         positionUpdate &&
         positionUpdate.latitude &&
         positionUpdate.longitude
       ) {
         updatedCount++;
-        return {
-          ...aircraft,
+
+        // Get any previously cached data for this aircraft
+        const cachedData = this.persistentAircraftCache.get(icao);
+
+        // Create merged aircraft object with priority:
+        // 1. New position data from positionUpdate
+        // 2. Existing cached data
+        // 3. Current aircraft data
+        const mergedAircraft = {
+          ...aircraft, // Base existing data
+          ...(cachedData || {}), // Apply any cached data
           latitude: positionUpdate.latitude,
           longitude: positionUpdate.longitude,
           altitude: positionUpdate.altitude,
@@ -1326,10 +1365,16 @@ class OpenSkyTrackingService {
           heading: positionUpdate.heading,
           on_ground: positionUpdate.on_ground,
           lastSeen: positionUpdate.lastSeen || Date.now(),
-        };
+        } as ExtendedAircraft;
+
+        // Update the persistent cache
+        this.persistentAircraftCache.set(icao, mergedAircraft);
+
+        return mergedAircraft;
       }
 
-      return aircraft;
+      // No position update, use cached data if available
+      return this.persistentAircraftCache.get(icao) || aircraft;
     });
 
     console.log(`[OpenSky] Updated positions for ${updatedCount} aircraft`);
