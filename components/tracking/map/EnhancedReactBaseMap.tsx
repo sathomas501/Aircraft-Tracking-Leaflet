@@ -24,6 +24,7 @@ import EnhancedTrailSystem from '../../tracking/map/components/EnhancedTrailSyst
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 import openSkyTrackingService from '../../../lib/services/openSkyTrackingService';
 import 'leaflet/dist/leaflet.css';
+import AircraftLookupTabs from '../../geofencing/AircraftLookupTabs';
 
 // Map Events component to handle zoom changes
 const MapEvents: React.FC = () => {
@@ -263,7 +264,7 @@ const EnhancedReactBaseMap: React.FC<ReactBaseMapProps> = ({ onError }) => {
       {/* Manufacturer filter using our draggable panel */}
       {manufacturers.length > 0 && (
         <div className="absolute top-5 left-5 z-50">
-          <EnhancedUnifiedSelector manufacturers={manufacturers} />
+          <AircraftLookupTabs manufacturers={manufacturers} />
         </div>
       )}
     </div>

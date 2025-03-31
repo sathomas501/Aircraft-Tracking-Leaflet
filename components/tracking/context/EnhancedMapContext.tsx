@@ -8,8 +8,11 @@ import React, {
   useRef,
 } from 'react';
 import L from 'leaflet';
-import type { SelectOption, ExtendedAircraft } from '@/types/base';
-import type { CachedAircraftData } from '@/types/base'; // Import your new type
+import type {
+  SelectOption,
+  ExtendedAircraft,
+  CachedAircraftData,
+} from '../../../types/base';
 import type { AircraftModel } from '../../../types/aircraft-models';
 import openSkyTrackingService from '@/lib/services/openSkyTrackingService';
 import {
@@ -18,6 +21,10 @@ import {
   mergeAircraftData,
   clearAircraftData,
 } from '../persistence/AircraftDataPersistence';
+import {
+  BaseTransforms,
+  OpenSkyTransforms,
+} from '../../../utils/aircraft-transform1';
 
 // Define trail position interface
 interface AircraftPosition {
@@ -130,6 +137,64 @@ interface EnhancedMapProviderProps {
   children: React.ReactNode;
   manufacturers: SelectOption[];
   onError: (message: string) => void;
+}
+
+// Add these functions to your EnhancedMapContext.tsx file, above the EnhancedMapProvider component
+
+/**
+ * Normalizes aircraft data from different systems to work with your existing types
+ * without requiring changes to the ExtendedAircraft interface
+ */
+function normalizeAircraft(aircraft: any): ExtendedAircraft {
+  // First, ensure the aircraft has all required properties for ExtendedAircraft
+  const normalizedAircraft: ExtendedAircraft = {
+    ...aircraft,
+    // Required properties from Aircraft
+    icao24: aircraft.icao24 || '',
+    'N-NUMBER': aircraft['N-NUMBER'] || '',
+    manufacturer: aircraft.manufacturer || '',
+    latitude: aircraft.latitude || aircraft.lat || 0,
+    longitude: aircraft.longitude || aircraft.lng || 0,
+    altitude: aircraft.altitude || 0,
+    heading: aircraft.heading || 0,
+    velocity: aircraft.velocity || 0,
+    on_ground: aircraft.on_ground || false,
+    last_contact:
+      aircraft.last_contact ||
+      aircraft.lastContact ||
+      Math.floor(Date.now() / 1000),
+    NAME: aircraft.NAME || '',
+    CITY: aircraft.CITY || '',
+    STATE: aircraft.STATE || '',
+    OWNER_TYPE: aircraft.OWNER_TYPE || aircraft.ownerType || '',
+    TYPE_AIRCRAFT:
+      aircraft.TYPE_AIRCRAFT ||
+      aircraft.type_aircraft ||
+      aircraft.type ||
+      'Unknown',
+    isTracked: true,
+    lastSeen: aircraft.lastSeen || Date.now(),
+
+    // ExtendedAircraft specific properties
+    type:
+      aircraft.TYPE_AIRCRAFT ||
+      aircraft.type_aircraft ||
+      aircraft.type ||
+      'Unknown',
+    isGovernment:
+      aircraft.OWNER_TYPE === 'Government' ||
+      aircraft.ownerType === 'Government' ||
+      false,
+  };
+
+  return normalizedAircraft;
+}
+
+/**
+ * Normalize an array of aircraft
+ */
+function normalizeAircraftArray(aircraftArray: any[]): ExtendedAircraft[] {
+  return aircraftArray.map(normalizeAircraft);
 }
 
 // Enhanced Map Provider component
@@ -252,11 +317,26 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
   // Update aircraft data with persistence
   const updateAircraftData = useCallback(
     (newAircraftArray: ExtendedAircraft[]) => {
+      console.log(
+        `[EnhancedMapContext] Updating with ${newAircraftArray.length} aircraft`
+      );
+
+      // Normalize aircraft data to ensure consistent format
+      const normalizedAircraft = normalizeAircraftArray(newAircraftArray);
+
+      if (normalizedAircraft.length > 0) {
+        console.log(
+          '[EnhancedMapContext] Sample normalized aircraft:',
+          normalizedAircraft[0]
+        );
+      }
+
       // Convert to a map for easier processing
       const newAircraftMap: Record<string, CachedAircraftData> = {};
 
-      newAircraftArray.forEach((aircraft) => {
+      normalizedAircraft.forEach((aircraft) => {
         if (aircraft.icao24) {
+          // Use the normalized data which should have all required fields
           newAircraftMap[aircraft.icao24] = {
             ...aircraft,
             // Ensure required fields for CachedAircraftData are present
@@ -280,6 +360,9 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
       );
       setLastPersistenceUpdate(Date.now());
 
+      // Update displayed aircraft
+      setDisplayedAircraft(normalizedAircraft);
+
       // If the selected aircraft is updated, update the selection
       if (selectedAircraft && newAircraftMap[selectedAircraft.icao24]) {
         const updatedAircraft = {
@@ -300,7 +383,8 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
     setTrackingStatus('Cache cleared');
   }, []);
 
-  // Update aircraft display based on selected model
+  // In EnhancedMapContext.tsx, update the updateAircraftDisplay method:
+
   const updateAircraftDisplay = useCallback(() => {
     // Get extended aircraft based on selected model
     const extendedAircraft = openSkyTrackingService.getExtendedAircraft(
@@ -311,10 +395,63 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
     const { models, totalActive: total } =
       openSkyTrackingService.getModelStats();
 
-    // Enhance aircraft data with persistence
-    updateAircraftData(extendedAircraft);
+    // Enhance aircraft data with persistence and ensure type compatibility
+    const completeAircraft = extendedAircraft.map((aircraft) => {
+      // Start with the original aircraft data
+      const enhanced = { ...aircraft };
 
-    setDisplayedAircraft(extendedAircraft);
+      // Set aircraft type using available properties, with fallbacks
+      enhanced.type =
+        aircraft.TYPE_AIRCRAFT || // Prefer uppercase version
+        aircraft.TYPE_AIRCRAFT ||
+        aircraft.type ||
+        'unknown';
+
+      // Set government status
+      enhanced.isGovernment =
+        aircraft.OWNER_TYPE === 'Government' ||
+        aircraft.OWNER_TYPE === 'Government' ||
+        false;
+
+      // Ensure both coordinate formats exist
+      if (typeof aircraft.latitude === 'number' && !isNaN(aircraft.latitude)) {
+        enhanced.latitude = aircraft.latitude;
+      }
+
+      if (
+        typeof aircraft.longitude === 'number' &&
+        !isNaN(aircraft.longitude)
+      ) {
+        enhanced.longitude = aircraft.longitude;
+      }
+
+      // Use lat/lng as fallbacks for latitude/longitude if needed
+      if (
+        typeof aircraft.latitude === 'number' &&
+        !isNaN(aircraft.latitude) &&
+        (!enhanced.latitude || isNaN(enhanced.latitude))
+      ) {
+        enhanced.latitude = aircraft.latitude;
+      }
+
+      if (
+        typeof aircraft.longitude === 'number' &&
+        !isNaN(aircraft.longitude) &&
+        (!enhanced.longitude || isNaN(enhanced.longitude))
+      ) {
+        enhanced.longitude = aircraft.longitude;
+      }
+
+      return enhanced;
+    });
+
+    console.log(
+      `[EnhancedMapContext] Updating display with ${completeAircraft.length} aircraft`
+    );
+
+    // Update persistence and state
+    updateAircraftData(completeAircraft);
+
     setActiveModels(models);
     setTotalActive(total);
     setIsLoading(openSkyTrackingService.isLoading());

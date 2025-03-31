@@ -17,6 +17,14 @@ let lastDayReset = Date.now();
 // Cache for recent requests
 const responseCache = new Map<string, { timestamp: number; data: any }>();
 
+// Geofence parameter validation
+interface GeofenceParams {
+  lamin: number; // Lower latitude bound (southern border)
+  lamax: number; // Upper latitude bound (northern border)
+  lomin: number; // Lower longitude bound (western border)
+  lomax: number; // Upper longitude bound (eastern border)
+}
+
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse
@@ -29,32 +37,67 @@ export default async function handler(
     });
   }
 
-  // Extract ICAO24 codes from request
-  const { icao24s } = req.body;
+  // Extract request parameters: either ICAO24 codes or geofence
+  const { icao24s, geofence } = req.body;
 
-  if (!Array.isArray(icao24s) || icao24s.length === 0) {
-    return res.status(400).json({
-      success: false,
-      error: 'Invalid or missing icao24s array',
-    });
+  // Generate a cache key based on the request
+  let requestKey: string;
+  let params = new URLSearchParams();
+  let requestType: 'icao' | 'geofence' = 'icao';
+
+  // Check if this is a geofence request
+  if (geofence && isValidGeofence(geofence)) {
+    requestType = 'geofence';
+    requestKey = `geofence-${JSON.stringify(geofence)}`;
+
+    // Add geofence parameters
+    params.append('lamin', geofence.lamin.toString());
+    params.append('lamax', geofence.lamax.toString());
+    params.append('lomin', geofence.lomin.toString());
+    params.append('lomax', geofence.lomax.toString());
+
+    console.log(
+      '[OpenSky Proxy] Geofence request:',
+      `lat [${geofence.lamin.toFixed(4)}, ${geofence.lamax.toFixed(4)}], ` +
+        `lng [${geofence.lomin.toFixed(4)}, ${geofence.lomax.toFixed(4)}]`
+    );
   }
+  // Otherwise, process as ICAO24 request (existing logic)
+  else if (Array.isArray(icao24s) && icao24s.length > 0) {
+    // Validate ICAO codes (6 hex characters)
+    const validIcaos = icao24s
+      .filter((code) => typeof code === 'string')
+      .map((code) => code.trim().toLowerCase())
+      .filter((code) => /^[0-9a-f]{6}$/.test(code));
 
-  // Validate ICAO codes (6 hex characters)
-  const validIcaos = icao24s
-    .filter((code) => typeof code === 'string')
-    .map((code) => code.trim().toLowerCase())
-    .filter((code) => /^[0-9a-f]{6}$/.test(code));
+    // Limit batch size
+    if (validIcaos.length > MAX_ICAOS_PER_REQUEST) {
+      return res.status(400).json({
+        success: false,
+        error: `Maximum ${MAX_ICAOS_PER_REQUEST} ICAO24 codes per request`,
+      });
+    }
 
-  // Limit batch size
-  if (validIcaos.length > MAX_ICAOS_PER_REQUEST) {
+    if (validIcaos.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'No valid ICAO24 codes provided',
+      });
+    }
+
+    requestKey = JSON.stringify(validIcaos.sort());
+    params.append('icao24', validIcaos.join(','));
+    params.append('extended', '1');
+  }
+  // Invalid request - missing both ICAO24 codes and geofence
+  else {
     return res.status(400).json({
       success: false,
-      error: `Maximum ${MAX_ICAOS_PER_REQUEST} ICAO24 codes per request`,
+      error: 'Must provide either valid icao24s array or geofence parameters',
     });
   }
 
   // Check cache for identical request
-  const requestKey = JSON.stringify(validIcaos.sort());
   const cachedResponse = responseCache.get(requestKey);
 
   if (cachedResponse && Date.now() - cachedResponse.timestamp < CACHE_TTL) {
@@ -90,15 +133,11 @@ export default async function handler(
       process.env.OPENSKY_API_URL || 'https://opensky-network.org/api';
     const endpoint = `${OPENSKY_API_URL}/states/all`;
 
-    // Build query parameters
-    const params = new URLSearchParams({
-      icao24: validIcaos.join(','),
-      extended: '1',
-    });
-
-    console.log(
-      `[OpenSky Proxy] Fetching ${validIcaos.length} aircraft from OpenSky API`
-    );
+    if (requestType === 'geofence') {
+      console.log('[OpenSky Proxy] Fetching aircraft within geofence');
+    } else {
+      console.log(`[OpenSky Proxy] Fetching aircraft by ICAO codes`);
+    }
 
     // Update rate limit counters
     requestsThisMinute++;
@@ -189,7 +228,10 @@ export default async function handler(
         timestamp: data.time || Date.now(),
         meta: {
           total: states.length,
-          requested: validIcaos.length,
+          requestType: requestType,
+          ...(requestType === 'geofence'
+            ? { geofence }
+            : { requested: (icao24s as string[]).length }),
         },
       },
     };
@@ -241,4 +283,37 @@ function checkAndResetRateLimits() {
     lastDayReset = now;
     console.log('[OpenSky Proxy] Reset daily rate limit counter');
   }
+}
+
+/**
+ * Validates geofence parameters
+ */
+function isValidGeofence(geofence: any): geofence is GeofenceParams {
+  if (!geofence || typeof geofence !== 'object') return false;
+
+  // Check that all required fields exist and are numbers
+  const hasValidFields =
+    typeof geofence.lamin === 'number' &&
+    typeof geofence.lamax === 'number' &&
+    typeof geofence.lomin === 'number' &&
+    typeof geofence.lomax === 'number';
+
+  if (!hasValidFields) return false;
+
+  // Validate ranges
+  const validLatitude =
+    geofence.lamin >= -90 &&
+    geofence.lamin <= 90 &&
+    geofence.lamax >= -90 &&
+    geofence.lamax <= 90 &&
+    geofence.lamin <= geofence.lamax;
+
+  const validLongitude =
+    geofence.lomin >= -180 &&
+    geofence.lomin <= 180 &&
+    geofence.lomax >= -180 &&
+    geofence.lomax <= 180 &&
+    geofence.lomin <= geofence.lomax;
+
+  return validLatitude && validLongitude;
 }
