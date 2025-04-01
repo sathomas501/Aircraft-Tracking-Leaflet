@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useEnhancedMapContext } from '../context/EnhancedMapContext';
 import type { SelectOption } from '@/types/base';
 import type { ExtendedAircraft } from '../../../types/base';
-import type { AircraftModel } from '@/types/aircraft-models';
+import type { AircraftModel } from '../../../types/aircraft-models';
 import { adaptGeofenceAircraft } from '../../../lib/utils/geofenceAdapter';
 import {
   zipCodeToCoordinates,
@@ -10,6 +10,7 @@ import {
   getAircraftNearLocation,
   calculateDistance,
 } from '../../../lib/services/geofencing';
+import { enrichGeofenceAircraft } from '../../../lib/utils/geofenceEnricher';
 
 interface UnifiedAircraftSelectorProps {
   manufacturers: SelectOption[];
@@ -18,7 +19,8 @@ interface UnifiedAircraftSelectorProps {
 const UnifiedAircraftSelector: React.FC<UnifiedAircraftSelectorProps> = ({
   manufacturers,
 }) => {
-  // Context state
+  // Context state - add updateGeofenceAircraft to your destructuring
+  // At the top of your UnifiedAircraftSelector component, update your context destructuring
   const {
     selectedManufacturer,
     selectedModel,
@@ -29,9 +31,11 @@ const UnifiedAircraftSelector: React.FC<UnifiedAircraftSelectorProps> = ({
     selectModel,
     reset,
     fullRefresh,
+    refreshPositions, // Add this line
     mapInstance,
     updateAircraftData,
     clearGeofenceData,
+    updateGeofenceAircraft,
   } = useEnhancedMapContext();
 
   // Local state for geofence loading
@@ -47,6 +51,7 @@ const UnifiedAircraftSelector: React.FC<UnifiedAircraftSelectorProps> = ({
   const [manufacturerSearchTerm, setManufacturerSearchTerm] = useState('');
   const [isManufacturerMenuOpen, setIsManufacturerMenuOpen] = useState(false);
   const [isModelMenuOpen, setIsModelMenuOpen] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Geofence state
   const [geofenceLocation, setGeofenceLocation] = useState<string>('');
@@ -150,7 +155,7 @@ const UnifiedAircraftSelector: React.FC<UnifiedAircraftSelectorProps> = ({
     }
   };
 
-  // Process geofence search with actual API
+  // Only showing the modified processGeofenceSearch function
   const processGeofenceSearch = async () => {
     if (!geofenceLocation) return;
 
@@ -246,100 +251,85 @@ const UnifiedAircraftSelector: React.FC<UnifiedAircraftSelectorProps> = ({
         throw new Error('Could not determine coordinates for the location');
       }
 
-      // Process and update aircraft data
       console.log(
         `Found ${fetchedAircraft.length} aircraft in the area, preparing for display...`
       );
 
-      // First, log a sample of what we received
-      if (fetchedAircraft.length > 0) {
-        console.log(
-          'Raw aircraft data sample (first aircraft):',
-          fetchedAircraft[0]
+      if (fetchedAircraft.length === 0) {
+        alert(
+          `No aircraft found near ${geofenceLocation}. Try increasing the radius or searching in a different area.`
         );
+        setLocalLoading(false);
+        return;
       }
 
-      // Fix aircraft data to ensure all required fields are present for rendering
-      const enhancedAircraft = fetchedAircraft.map((aircraft) => {
-        // Check if data is already compatible with the map rendering
-        const isTypePresent = typeof aircraft.type !== 'undefined';
+      // Step 1: First adapt the raw geofence data to normalized format
+      const adaptedAircraft = adaptGeofenceAircraft(fetchedAircraft);
 
-        return {
-          ...aircraft,
-          // Ensure these fields exist for map rendering
-          heading: aircraft.heading || (aircraft as any).true_track || 0,
-          // Convert OWNER_TYPE to isGovernment boolean flag
-          isGovernment:
-            aircraft.OWNER_TYPE === '5' || aircraft.OWNER_TYPE === '5' || false,
-          // Add type field if not present
-          type: isTypePresent ? aircraft.type : getAircraftType(aircraft),
-          // Ensure marker field exists (used for rendering)
-          marker: aircraft.marker || 'default',
-          // Add on_ground field if not present
-          on_ground:
-            typeof aircraft.on_ground !== 'undefined'
-              ? aircraft.on_ground
-              : false,
-          // Add lastSeen timestamp if not present
-          lastSeen: aircraft.lastSeen || aircraft.last_contact || Date.now(),
-          // Add isTracked field (required by map)
-          isTracked: true,
-        };
-      });
+      // Step 2: Now enrich the adapted aircraft with data from the tracking API
+      console.log('Enriching geofence aircraft with static data...');
+      const enrichedAircraft = await enrichGeofenceAircraft(adaptedAircraft);
 
-      // Add debug logging for after enhancement
-      if (enhancedAircraft.length > 0) {
-        console.log('Enhanced aircraft data sample (first aircraft):', {
-          icao24: enhancedAircraft[0].icao24,
-          type: enhancedAircraft[0].type,
-          isGovernment: enhancedAircraft[0].isGovernment,
-          heading: enhancedAircraft[0].heading,
-          on_ground: enhancedAircraft[0].on_ground,
-          latitude: enhancedAircraft[0].latitude,
-          longitude: enhancedAircraft[0].longitude,
-          lastSeen: enhancedAircraft[0].lastSeen,
-          isTracked: enhancedAircraft[0].isTracked,
+      // Log the first aircraft after enrichment for debugging
+      if (enrichedAircraft.length > 0) {
+        console.log('Enriched aircraft sample:', {
+          icao24: enrichedAircraft[0].icao24,
+          manufacturer: enrichedAircraft[0].manufacturer,
+          model: enrichedAircraft[0].model,
+          type: enrichedAircraft[0].type,
+          isGovernment: enrichedAircraft[0].isGovernment,
+          hasStaticData: enrichedAircraft[0].manufacturer !== 'Unknown',
         });
       }
 
-      setGeofenceAircraft(enhancedAircraft);
+      // Save to local state for display in the UI
+      setGeofenceAircraft(enrichedAircraft);
 
       // Important: Clear any existing aircraft data first
-      // This ensures we don't have conflicts with previous data
       if (clearGeofenceData) {
         clearGeofenceData();
+        console.log('Cleared existing aircraft data');
       }
 
-      // Update the map with our new aircraft data
-      updateAircraftData(enhancedAircraft);
-      setIsGeofenceActive(true);
+      // Use the updateGeofenceAircraft function from context
+      // Delay slightly to ensure UI updates properly
+      setTimeout(() => {
+        updateGeofenceAircraft(enrichedAircraft);
+        console.log(
+          `Sent ${enrichedAircraft.length} enriched aircraft to map for display`
+        );
+        setIsGeofenceActive(true);
 
-      // Center the map
-      if (mapInstance && coordinates) {
-        // Calculate map bounds based on radius
-        const radiusInDegrees = geofenceRadius / 111; // Rough conversion from km to degrees
-        const bounds = [
-          [
-            coordinates.lat - radiusInDegrees,
-            coordinates.lng - radiusInDegrees,
-          ],
-          [
-            coordinates.lat + radiusInDegrees,
-            coordinates.lng + radiusInDegrees,
-          ],
-        ];
+        // Center the map
+        if (mapInstance && coordinates) {
+          // Calculate map bounds based on radius
+          const radiusInDegrees = geofenceRadius / 111; // Rough conversion from km to degrees
+          const bounds = [
+            [
+              coordinates.lat - radiusInDegrees,
+              coordinates.lng - radiusInDegrees,
+            ],
+            [
+              coordinates.lat + radiusInDegrees,
+              coordinates.lng + radiusInDegrees,
+            ],
+          ];
 
-        // First set the view to ensure the map is looking at the right area
-        mapInstance.setView([coordinates.lat, coordinates.lng], 9);
+          // First set the view to ensure the map is looking at the right area
+          mapInstance.setView([coordinates.lat, coordinates.lng], 9);
 
-        // Then fit bounds after a short delay to ensure the map is ready
-        setTimeout(() => {
-          mapInstance.fitBounds(bounds as any);
-          console.log(
-            `Map centered on area: ${coordinates.lat}, ${coordinates.lng} with radius ${geofenceRadius}km`
-          );
-        }, 100);
-      }
+          // Then fit bounds after a short delay to ensure the map is ready
+          setTimeout(() => {
+            mapInstance.fitBounds(bounds as any);
+            console.log(
+              `Map centered on area: ${coordinates.lat}, ${coordinates.lng} with radius ${geofenceRadius}km`
+            );
+
+            // Force a refresh of the map tiles (sometimes helps with marker rendering)
+            mapInstance.invalidateSize();
+          }, 200);
+        }
+      }, 100);
     } catch (error) {
       console.error('Error in geofence search:', error);
       // Show error to the user
@@ -438,6 +428,116 @@ const UnifiedAircraftSelector: React.FC<UnifiedAircraftSelectorProps> = ({
   const handleModelSelect = (value: string) => {
     selectModel(value === '' ? null : value);
     setIsModelMenuOpen(false);
+  };
+
+  // Add this handler function for the refresh button that works with both search types
+  const handleManualRefresh = async () => {
+    // Don't allow refreshing if we're already refreshing
+    if (isRefreshing) {
+      return;
+    }
+
+    setIsRefreshing(true);
+
+    try {
+      // Check which mode we're in and refresh accordingly
+      if (
+        filterMode === 'manufacturer' ||
+        (filterMode === 'both' && selectedManufacturer)
+      ) {
+        // Manufacturer search refresh
+        console.log('Refreshing manufacturer aircraft data...');
+
+        if (!selectedManufacturer) {
+          console.log('No manufacturer selected, skipping refresh');
+          return;
+        }
+
+        // Use the context's refreshPositions function for manufacturer refresh
+        await refreshPositions();
+        console.log('Manufacturer aircraft data refreshed');
+      } else if (
+        filterMode === 'geofence' ||
+        (filterMode === 'both' && isGeofenceActive)
+      ) {
+        // Geofence search refresh
+        console.log('Refreshing geofence aircraft data...');
+
+        if (!geofenceCoordinates || !isGeofenceActive) {
+          console.log('No active geofence, skipping refresh');
+          return;
+        }
+
+        // Get fresh aircraft data using current coordinates
+        const refreshedAircraft = await getAircraftNearLocation(
+          geofenceCoordinates.lat,
+          geofenceCoordinates.lng,
+          geofenceRadius
+        );
+
+        console.log(
+          `Refreshed data: Found ${refreshedAircraft.length} aircraft in the area`
+        );
+
+        // Process the new data
+        if (refreshedAircraft.length > 0) {
+          // Step 1: Adapt the new geofence data
+          const adaptedAircraft = adaptGeofenceAircraft(refreshedAircraft);
+
+          // Step 2: Enrich with static data
+          const enrichedAircraft =
+            await enrichGeofenceAircraft(adaptedAircraft);
+
+          // Update local state
+          setGeofenceAircraft(enrichedAircraft);
+
+          // Update the map
+          updateGeofenceAircraft(enrichedAircraft);
+
+          console.log(
+            `Successfully refreshed ${enrichedAircraft.length} aircraft`
+          );
+        } else {
+          console.log('No aircraft found in refresh');
+        }
+      } else if (filterMode === 'both') {
+        // Combined mode - do both refreshes
+        console.log('Refreshing both manufacturer and geofence data...');
+
+        // First refresh manufacturer data if available
+        if (selectedManufacturer) {
+          await refreshPositions();
+          console.log('Manufacturer aircraft data refreshed');
+        }
+
+        // Then refresh geofence data if available
+        if (geofenceCoordinates && isGeofenceActive) {
+          const refreshedAircraft = await getAircraftNearLocation(
+            geofenceCoordinates.lat,
+            geofenceCoordinates.lng,
+            geofenceRadius
+          );
+
+          if (refreshedAircraft.length > 0) {
+            const adaptedAircraft = adaptGeofenceAircraft(refreshedAircraft);
+            const enrichedAircraft =
+              await enrichGeofenceAircraft(adaptedAircraft);
+            setGeofenceAircraft(enrichedAircraft);
+            updateGeofenceAircraft(enrichedAircraft);
+            console.log(
+              `Successfully refreshed ${enrichedAircraft.length} geofence aircraft`
+            );
+          }
+        }
+      } else {
+        console.log('No active search to refresh');
+      }
+    } catch (error) {
+      console.error('Error refreshing aircraft data:', error);
+      alert('Failed to refresh aircraft data. Please try again.');
+    } finally {
+      setIsRefreshing(false);
+    }
   };
 
   // Sort models by popularity for quick selection
@@ -960,15 +1060,43 @@ const UnifiedAircraftSelector: React.FC<UnifiedAircraftSelectorProps> = ({
             Clear All Filters
           </button>
           <button
-            onClick={() => fullRefresh()}
-            disabled={combinedLoading}
-            className={`flex-1 px-3 py-2 rounded-md text-sm font-medium text-white ${
-              combinedLoading
+            onClick={handleManualRefresh}
+            className={`flex items-center justify-center px-4 py-2 ${
+              isRefreshing
                 ? 'bg-gray-400 cursor-not-allowed'
                 : 'bg-indigo-600 hover:bg-indigo-700'
-            }`}
+            } text-white font-medium rounded-md w-full`}
+            disabled={
+              isRefreshing || (!selectedManufacturer && !isGeofenceActive)
+            }
           >
-            Refresh Data
+            {isRefreshing ? (
+              <>
+                <svg
+                  className="animate-spin -ml-1 mr-2 h-4 w-4 text-white"
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                >
+                  <circle
+                    className="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                  ></circle>
+                  <path
+                    className="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                  ></path>
+                </svg>
+                Refreshing...
+              </>
+            ) : (
+              'Refresh Data'
+            )}
           </button>
         </div>
       </div>

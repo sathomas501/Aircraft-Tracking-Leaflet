@@ -3,6 +3,10 @@
 @tailwind components;
 @tailwind utilities;
 
+/* == Aircraft Customization ===*/
+@import './aircraftMapElements.css';
+@import './dropdown-styles.css';
+
 /* === Base Layer === */
 @layer base {
   html,

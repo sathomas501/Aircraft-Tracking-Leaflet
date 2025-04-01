@@ -136,10 +136,10 @@ function determineAircraftType(aircraft: Aircraft): string {
   for (const field of possibleHelicopterFields) {
     const value = aircraft[field as keyof Aircraft];
     if (
-      (typeof value === 'string' &&
-        value.toLowerCase().includes('helicopter')) ||
-      value.toLowerCase().includes('helo') ||
-      value.toLowerCase().includes('rotor')
+      typeof value === 'string' &&
+      (value.toLowerCase().includes('helicopter') ||
+        value.toLowerCase().includes('helo') ||
+        value.toLowerCase().includes('rotor'))
     ) {
       return 'helicopter';
     }

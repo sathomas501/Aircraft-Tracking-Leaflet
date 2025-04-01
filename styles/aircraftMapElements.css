@@ -1,5 +1,5 @@
 /* ===== Aircraft Map Elements Stylesheet ===== */
-/* This file contains styles for aircraft markers, tooltips, and popups */
+/* Combined and organized styles for aircraft markers, tooltips, and popups */
 
 /* === Animations === */
 @keyframes moveIn {
@@ -90,36 +90,50 @@
   background: none;
   border: none;
   pointer-events: none !important;
+  transition: transform 0.2s ease;
 }
 
 .custom-aircraft-marker.selected {
   z-index: 1010 !important;
+  transform: scale(1.2);
 }
 
-/* Aircraft icons */
-.aircraft-icon {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  transition: transform 0.3s ease-out;
-  pointer-events: none !important;
-  z-index: 1000 !important;
-}
-
-.aircraft-icon:hover {
-  animation: floatEffect 2s ease-in-out infinite;
-}
-
-.aircraft-icon.selected {
-  z-index: 1010 !important;
-}
-
-.aircraft-icon.selected img {
-  filter: drop-shadow(0 0 5px #4a80f5);
-}
-
-.aircraft-icon.grounded img {
+.custom-aircraft-marker.grounded img {
   opacity: 0.7;
+}
+
+/* Aircraft type-specific markers */
+.helicopter-type {
+  /* Specific styles for helicopter markers */
+}
+
+.jet-type {
+  /* Specific styles for jet markers */
+}
+
+.turboprop-type {
+  /* Specific styles for turboprop markers */
+}
+
+.singleEngine-type {
+  /* Specific styles for single engine markers */
+}
+
+.twinEngine-type {
+  /* Specific styles for twin engine markers */
+}
+
+/* Owner type-specific markers */
+.government-owner {
+  /* For government aircraft */
+}
+
+.individual-owner {
+  /* For individual-owned aircraft */
+}
+
+.corporation-owner {
+  /* For corporation-owned aircraft */
 }
 
 /* Touch target for aircraft markers */
@@ -136,19 +150,69 @@
   z-index: 999;
 }
 
-/* Touch area with greater visibility for debugging */
-.aircraft-touch-area {
-  cursor: pointer !important;
-  pointer-events: auto !important;
+/* === Aircraft Type Badge Styles === */
+.aircraft-type-badge {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
-/* For debugging */
-.aircraft-touch-area div {
-  background-color: rgba(0, 0, 255, 0.05);
-  border-radius: 50%;
-  width: 100%;
-  height: 100%;
-  cursor: pointer !important;
+.helicopter-badge {
+  background-color: #5c6bc0;
+  color: white;
+}
+
+.jet-badge {
+  background-color: #26a69a;
+  color: white;
+}
+
+.turboprop-badge {
+  background-color: #ec407a;
+  color: white;
+}
+
+.singleEngine-badge {
+  background-color: #ff7043;
+  color: white;
+}
+
+.twinEngine-badge {
+  background-color: #7e57c2;
+  color: white;
+}
+
+/* === Status Badge Styling === */
+.status-badge {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.on-ground {
+  background-color: #ef5350;
+  color: white;
+}
+
+.in-flight {
+  background-color: #66bb6a;
+  color: white;
+}
+
+.on-ground-status {
+  color: #ef5350;
+  font-weight: 600;
+}
+
+.in-flight-status {
+  color: #66bb6a;
+  font-weight: 600;
 }
 
 /* === Aircraft Tooltips === */
@@ -177,9 +241,18 @@
   visibility: visible !important;
 }
 
+/* Header section with callsign and aircraft type */
+.aircraft-tooltip-header {
+  padding: 8px 10px 4px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+  padding-bottom: 4px;
+  margin-bottom: 6px;
+}
+
 .aircraft-callsign {
   font-weight: bold;
   font-size: 0.875rem;
+  margin-bottom: 2px;
 }
 
 .aircraft-model {
@@ -187,12 +260,53 @@
   color: #4b5563;
 }
 
+/* Tooltip content styling */
+.aircraft-tooltip-content {
+  padding: 6px 10px 8px;
+}
+
 .aircraft-data-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 0.5rem;
+  column-gap: 8px;
+  row-gap: 4px;
   font-size: 0.75rem;
   margin-top: 0.25rem;
+}
+
+.aircraft-data-full {
+  grid-column: 1 / -1;
+}
+
+.data-label {
+  color: #6b7280;
+  font-weight: 500;
+}
+
+.data-value {
+  font-weight: 500;
+  color: #111827;
+}
+
+/* Type-specific tooltip styling */
+.helicopter-type .aircraft-tooltip-header {
+  border-bottom-color: #5c6bc0;
+}
+
+.jet-type .aircraft-tooltip-header {
+  border-bottom-color: #26a69a;
+}
+
+.turboprop-type .aircraft-tooltip-header {
+  border-bottom-color: #ec407a;
+}
+
+.singleEngine-type .aircraft-tooltip-header {
+  border-bottom-color: #ff7043;
+}
+
+.twinEngine-type .aircraft-tooltip-header {
+  border-bottom-color: #7e57c2;
 }
 
 /* === Aircraft Popups === */
@@ -200,91 +314,221 @@
   min-width: 220px;
   max-width: 90vw;
   z-index: 3000 !important;
+  padding: 12px;
+  position: relative;
 }
 
 .aircraft-popup .leaflet-popup-content {
   margin: 0 !important;
   padding: 0 !important;
-  min-width: 200px !important;
+  min-width: 240px !important;
 }
 
 .aircraft-popup .leaflet-popup-content-wrapper {
   border-radius: 8px !important;
   padding: 0 !important;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15) !important;
+}
+
+/* Header with close button */
+.aircraft-popup .flex {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  border-bottom: 1px solid #e5e7eb;
+  padding-bottom: 8px;
 }
 
 .aircraft-popup h3 {
   font-size: 1.125rem;
   font-weight: bold;
-  border-bottom: 1px solid #e5e7eb;
-  padding-bottom: 0.25rem;
-  margin-bottom: 0.5rem;
+  margin: 0 0 8px 0;
 }
 
-.aircraft-popup table {
-  width: 100%;
+.aircraft-popup button.text-gray-500 {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.aircraft-popup button.text-gray-500:hover {
+  color: #4b5563;
+}
+
+/* Two-column grid layout for popup data */
+.aircraft-popup .grid {
+  display: grid;
+  grid-template-columns: 40% 60%;
+  row-gap: 6px;
+  column-gap: 5px;
+  margin-bottom: 12px;
   font-size: 0.875rem;
-  border-collapse: collapse;
 }
 
-.aircraft-popup td:first-child {
+.aircraft-popup .grid > div:nth-child(odd) {
   font-weight: 500;
   color: #4b5563;
-  padding-right: 0.5rem;
-  width: 33%;
+  padding-right: 5px;
 }
 
-.aircraft-popup td:last-child {
+.aircraft-popup .grid > div:nth-child(even) {
   color: #111827;
+  font-weight: 500;
 }
 
-.aircraft-popup tr {
-  border-bottom: 1px solid #f3f4f6;
+/* Type-specific sections in popups */
+.type-specific-section {
+  margin-top: 10px;
+  border-radius: 4px;
+  font-size: 0.85rem;
 }
 
-.aircraft-popup tr:last-child {
-  border-bottom: none;
+/* Type-specific popup styling */
+.helicopter-popup {
+  border-top: 3px solid #5c6bc0;
 }
 
+.jet-popup {
+  border-top: 3px solid #26a69a;
+}
+
+.turboprop-popup {
+  border-top: 3px solid #ec407a;
+}
+
+.singleEngine-popup {
+  border-top: 3px solid #ff7043;
+}
+
+.twinEngine-popup {
+  border-top: 3px solid #7e57c2;
+}
+
+/* Owner Type Border styles */
+.government-owner {
+  border-left: 3px solid #c62828;
+}
+
+.corporation-owner {
+  border-left: 3px solid #1976d2;
+}
+
+.individual-owner {
+  border-left: 3px solid #388e3c;
+}
+
+.partnership-owner {
+  border-left: 3px solid #fbc02d;
+}
+
+.llc-owner {
+  border-left: 3px solid #f57c00;
+}
+
+/* Owner Type Indicator styles */
+.owner-type-indicator {
+  position: relative;
+  padding-left: 4px;
+}
+
+.government-owner .owner-type-indicator {
+  color: #c62828;
+  font-weight: 700;
+}
+
+.corporation-owner .owner-type-indicator {
+  color: #1976d2;
+}
+
+.individual-owner .owner-type-indicator {
+  color: #388e3c;
+}
+
+.llc-owner .owner-type-indicator {
+  color: #f57c00;
+}
+
+/* Popup actions and buttons */
 .popup-actions {
-  margin-top: 0.5rem;
+  margin-top: 12px;
   text-align: center;
 }
 
 .popup-button {
-  background-color: #3b82f6;
+  padding: 6px 12px;
+  border-radius: 4px;
+  background-color: #3949ab;
   color: white;
-  padding: 0.25rem 0.5rem;
-  border-radius: 0.25rem;
-  font-size: 0.75rem;
+  font-weight: 600;
+  font-size: 0.8rem;
   border: none;
   cursor: pointer;
-  transition: background-color 0.15s ease;
+  transition: background-color 0.2s ease;
 }
 
 .popup-button:hover {
   background-color: #2563eb;
 }
 
-/* Status indicators */
-.status-badge {
-  padding: 0.25rem 0.5rem;
-  border-radius: 9999px;
-  font-size: 0.75rem;
-  font-weight: 500;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
+/* Button styling based on aircraft type */
+.helicopter-button {
+  background-color: #5c6bc0;
 }
 
-.status-badge.in-flight {
-  background-color: #dbeafe;
-  color: #1e40af;
+.jet-button {
+  background-color: #26a69a;
 }
 
-.status-badge.on-ground {
-  background-color: #ffedd5;
-  color: #9a3412;
+.turboprop-button {
+  background-color: #ec407a;
+}
+
+.singleEngine-button {
+  background-color: #ff7043;
+}
+
+.twinEngine-button {
+  background-color: #7e57c2;
+}
+
+.government-owner .popup-button {
+  background-color: #c62828;
+}
+
+/* === Draggable Panel Styles === */
+.draggable-panel {
+  cursor: grab;
+  user-select: none;
+  transition: box-shadow 0.2s ease-in-out;
+}
+
+.draggable-panel:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.draggable-panel.dragging {
+  cursor: grabbing;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+  opacity: 0.95;
+}
+
+.drag-handle {
+  cursor: grab;
+}
+
+.draggable-panel.dragging .drag-handle {
+  cursor: grabbing;
+}
+
+/* Ensure buttons and links don't inherit the grab cursor */
+.draggable-panel button,
+.draggable-panel a {
+  cursor: pointer;
 }
 
 /* === Leaflet Overrides === */
@@ -321,12 +565,21 @@
 /* === Responsive Adjustments === */
 @media (max-width: 640px) {
   .aircraft-tooltip {
-    min-width: 150px !important;
+    min-width: 160px !important;
     font-size: 0.75rem !important;
+  }
+
+  .aircraft-data-grid {
+    grid-template-columns: 1fr 1fr;
+    font-size: 0.7rem;
   }
 
   .aircraft-popup {
     min-width: 180px !important;
+  }
+
+  .aircraft-popup .grid {
+    font-size: 0.75rem;
   }
 }
 
@@ -338,271 +591,5 @@
 
   .aircraft-tooltip {
     max-width: 80vw;
-  }
-}
-
-/* Add these styles to your global CSS or component CSS file */
-
-/* Grabbable panel styles */
-.grabbable-panel {
-  cursor: grab;
-  user-select: none;
-  transition: box-shadow 0.2s ease;
-}
-
-.grabbable-panel:hover {
-  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
-}
-
-.grabbable-panel.grabbing {
-  cursor: grabbing;
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
-}
-
-/* Ensure header looks draggable */
-.grabbable-panel .header {
-  cursor: grab;
-}
-
-.grabbable-panel.grabbing .header {
-  cursor: grabbing;
-}
-
-/* Make sure normal cursor appears for buttons and interactive elements */
-.grabbable-panel button,
-.grabbable-panel a,
-.grabbable-panel .interactive {
-  cursor: pointer;
-}
-
-/* Add this to your CSS file */
-
-.draggable-panel {
-  cursor: grab;
-  user-select: none;
-  transition: box-shadow 0.2s ease-in-out;
-}
-
-.draggable-panel:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-}
-
-.draggable-panel.dragging {
-  cursor: grabbing;
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
-  opacity: 0.95;
-}
-
-.drag-handle {
-  cursor: grab;
-}
-
-.draggable-panel.dragging .drag-handle {
-  cursor: grabbing;
-}
-
-/* Ensure buttons and links don't inherit the grab cursor */
-.draggable-panel button,
-.draggable-panel a {
-  cursor: pointer;
-}
-
-/* Enhanced Aircraft Tooltip Styles */
-
-.aircraft-tooltip {
-  pointer-events: none !important;
-  border: 1px solid rgba(0, 0, 0, 0.2) !important;
-  border-radius: 6px !important;
-  padding: 0 !important;
-  background-color: rgba(255, 255, 255, 0.95) !important;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15) !important;
-  min-width: 180px;
-  max-width: 300px;
-  transition:
-    opacity 0.2s ease,
-    visibility 0.2s ease;
-  z-index: 2200 !important;
-}
-
-/* Header section with callsign and aircraft type */
-.aircraft-tooltip-header {
-  padding: 8px 10px 4px;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
-}
-
-.aircraft-callsign {
-  font-weight: bold;
-  font-size: 0.875rem;
-  margin-bottom: 2px;
-}
-
-.aircraft-model {
-  font-size: 0.75rem;
-  color: #4b5563;
-}
-
-/* Main content area with aircraft data */
-.aircraft-tooltip-content {
-  padding: 6px 10px 8px;
-}
-
-/* Two-column grid layout for data */
-.aircraft-data-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  column-gap: 8px;
-  row-gap: 4px;
-  font-size: 0.75rem;
-  margin-top: 0.25rem;
-}
-
-/* For data that should span the full width */
-.aircraft-data-full {
-  grid-column: 1 / -1;
-}
-
-/* Styles for labels and values */
-.data-label {
-  color: #6b7280;
-  font-weight: 500;
-}
-
-.data-value {
-  font-weight: 500;
-  color: #111827;
-}
-
-/* Responsive adjustments */
-@media (max-width: 640px) {
-  .aircraft-tooltip {
-    min-width: 160px !important;
-  }
-
-  .aircraft-data-grid {
-    grid-template-columns: 1fr 1fr;
-    font-size: 0.7rem;
-  }
-}
-
-/* Enhanced Aircraft Popup Styles */
-
-.aircraft-popup {
-  min-width: 220px;
-  max-width: 90vw;
-  z-index: 3000 !important;
-  padding: 12px;
-}
-
-.aircraft-popup .leaflet-popup-content {
-  margin: 0 !important;
-  padding: 0 !important;
-  min-width: 240px !important;
-}
-
-.aircraft-popup .leaflet-popup-content-wrapper {
-  border-radius: 8px !important;
-  padding: 0 !important;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15) !important;
-}
-
-.aircraft-popup h3 {
-  font-size: 1.125rem;
-  font-weight: bold;
-  margin: 0 0 8px 0;
-}
-
-/* Two-column grid layout for popup data */
-.aircraft-popup .grid {
-  display: grid;
-  grid-template-columns: 40% 60%;
-  row-gap: 6px;
-  column-gap: 5px;
-  margin-bottom: 12px;
-  font-size: 0.875rem;
-}
-
-.aircraft-popup .grid > div:nth-child(odd) {
-  font-weight: 500;
-  color: #4b5563;
-  padding-right: 5px;
-}
-
-.aircraft-popup .grid > div:nth-child(even) {
-  color: #111827;
-  font-weight: 500;
-}
-
-/* Status indicators */
-.status-badge {
-  padding: 4px 8px;
-  border-radius: 9999px;
-  font-size: 0.75rem;
-  font-weight: 500;
-  display: inline-block;
-  text-align: center;
-}
-
-.status-badge.in-flight {
-  background-color: #dbeafe;
-  color: #1e40af;
-}
-
-.status-badge.on-ground {
-  background-color: #ffedd5;
-  color: #9a3412;
-}
-
-.popup-actions {
-  margin-top: 12px;
-  text-align: center;
-}
-
-.popup-button {
-  background-color: #3b82f6;
-  color: white;
-  padding: 6px 12px;
-  border-radius: 4px;
-  font-size: 0.875rem;
-  border: none;
-  cursor: pointer;
-  transition: background-color 0.15s ease;
-}
-
-.popup-button:hover {
-  background-color: #2563eb;
-}
-
-/* Header with close button */
-.aircraft-popup .flex {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 8px;
-  border-bottom: 1px solid #e5e7eb;
-  padding-bottom: 8px;
-}
-
-.aircraft-popup button.text-gray-500 {
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 4px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.aircraft-popup button.text-gray-500:hover {
-  color: #4b5563;
-}
-
-/* Responsive adjustments */
-@media (max-width: 640px) {
-  .aircraft-popup {
-    min-width: 180px !important;
-  }
-
-  .aircraft-popup .grid {
-    font-size: 0.75rem;
   }
 }

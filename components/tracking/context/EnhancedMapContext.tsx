@@ -72,6 +72,8 @@ interface EnhancedMapContextType {
   fullRefresh: () => Promise<void>;
   clearCache: () => void;
   clearGeofenceData: () => void;
+  // Add new function for updating aircraft from geofence
+  updateGeofenceAircraft: (geofenceAircraft: ExtendedAircraft[]) => void;
 
   // Trail actions
   toggleTrails: () => void;
@@ -118,6 +120,8 @@ const EnhancedMapContext = createContext<EnhancedMapContextType>({
   fullRefresh: async () => {},
   clearCache: () => {},
   clearGeofenceData: () => {},
+  // Add default for new function
+  updateGeofenceAircraft: () => {},
 
   // Trail actions
   toggleTrails: () => {},
@@ -177,6 +181,9 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
     null
   );
 
+  // Flag to track if we're in geofence mode
+  const [isGeofenceMode, setIsGeofenceMode] = useState<boolean>(false);
+
   // Trail state
   const [trailsEnabled, setTrailsEnabled] = useState<boolean>(false);
   const [maxTrailLength, setMaxTrailLength] = useState<number>(10);
@@ -213,7 +220,10 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
   useEffect(() => {
     // Subscribe to tracking updates that include trail data
     const handleTrackingUpdate = (data: any) => {
-      updateAircraftDisplay();
+      // Only update displayed aircraft if we're not in geofence mode
+      if (!isGeofenceMode) {
+        updateAircraftDisplay();
+      }
 
       // Update trail data if present
       if (data.trails) {
@@ -249,7 +259,7 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
         unsubscribeStatusRef.current();
       }
     };
-  }, []);
+  }, [isGeofenceMode]);
 
   // Update aircraft data with persistence
   const updateAircraftData = useCallback(
@@ -316,19 +326,87 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
     // Enhance aircraft data with persistence
     updateAircraftData(extendedAircraft as ExtendedAircraft[]);
 
-    setDisplayedAircraft(extendedAircraft as ExtendedAircraft[]);
-    setActiveModels(models);
-    setTotalActive(total);
+    // Only update displayed aircraft if we're not in geofence mode
+    if (!isGeofenceMode) {
+      setDisplayedAircraft(extendedAircraft as ExtendedAircraft[]);
+      setActiveModels(models);
+      setTotalActive(total);
+    }
+
     setIsLoading(openSkyTrackingService.isLoading());
-  }, [selectedModel, updateAircraftData]);
+  }, [selectedModel, updateAircraftData, isGeofenceMode]);
 
   // Update display when model selection changes
   useEffect(() => {
     updateAircraftDisplay();
   }, [selectedModel, updateAircraftDisplay]);
 
+  // New function to handle geofence aircraft updates
+  const updateGeofenceAircraft = useCallback(
+    (geofenceAircraft: ExtendedAircraft[]) => {
+      // Mark that we're in geofence mode
+      setIsGeofenceMode(true);
+
+      console.log(
+        `[EnhancedMapContext] Updating ${geofenceAircraft.length} aircraft from geofence`
+      );
+
+      // Update the cached data (same as regular updates)
+      updateAircraftData(geofenceAircraft);
+
+      // Also directly update the displayed aircraft
+      setDisplayedAircraft(geofenceAircraft);
+
+      // Update stats
+      setTotalActive(geofenceAircraft.length);
+
+      // Extract model stats for the sidebar
+      const modelCounts = geofenceAircraft.reduce(
+        (acc, aircraft) => {
+          const model = aircraft.model || aircraft.TYPE_AIRCRAFT || 'Unknown';
+          if (!acc[model]) {
+            acc[model] = {
+              model,
+              count: 0,
+              manufacturer: aircraft.manufacturer || 'Unknown',
+              // Add required properties for AircraftModel
+              label: model,
+              activeCount: 0,
+              totalCount: 0,
+            };
+          }
+          acc[model].count++;
+          acc[model].activeCount++;
+          acc[model].totalCount++;
+          return acc;
+        },
+        {} as Record<string, AircraftModel>
+      );
+
+      // Convert to array for the activeModels state
+      const modelArray = Object.values(modelCounts).map((model) => ({
+        model: model.model,
+        count: model.count,
+        manufacturer: model.manufacturer,
+        // Add required properties for AircraftModel type
+        label: model.model,
+        activeCount: model.count,
+        totalCount: model.count,
+      }));
+
+      setActiveModels(modelArray);
+
+      // Update the last refreshed timestamp
+      setLastRefreshed(new Date().toLocaleTimeString());
+    },
+    [updateAircraftData]
+  );
+
   // Handle manufacturer selection
   const selectManufacturer = async (manufacturer: string | null) => {
+    // Exit geofence mode when selecting a manufacturer
+    setIsGeofenceMode(false);
+
     setSelectedManufacturer(manufacturer);
     setSelectedModel(null);
     setIsLoading(true);
@@ -375,7 +453,7 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
 
   // Method to refresh only the positions of active aircraft
   const refreshPositions = async () => {
-    if (isRefreshing || !selectedManufacturer) return;
+    if (isRefreshing || (!selectedManufacturer && !isGeofenceMode)) return;
 
     setIsRefreshing(true);
     setTrackingStatus('Updating aircraft positions...');
@@ -401,7 +479,7 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
 
   // Method for full tracking refresh
   const fullRefresh = async () => {
-    if (!selectedManufacturer || isRefreshing) return;
+    if ((!selectedManufacturer && !isGeofenceMode) || isRefreshing) return;
 
     // Set a timeout to force exit from loading state after 10 seconds
     // This is a safety mechanism
@@ -526,8 +604,13 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
   }, []);
 
   const clearGeofenceData = useCallback(() => {
-    // Reset geofence-specific state in the map
+    // Reset geofence mode flag
+    setIsGeofenceMode(false);
+
+    // Clear displayed aircraft
     setDisplayedAircraft([]);
+    setActiveModels([]);
+    setTotalActive(0);
 
     // If there was a previously selected manufacturer, we can restore it
     if (selectedManufacturer) {
@@ -576,6 +659,7 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
     fullRefresh,
     clearCache,
     clearGeofenceData,
+    updateGeofenceAircraft,
 
     // Trail actions
     toggleTrails,
