@@ -1,5 +1,5 @@
 // hooks/useGeolocation.ts
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 
 interface GeolocationState {
   latitude: number | null;
@@ -9,45 +9,72 @@ interface GeolocationState {
 }
 
 export const useGeolocation = () => {
-  const [geolocation, setGeolocation] = useState<GeolocationState>({
-    latitude: null,
-    longitude: null,
-    error: null,
-    loading: false,
-  });
+  const [latitude, setLatitude] = useState<number | null>(null);
+  const [longitude, setLongitude] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
-  const requestLocation = () => {
+  const requestLocation = useCallback(() => {
+    setLoading(true);
+    setError(null);
+
     if (!navigator.geolocation) {
-      setGeolocation((prev) => ({
-        ...prev,
-        error: 'Geolocation is not supported by your browser',
-        loading: false,
-      }));
+      setError('Geolocation is not supported by your browser');
+      setLoading(false);
       return;
     }
 
-    setGeolocation((prev) => ({ ...prev, loading: true }));
-
     navigator.geolocation.getCurrentPosition(
       (position) => {
-        setGeolocation({
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-          error: null,
-          loading: false,
-        });
+        setLatitude(position.coords.latitude);
+        setLongitude(position.coords.longitude);
+        setLoading(false);
       },
       (error) => {
-        setGeolocation({
-          latitude: null,
-          longitude: null,
-          error: error.message,
-          loading: false,
-        });
+        setError(error.message);
+        setLoading(false);
       },
-      { enableHighAccuracy: true, timeout: 20000, maximumAge: 1000 }
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     );
-  };
+  }, []);
 
-  return { ...geolocation, requestLocation };
+  // New method that returns a promise
+  const getCurrentPosition = useCallback((): Promise<GeolocationPosition> => {
+    return new Promise((resolve, reject) => {
+      setLoading(true);
+      setError(null);
+
+      if (!navigator.geolocation) {
+        const error = new Error('Geolocation is not supported by your browser');
+        setError(error.message);
+        setLoading(false);
+        reject(error);
+        return;
+      }
+
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          setLatitude(position.coords.latitude);
+          setLongitude(position.coords.longitude);
+          setLoading(false);
+          resolve(position);
+        },
+        (error) => {
+          setError(error.message);
+          setLoading(false);
+          reject(error);
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      );
+    });
+  }, []);
+
+  return {
+    latitude,
+    longitude,
+    error,
+    loading,
+    requestLocation,
+    getCurrentPosition,
+  };
 };
