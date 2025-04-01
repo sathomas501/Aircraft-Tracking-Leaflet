@@ -1,6 +1,6 @@
 // lib/services/OpenSkyTrackingService.ts
 
-import { Aircraft, SelectOption } from '@/types/base';
+import { Aircraft, SelectOption } from '../../types/base';
 import { AircraftModel } from '@/types/aircraft-models';
 
 // Track active requests to prevent duplicate calls

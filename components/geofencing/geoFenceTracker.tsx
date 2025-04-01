@@ -1,4 +1,4 @@
-// components/tracking/GeofenceTracker.tsx
+// components/geofencing/GeofenceTracker.tsx
 import React, { useState, useEffect, useCallback } from 'react';
 import type { ExtendedAircraft } from '../../types/base';
 import {
@@ -24,7 +24,7 @@ interface GeofenceTrackerProps {
 
 const GeofenceTracker: React.FC<GeofenceTrackerProps> = ({
   onAircraftFound,
-  autoRefresh = true,
+  autoRefresh = false,
   refreshInterval = 60000, // 1 minute
   initialZipCode = '',
   initialRadius = 25,

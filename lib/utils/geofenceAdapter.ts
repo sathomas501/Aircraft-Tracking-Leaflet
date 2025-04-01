@@ -18,7 +18,25 @@ export function adaptGeofenceAircraft(
     `[GeofenceAdapter] Adapting ${geofenceAircraft.length} aircraft from geofence`
   );
 
-  return geofenceAircraft.map((aircraft) => {
+  // Debug the first aircraft if available
+  if (geofenceAircraft.length > 0) {
+    console.log(
+      '[GeofenceAdapter] Sample raw aircraft data:',
+      Object.keys(geofenceAircraft[0]).reduce(
+        (acc, key) => {
+          // Only include non-objects for clarity
+          const value = geofenceAircraft[0][key];
+          if (typeof value !== 'object' || value === null) {
+            acc[key] = value;
+          }
+          return acc;
+        },
+        {} as Record<string, any>
+      )
+    );
+  }
+
+  const adapted = geofenceAircraft.map((aircraft) => {
     // First, normalize to base Aircraft type using your existing utilities
     const baseAircraft = BaseTransforms.normalize({
       // Required core fields
@@ -29,7 +47,11 @@ export function adaptGeofenceAircraft(
       longitude: aircraft.longitude || aircraft.lng || 0,
 
       // Flight data
-      altitude: aircraft.altitude || 0,
+      altitude:
+        aircraft.altitude ||
+        aircraft.baro_altitude ||
+        aircraft.geo_altitude ||
+        0,
       heading: aircraft.heading || aircraft.true_track || 0,
       velocity: aircraft.velocity || 0,
 
@@ -46,10 +68,11 @@ export function adaptGeofenceAircraft(
       lastSeen: aircraft.lastSeen || Date.now(),
 
       // Aircraft information
-      'N-NUMBER': aircraft['N-NUMBER'] || '',
+      'N-NUMBER': aircraft['N-NUMBER'] || aircraft.registration || '',
       manufacturer:
         aircraft.manufacturer || aircraft.manufacturerName || 'Unknown',
-      model: aircraft.model || '',
+      model: aircraft.model || aircraft.type_aircraft || '',
+      operator: aircraft.operator || '',
       NAME: aircraft.NAME || aircraft.name || '',
       CITY: aircraft.CITY || aircraft.city || '',
       STATE: aircraft.STATE || aircraft.state || '',
@@ -58,19 +81,70 @@ export function adaptGeofenceAircraft(
         aircraft.type_aircraft ||
         aircraft.type ||
         'Unknown',
-      OWNER_TYPE: aircraft.OWNER_TYPE || aircraft.ownerType || '',
+      OWNER_TYPE: aircraft.OWNER_TYPE || aircraft.ownerType || '0',
 
       // Flags
       isTracked: true,
     });
 
     // Then cast to ExtendedAircraft with the required properties
-    const extendedAircraft = baseAircraft as ExtendedAircraft;
+    const extendedAircraft = baseAircraft as unknown as ExtendedAircraft;
 
     // Add the required properties for ExtendedAircraft
-    extendedAircraft.type = baseAircraft.TYPE_AIRCRAFT;
-    extendedAircraft.isGovernment = baseAircraft.OWNER_TYPE === 'Government';
+    extendedAircraft.type = determineAircraftType(baseAircraft);
+    extendedAircraft.isGovernment =
+      baseAircraft.OWNER_TYPE === 'Government' ||
+      baseAircraft.OWNER_TYPE === '5';
+
+    // Make sure marker field exists - critical for rendering
+    extendedAircraft.marker = 'default';
+
+    // Ensure these properties exist (used in createAircraftIcon)
+    if (typeof extendedAircraft.heading !== 'number')
+      extendedAircraft.heading = 0;
+    if (typeof extendedAircraft.on_ground !== 'boolean')
+      extendedAircraft.on_ground = false;
 
     return extendedAircraft;
   });
+
+  // Debug the first adapted aircraft if available
+  if (adapted.length > 0) {
+    console.log('[GeofenceAdapter] First aircraft after adaptation:', {
+      icao24: adapted[0].icao24,
+      latitude: adapted[0].latitude,
+      longitude: adapted[0].longitude,
+      heading: adapted[0].heading,
+      type: adapted[0].type,
+      isGovernment: adapted[0].isGovernment,
+      marker: adapted[0].marker,
+      on_ground: adapted[0].on_ground,
+      isTracked: adapted[0].isTracked,
+    });
+  }
+
+  return adapted;
+}
+
+/**
+ * Determines aircraft type based on available information
+ */
+function determineAircraftType(aircraft: Aircraft): string {
+  // Check if it mentions helicopter in various fields
+  const possibleHelicopterFields = ['TYPE_AIRCRAFT', 'model', 'manufacturer'];
+
+  for (const field of possibleHelicopterFields) {
+    const value = aircraft[field as keyof Aircraft];
+    if (
+      (typeof value === 'string' &&
+        value.toLowerCase().includes('helicopter')) ||
+      value.toLowerCase().includes('helo') ||
+      value.toLowerCase().includes('rotor')
+    ) {
+      return 'helicopter';
+    }
+  }
+
+  // Default to plane
+  return 'plane';
 }

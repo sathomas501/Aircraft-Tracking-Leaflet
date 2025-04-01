@@ -1,4 +1,4 @@
-// lib/utils/geofencing.ts
+// lib/services/geofencing.ts
 import { adaptGeofenceAircraft } from '../utils/geofenceAdapter';
 import type { ExtendedAircraft } from '../../types/base';
 

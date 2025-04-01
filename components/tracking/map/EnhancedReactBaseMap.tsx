@@ -13,8 +13,6 @@ import LeafletTouchFix from './components/LeafletTouchFix';
 import { useEnhancedMapContext } from '../context/EnhancedMapContext';
 import { ExtendedAircraft } from '@/types/base';
 import MapControllerWithOptions from './MapControllerWithOptions';
-import L from 'leaflet';
-import EnhancedUnifiedSelector from '../selector/EnhancedUnifiedSelector';
 import type { SelectOption } from '@/types/base';
 import UnifiedAircraftMarker from './UnifiedAircraftMarker';
 import { useEnhancedUI } from '../../tracking/context/EnhancedUIContext';
@@ -24,7 +22,7 @@ import EnhancedTrailSystem from '../../tracking/map/components/EnhancedTrailSyst
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 import openSkyTrackingService from '../../../lib/services/openSkyTrackingService';
 import 'leaflet/dist/leaflet.css';
-import AircraftLookupTabs from '../../geofencing/AircraftLookupTabs';
+import UnifiedAircraftSelector from '../selector/UnifiedAircraftSelector';
 
 // Map Events component to handle zoom changes
 const MapEvents: React.FC = () => {
@@ -264,7 +262,7 @@ const EnhancedReactBaseMap: React.FC<ReactBaseMapProps> = ({ onError }) => {
       {/* Manufacturer filter using our draggable panel */}
       {manufacturers.length > 0 && (
         <div className="absolute top-5 left-5 z-50">
-          <AircraftLookupTabs manufacturers={manufacturers} />
+          <UnifiedAircraftSelector manufacturers={manufacturers} />
         </div>
       )}
     </div>
