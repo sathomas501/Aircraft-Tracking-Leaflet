@@ -1,5 +1,5 @@
 // components/tracking/map/UnifiedAircraftMarker.tsx
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { Marker, Tooltip } from 'react-leaflet';
 import L from 'leaflet';
 import { ExtendedAircraft } from '@/types/base';
@@ -18,6 +18,27 @@ interface UnifiedAircraftMarkerProps {
   onMarkerClick?: (aircraft: ExtendedAircraft) => void;
 }
 
+// Helper function to apply owner type classes to Leaflet tooltip elements
+const applyOwnerTypeStylingToTooltip = (
+  tooltipRef: React.RefObject<L.Tooltip>,
+  ownerTypeClass: string
+) => {
+  if (tooltipRef.current) {
+    const tooltipElement = tooltipRef.current.getElement();
+    if (tooltipElement) {
+      // Add the owner type class to the tooltip element
+      tooltipElement.classList.add(ownerTypeClass);
+
+      // Force a repaint to ensure styles are applied
+      tooltipElement.style.opacity = '0.99';
+      setTimeout(() => {
+        tooltipElement.style.opacity = '1';
+      }, 10);
+    }
+  }
+};
+
+// Use this in your UnifiedAircraftMarker component
 const UnifiedAircraftMarker: React.FC<UnifiedAircraftMarkerProps> = ({
   aircraft,
   isStale = false,
@@ -70,6 +91,25 @@ const UnifiedAircraftMarker: React.FC<UnifiedAircraftMarkerProps> = ({
     return null;
   }
 
+  // Inside your component, add this function
+  const getOwnerTypeClass = (aircraft: any): string => {
+    const ownerType = aircraft.OWNER_TYPE || '';
+
+    // Map owner type to CSS class
+    const ownerTypeMap: Record<string, string> = {
+      '1': 'individual-owner',
+      '2': 'partnership-owner',
+      '3': 'corporation-owner',
+      '4': 'co-owned-owner',
+      '5': 'government-owner',
+      '7': 'llc-owner',
+      '8': 'non-citizen-corp-owner',
+      '9': 'non-citizen-co-owned-owner',
+    };
+
+    return ownerTypeMap[ownerType] || 'unknown-owner';
+  };
+
   // Create position array safely with validations
   const position: [number, number] = [
     typeof enhancedAircraft.latitude === 'number'
@@ -91,6 +131,9 @@ const UnifiedAircraftMarker: React.FC<UnifiedAircraftMarkerProps> = ({
 
   // Should show tooltip based on zoom and selection state
   const shouldShowTooltip = (zoomLevel >= 7 && !isSelected) || isHovering;
+
+  // Create a ref for the tooltip
+  const tooltipRef = useRef<L.Tooltip>(null);
 
   // Handle marker click - pass enhanced aircraft to selectAircraft
   const handleMarkerClick = () => {
@@ -129,8 +172,9 @@ const UnifiedAircraftMarker: React.FC<UnifiedAircraftMarkerProps> = ({
         {/* Show tooltip based on conditions */}
         {shouldShowTooltip && (
           <Tooltip
+            ref={tooltipRef}
             direction="top"
-            className={`aircraft-tooltip ${isStale ? 'stale-tooltip' : ''}`}
+            className={`aircraft-tooltip ${isStale ? 'stale-tooltip' : ''} ${getOwnerTypeClass}`}
             opacity={0.9}
             offset={[0, -5] as L.PointTuple}
             permanent={isHovering}
