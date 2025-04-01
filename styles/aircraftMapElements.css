@@ -593,3 +593,289 @@
     max-width: 80vw;
   }
 }
+
+/* Additional CSS styles to add to aircraftMapElements.css */
+
+/* Animation for balloon marker to simulate floating */
+@keyframes balloonFloat {
+  0% {
+    transform: translateY(0) rotate(0deg);
+  }
+  25% {
+    transform: translateY(-2px) rotate(1deg);
+  }
+  50% {
+    transform: translateY(-4px) rotate(0deg);
+  }
+  75% {
+    transform: translateY(-2px) rotate(-1deg);
+  }
+  100% {
+    transform: translateY(0) rotate(0deg);
+  }
+}
+
+.balloon-type .aircraft-marker img {
+  animation: balloonFloat 4s ease-in-out infinite;
+}
+
+/* Enhanced status indicator for grounded aircraft */
+.aircraft-marker.grounded img {
+  opacity: 0.7;
+  filter: grayscale(30%);
+}
+
+/* Add a subtle pulsing effect to selected aircraft */
+@keyframes selectedPulse {
+  0% {
+    filter: drop-shadow(0 0 4px rgba(74, 128, 245, 0.7));
+  }
+  50% {
+    filter: drop-shadow(0 0 6px rgba(74, 128, 245, 0.9));
+  }
+  100% {
+    filter: drop-shadow(0 0 4px rgba(74, 128, 245, 0.7));
+  }
+}
+
+.aircraft-marker.selected {
+  animation: selectedPulse 2s infinite;
+}
+
+/* === Enhanced Tooltip Badges === */
+.aircraft-type-badge {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-left: 4px;
+}
+
+.balloon-badge {
+  background-color: #f59e0b;
+  color: white;
+}
+
+/* === Enhanced Aircraft Tooltip Styling === */
+.aircraft-tooltip {
+  animation: fadeIn 0.2s ease-in-out;
+  max-width: 250px;
+}
+
+/* Enhanced tooltip header styling */
+.balloon-type .aircraft-tooltip-header {
+  border-bottom-color: #f59e0b;
+}
+
+/* === Enhanced Popup Styling === */
+.balloon-popup {
+  border-top: 3px solid #f59e0b;
+}
+
+/* Make popup transitions smoother */
+.leaflet-popup {
+  opacity: 0;
+  animation: fadeIn 0.3s ease-in-out forwards;
+}
+
+/* Improved popup positioning for different aircraft types */
+.helicopter-type .leaflet-popup {
+  margin-top: -10px;
+}
+
+.balloon-type .leaflet-popup {
+  margin-top: -15px;
+}
+
+/* Enhanced tooltip content styling */
+.aircraft-tooltip-content {
+  padding: 8px 10px 10px;
+}
+
+/* Enhance the data grid layout */
+.aircraft-data-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 8px;
+  row-gap: 6px;
+  font-size: 0.75rem;
+  margin-top: 0.25rem;
+}
+
+/* Add hover effects to popup buttons */
+.popup-button {
+  padding: 6px 12px;
+  border-radius: 4px;
+  background-color: #3949ab;
+  color: white;
+  font-weight: 600;
+  font-size: 0.8rem;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.popup-button:hover {
+  background-color: #2563eb;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.popup-button:active {
+  transform: translateY(0);
+  box-shadow: none;
+}
+
+/* Button styling for balloon type */
+.balloon-button {
+  background-color: #f59e0b;
+}
+
+.balloon-button:hover {
+  background-color: #d97706;
+}
+
+/* Enhance the responsive adjustments */
+@media (max-width: 640px) {
+  .aircraft-tooltip {
+    min-width: 180px !important;
+    font-size: 0.8rem !important;
+  }
+
+  .aircraft-popup {
+    min-width: 220px !important;
+    max-width: 95vw !important;
+  }
+}
+
+/* Owner-Type Specific Tooltip and Popup Styling */
+
+/* === Government Aircraft === */
+/* Tooltip styling for government aircraft */
+.government-owner .aircraft-tooltip-header {
+  background-color: #e6f2ff !important; /* Light blue background */
+  border-left: 3px solid #1a75ff !important; /* Brighter blue border */
+}
+
+.government-owner .aircraft-tooltip-content {
+  background-color: #f0f7ff !important; /* Very light blue background */
+}
+
+/* Popup styling for government aircraft */
+.government-owner.aircraft-popup {
+  border-top: 3px solid #1a75ff !important;
+}
+
+.government-owner .popup-button,
+.government-owner .popup-button:hover {
+  background-color: #1a75ff !important;
+}
+
+/* === Corporate Aircraft === */
+/* Tooltip styling for corporate-owned aircraft */
+.corporation-owner .aircraft-tooltip-header {
+  background-color: #f0f0f7 !important; /* Light corporate gray-blue */
+  border-left: 3px solid #5c6bc0 !important; /* Indigo border */
+}
+
+.corporation-owner .aircraft-tooltip-content {
+  background-color: #f5f5fa !important; /* Very light gray-blue */
+}
+
+/* Popup styling for corporate aircraft */
+.corporation-owner.aircraft-popup {
+  border-top: 3px solid #5c6bc0 !important;
+}
+
+.corporation-owner .popup-button,
+.corporation-owner .popup-button:hover {
+  background-color: #5c6bc0 !important;
+}
+
+/* === Individual Owner Aircraft === */
+/* Tooltip styling for individually-owned aircraft */
+.individual-owner .aircraft-tooltip-header {
+  background-color: #f0f7f0 !important; /* Light green background */
+  border-left: 3px solid #43a047 !important; /* Green border */
+}
+
+.individual-owner .aircraft-tooltip-content {
+  background-color: #f5faf5 !important; /* Very light green background */
+}
+
+/* Popup styling for individual aircraft */
+.individual-owner.aircraft-popup {
+  border-top: 3px solid #43a047 !important;
+}
+
+.individual-owner .popup-button,
+.individual-owner .popup-button:hover {
+  background-color: #43a047 !important;
+}
+
+/* === LLC Owner Aircraft === */
+/* Tooltip styling for LLC-owned aircraft */
+.llc-owner .aircraft-tooltip-header {
+  background-color: #fff8e1 !important; /* Light amber background */
+  border-left: 3px solid #ffb300 !important; /* Amber border */
+}
+
+.llc-owner .aircraft-tooltip-content {
+  background-color: #fffcf0 !important; /* Very light amber background */
+}
+
+/* Popup styling for LLC aircraft */
+.llc-owner.aircraft-popup {
+  border-top: 3px solid #ffb300 !important;
+}
+
+.llc-owner .popup-button,
+.llc-owner .popup-button:hover {
+  background-color: #ffb300 !important;
+}
+
+/* === Stronger Selectors for Leaflet Override === */
+/* These selectors ensure our styles aren't overridden by Leaflet default styles */
+.leaflet-tooltip.aircraft-tooltip.government-owner,
+.leaflet-tooltip.aircraft-tooltip .government-owner {
+  border-color: #1a75ff !important;
+}
+
+.leaflet-tooltip.aircraft-tooltip.corporation-owner,
+.leaflet-tooltip.aircraft-tooltip .corporation-owner {
+  border-color: #5c6bc0 !important;
+}
+
+.leaflet-tooltip.aircraft-tooltip.individual-owner,
+.leaflet-tooltip.aircraft-tooltip .individual-owner {
+  border-color: #43a047 !important;
+}
+
+.leaflet-tooltip.aircraft-tooltip.llc-owner,
+.leaflet-tooltip.aircraft-tooltip .llc-owner {
+  border-color: #ffb300 !important;
+}
+
+/* Ensure owner type indicators are properly colored */
+.owner-type-indicator.government-owner {
+  color: #1a75ff !important;
+  font-weight: 700 !important;
+}
+
+.owner-type-indicator.corporation-owner {
+  color: #5c6bc0 !important;
+  font-weight: 700 !important;
+}
+
+.owner-type-indicator.individual-owner {
+  color: #43a047 !important;
+  font-weight: 700 !important;
+}
+
+.owner-type-indicator.llc-owner {
+  color: #ffb300 !important;
+  font-weight: 700 !important;
+}

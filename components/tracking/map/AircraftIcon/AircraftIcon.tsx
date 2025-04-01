@@ -35,7 +35,7 @@ export const getTooltipFontSize = (zoomLevel: number): string => {
   return '0.75rem'; // 12px
 };
 
-// Get the appropriate icon based on aircraft type and owner
+// Updated getAircraftIconUrl function with more specific icon mapping
 export const getAircraftIconUrl = (
   aircraft: Aircraft & {
     type?: string;
@@ -48,40 +48,56 @@ export const getAircraftIconUrl = (
   // Check if it's a government aircraft
   const isGovernment = aircraft.isGovernment || aircraft.OWNER_TYPE === '5';
 
+  // Check if the aircraft is grounded
+  const isGrounded = aircraft.on_ground === true;
+
   // Determine the base aircraft type
   const aircraftType = determineAircraftType(aircraft);
 
-  // Icon mapping object
+  // Icon mapping object with more specific icons
   const iconMap: Record<string, Record<string, string>> = {
     government: {
-      helicopter: '/icons/governmentHelicopterIconImg.png',
+      helicopter: '/icons/governmentRotorIconImg.png',
       jet: '/icons/governmentJetIconImg.png',
-      turboprop: '/icons/governmentTurbopropIconImg.png',
-      piston: '/icons/governmentPistonIconImg.png',
+      turboprop: '/icons/governmentJetIconImg.png', // Fall back to jet for government turboprop
+      piston: '/icons/governmentJetIconImg.png', // Fall back to jet for government piston
       default: '/icons/governmentJetIconImg.png',
     },
     civilian: {
-      helicopter: '/icons/helicopterIconImg.png',
+      balloon: '/icons/aircraft_balloon.png',
+      helicopter: '/icons/rotorIconImg.png',
       jet: '/icons/jetIconImg.png',
-      turboprop: '/icons/turbopropIconImg.png',
-      singleEngine: '/icons/singleEngineIconImg.png',
-      twinEngine: '/icons/twinEngineIconImg.png',
-      default: '/icons/jetIconImg.png',
+      turboprop: '/icons/proplIconImg.png',
+      singleEngine: '/icons/defaultIconImg.png',
+      twinEngine: '/icons/defaultIconImg.png',
+      default: '/icons/defaultIconImg.png',
+    },
+    grounded: {
+      // For grounded aircraft, can use a specific grounded icon SVG
+      default: '/icons/aircraft_grounded.svg',
     },
   };
 
-  // Select the appropriate category (government vs civilian)
-  const category = isGovernment ? 'government' : 'civilian';
+  // Select the appropriate category (government, civilian, or grounded)
+  let category = isGovernment ? 'government' : 'civilian';
+
+  // Override with grounded category if the aircraft is on ground and we want to show a different icon
+  if (isGrounded && false) {
+    // Set to true if you want to use grounded icons
+    category = 'grounded';
+    return iconMap.grounded.default;
+  }
 
   // Return the appropriate icon URL (with fallback to default)
   return iconMap[category][aircraftType] || iconMap[category].default;
 };
 
-// Helper function to determine aircraft type
+// Enhanced determineAircraftType function with more specific type detection
 export const determineAircraftType = (
   aircraft: Aircraft & {
     type?: string;
     TYPE_AIRCRAFT?: string;
+    model?: string;
   }
 ): string => {
   // Combine possible type fields for checking
@@ -90,38 +106,111 @@ export const determineAircraftType = (
     .join(' ')
     .toLowerCase();
 
-  // Check for different aircraft types
+  // Check for balloon (adding support for your aircraft_balloon.png)
+  if (typeString.includes('balloon') || typeString.includes('airship')) {
+    return 'balloon';
+  }
+
+  // Check for different helicopter/rotor types
   if (typeString.includes('helicopter') || typeString.includes('rotor')) {
     return 'helicopter';
   }
 
+  // Check for different jet types
   if (typeString.includes('jet') || typeString.includes('airliner')) {
     return 'jet';
   }
 
+  // Check for turboprop
   if (typeString.includes('turboprop') || typeString.includes('turbo prop')) {
     return 'turboprop';
   }
 
+  // Check for twin engines
   if (typeString.includes('twin')) {
     return 'twinEngine';
   }
 
+  // Check for single engine or piston aircraft
   if (typeString.includes('single') || typeString.includes('piston')) {
     return 'singleEngine';
   }
 
-  // Default type based on basic checks
-  if (
-    typeString.includes('cessna') ||
-    typeString.includes('piper') ||
-    typeString.includes('beech')
-  ) {
+  // Manufacturer-based types
+  if (typeString.includes('cessna')) {
+    return typeString.includes('twin') ? 'twinEngine' : 'singleEngine';
+  }
+
+  if (typeString.includes('piper')) {
     return 'singleEngine';
   }
 
-  // Default to jet
+  if (typeString.includes('beech') || typeString.includes('beechcraft')) {
+    return typeString.includes('king air') ? 'turboprop' : 'twinEngine';
+  }
+
+  if (typeString.includes('cirrus')) {
+    return 'singleEngine';
+  }
+
+  if (typeString.includes('boeing') || typeString.includes('airbus')) {
+    return 'jet';
+  }
+
+  if (typeString.includes('diamond')) {
+    return 'singleEngine';
+  }
+
+  if (typeString.includes('mooney')) {
+    return 'singleEngine';
+  }
+
+  if (typeString.includes('bombardier') || typeString.includes('embraer')) {
+    return 'jet';
+  }
+
+  // Default to type based on basic inference
+  if (typeString.includes('172') || typeString.includes('152')) {
+    return 'singleEngine';
+  }
+
+  // Default to jet for unknown types
   return 'default';
+};
+
+// Enhanced function to get a more detailed aircraft type description
+export const getDetailedAircraftType = (
+  aircraft: Aircraft & {
+    type?: string;
+    TYPE_AIRCRAFT?: string;
+    model?: string;
+  }
+): string => {
+  // Use TYPE_AIRCRAFT as primary source if available
+  if (aircraft.TYPE_AIRCRAFT) {
+    return aircraft.TYPE_AIRCRAFT;
+  }
+
+  // Fall back to model if available
+  if (aircraft.model) {
+    return aircraft.model;
+  }
+
+  // Otherwise use our type detection
+  const aircraftType = determineAircraftType(aircraft);
+
+  // Map internal type to readable name
+  const typeMap: Record<string, string> = {
+    balloon: 'Hot Air Balloon',
+    helicopter: 'Helicopter',
+    jet: 'Jet Aircraft',
+    turboprop: 'Turboprop',
+    singleEngine: 'Single Engine Piston',
+    twinEngine: 'Twin Engine Piston',
+    default: 'Aircraft',
+  };
+
+  return typeMap[aircraftType] || 'Aircraft';
 };
 
 // Create aircraft icon based on aircraft data and options
@@ -235,7 +324,7 @@ export const getOwnerTypeClass = (
   return ownerTypeMap[ownerType] || 'unknown-owner';
 };
 
-// Create tooltip content with improved two-column layout
+// Enhanced tooltip content with owner type classes applied properly
 export const createTooltipContent = (
   aircraft: Aircraft & {
     registration?: string;
@@ -270,71 +359,74 @@ export const createTooltipContent = (
   const ownerTypeClass = getOwnerTypeClass(aircraft);
   const readableType = getReadableAircraftType(aircraft);
 
-  // Create responsive tooltip with improved two-column layout
+  // IMPORTANT: Apply the owner type class to the entire tooltip
+  // This ensures the owner-specific styling is applied properly
   return `
-    <div class="aircraft-tooltip-header ${aircraftType}-type ${ownerTypeClass}">
-      <div class="aircraft-callsign">${registration}</div>
-      <div class="aircraft-model">${aircraft.model || aircraft.TYPE_AIRCRAFT || readableType}</div>
-    </div>
-    <div class="aircraft-tooltip-content">
-      <div class="aircraft-data-grid">
-        <div>
-          <span class="data-label">Alt:</span>
-          <span class="data-value">${formattedAltitude}</span>
-        </div>
-        <div>
-          <span class="data-label">Heading:</span>
-          <span class="data-value">${heading}</span>
-        </div>
-        <div>
-          <span class="data-label">Speed:</span>
-          <span class="data-value">${formattedSpeed}</span>
+    <div class="aircraft-tooltip-wrapper ${ownerTypeClass}">
+      <div class="aircraft-tooltip-header ${aircraftType}-type">
+        <div class="aircraft-callsign">${registration}</div>
+        <div class="aircraft-model">${aircraft.model || aircraft.TYPE_AIRCRAFT || readableType}</div>
+      </div>
+      <div class="aircraft-tooltip-content">
+        <div class="aircraft-data-grid">
+          <div>
+            <span class="data-label">Alt:</span>
+            <span class="data-value">${formattedAltitude}</span>
+          </div>
+          <div>
+            <span class="data-label">Heading:</span>
+            <span class="data-value">${heading}</span>
+          </div>
+          <div>
+            <span class="data-label">Speed:</span>
+            <span class="data-value">${formattedSpeed}</span>
+          </div>
+          ${
+            aircraft.on_ground !== undefined
+              ? `
+          <div>
+            <span class="data-label">Status:</span>
+            <span class="data-value ${aircraft.on_ground ? 'on-ground-status' : 'in-flight-status'}">${aircraft.on_ground ? 'Ground' : 'Flight'}</span>
+          </div>
+          `
+              : ''
+          }
+          ${
+            zoomLevel >= 10 && aircraft.manufacturer
+              ? `
+          <div class="aircraft-data-full">
+            <span class="data-label">Mfr:</span>
+            <span class="data-value">${aircraft.manufacturer}</span>
+          </div>
+          `
+              : ''
+          }
+          ${
+            zoomLevel >= 10 && aircraft.OWNER_TYPE
+              ? `
+          <div class="aircraft-data-full">
+            <span class="data-label">Owner:</span>
+            <span class="data-value owner-type-indicator ${ownerTypeClass}">${getOwnerTypeLabel(aircraft.OWNER_TYPE)}</span>
+          </div>
+          `
+              : ''
+          }
         </div>
         ${
-          aircraft.on_ground !== undefined
+          aircraft.lastSeen
             ? `
-        <div>
-          <span class="data-label">Status:</span>
-          <span class="data-value ${aircraft.on_ground ? 'on-ground-status' : 'in-flight-status'}">${aircraft.on_ground ? 'Ground' : 'Flight'}</span>
-        </div>
-        `
-            : ''
-        }
-        ${
-          zoomLevel >= 10 && aircraft.manufacturer
-            ? `
-        <div class="aircraft-data-full">
-          <span class="data-label">Mfr:</span>
-          <span class="data-value">${aircraft.manufacturer}</span>
-        </div>
-        `
-            : ''
-        }
-        ${
-          zoomLevel >= 10 && aircraft.OWNER_TYPE
-            ? `
-        <div class="aircraft-data-full">
-          <span class="data-label">Owner:</span>
-          <span class="data-value">${getOwnerTypeLabel(aircraft.OWNER_TYPE)}</span>
+        <div class="text-xs text-gray-400 mt-2">
+          Updated: ${new Date(aircraft.lastSeen).toLocaleTimeString()}
         </div>
         `
             : ''
         }
       </div>
-      ${
-        aircraft.lastSeen
-          ? `
-      <div class="text-xs text-gray-400 mt-2">
-        Updated: ${new Date(aircraft.lastSeen).toLocaleTimeString()}
-      </div>
-      `
-          : ''
-      }
     </div>
   `;
 };
 
-// Fixed createPopupContent function to ensure all fields are included
+// Enhanced popup content with owner type classes applied properly
 export const createPopupContent = (
   aircraft: Aircraft & {
     registration?: string;
@@ -345,7 +437,7 @@ export const createPopupContent = (
     STATE?: string;
     OWNER_TYPE?: string;
     name?: string;
-    city?: string; // Added lowercase alternatives
+    city?: string;
     state?: string;
     type?: string;
     isGovernment?: boolean;
@@ -379,18 +471,22 @@ export const createPopupContent = (
     ? getOwnerTypeLabel(aircraft.OWNER_TYPE)
     : 'Unknown';
 
-  // Format debug info if needed
-  const debugInfo =
-    process.env.NODE_ENV === 'development'
-      ? `<div class="text-xs text-gray-400 mt-2 p-1 bg-gray-100">
-      Keys: ${Object.keys(aircraft).join(', ')}
-    </div>`
-      : '';
-
-  // Type-specific content sections
+  // Government-specific content section
   let typeSpecificContent = '';
 
-  if (aircraftType === 'helicopter') {
+  if (ownerTypeClass === 'government-owner') {
+    typeSpecificContent = `
+      <div class="type-specific-section government-section mt-3 p-2 bg-blue-50 rounded">
+        <h4 class="font-medium text-blue-700 mb-1 text-sm">Government Aircraft</h4>
+        <div class="grid grid-cols-2 gap-y-1 text-xs">
+          <div class="text-gray-600">Operations:</div>
+          <div class="font-medium">Official Use</div>
+          <div class="text-gray-600">Type:</div>
+          <div class="font-medium">${readableType}</div>
+        </div>
+      </div>
+    `;
+  } else if (aircraftType === 'helicopter') {
     typeSpecificContent = `
       <div class="type-specific-section helicopter-section mt-3 p-2 bg-indigo-50 rounded">
         <h4 class="font-medium text-indigo-700 mb-1 text-sm">Helicopter Details</h4>
@@ -399,18 +495,6 @@ export const createPopupContent = (
           <div class="font-medium">${aircraft.TYPE_AIRCRAFT || 'Rotorcraft'}</div>
           <div class="text-gray-600">Operations:</div>
           <div class="font-medium">Standard Category</div>
-        </div>
-      </div>
-    `;
-  } else if (ownerTypeClass === 'government-owner') {
-    typeSpecificContent = `
-      <div class="type-specific-section government-section mt-3 p-2 bg-red-50 rounded">
-        <h4 class="font-medium text-red-700 mb-1 text-sm">Government Aircraft</h4>
-        <div class="grid grid-cols-2 gap-y-1 text-xs">
-          <div class="text-gray-600">Operations:</div>
-          <div class="font-medium">Official Use</div>
-          <div class="text-gray-600">Type:</div>
-          <div class="font-medium">${readableType}</div>
         </div>
       </div>
     `;
@@ -428,7 +512,7 @@ export const createPopupContent = (
     `;
   }
 
-  // Create responsive popup with all fields properly included
+  // Create responsive popup with owner type class applied to the entire popup
   return `
     <div class="aircraft-popup p-3 ${aircraftType}-popup ${ownerTypeClass}">
       <div class="flex justify-between items-center mb-2">
@@ -513,10 +597,8 @@ export const createPopupContent = (
       
       ${typeSpecificContent}
       
-      ${debugInfo}
-      
       <div class="mt-3 text-center">
-        <button class="popup-button ${aircraftType}-button" onclick="window.dispatchEvent(new CustomEvent('select-aircraft', {detail: '${aircraft.icao24}'}))">
+        <button class="popup-button ${ownerTypeClass}" onclick="window.dispatchEvent(new CustomEvent('select-aircraft', {detail: '${aircraft.icao24}'}))">
           View Details
         </button>
       </div>
@@ -539,6 +621,7 @@ export const getOwnerTypeLabel = (ownerType: string): string => {
   return ownerTypes[ownerType] || `Type ${ownerType}`;
 };
 
+// At the bottom of AircraftIcon.tsx, add the new functions to your export:
 export default {
   createAircraftIcon,
   createTooltipContent,
@@ -550,4 +633,6 @@ export default {
   determineAircraftType,
   getReadableAircraftType,
   getOwnerTypeClass,
+  // Add the new functions:
+  getDetailedAircraftType,
 };
