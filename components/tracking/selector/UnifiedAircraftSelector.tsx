@@ -354,12 +354,12 @@ const UnifiedAircraftSelector: React.FC<UnifiedAircraftSelectorProps> = ({
       // Log the first aircraft after enrichment for debugging
       if (enrichedAircraft.length > 0) {
         console.log('Enriched aircraft sample:', {
-          icao24: enrichedAircraft[0].icao24,
-          manufacturer: enrichedAircraft[0].manufacturer,
-          model: enrichedAircraft[0].model,
+          icao24: enrichedAircraft[0].ICAO24,
+          manufacturer: enrichedAircraft[0].MANUFACTURER,
+          model: enrichedAircraft[0].MODEL,
           type: enrichedAircraft[0].type,
           isGovernment: enrichedAircraft[0].isGovernment,
-          hasStaticData: enrichedAircraft[0].manufacturer !== 'Unknown',
+          hasStaticData: enrichedAircraft[0].MANUFACTURER !== 'Unknown',
         });
       }
 
@@ -483,7 +483,7 @@ const UnifiedAircraftSelector: React.FC<UnifiedAircraftSelectorProps> = ({
   // Group models alphabetically for the dropdown
   const groupedModels = activeModels.reduce(
     (groups: Record<string, AircraftModel[]>, model) => {
-      const firstChar = model.model.charAt(0).toUpperCase();
+      const firstChar = model.MODEL.charAt(0).toUpperCase();
       if (!groups[firstChar]) {
         groups[firstChar] = [];
       }
@@ -863,18 +863,18 @@ const UnifiedAircraftSelector: React.FC<UnifiedAircraftSelectorProps> = ({
                               {letter}
                             </div>
                             {models
-                              .sort((a, b) => a.model.localeCompare(b.model))
+                              .sort((a, b) => a.MODEL.localeCompare(b.MODEL))
                               .map((model) => (
                                 <div
-                                  key={model.model}
+                                  key={model.MODEL}
                                   className={`px-3 py-2 hover:bg-indigo-50 cursor-pointer flex justify-between ${
-                                    selectedModel === model.model
+                                    selectedModel === model.MODEL
                                       ? 'bg-indigo-50 font-medium text-indigo-700'
                                       : 'text-gray-700'
                                   }`}
-                                  onClick={() => handleModelSelect(model.model)}
+                                  onClick={() => handleModelSelect(model.MODEL)}
                                 >
-                                  <span>{model.model}</span>
+                                  <span>{model.MODEL}</span>
                                   <span className="text-gray-500 text-sm">
                                     {model.count}
                                   </span>
@@ -897,15 +897,15 @@ const UnifiedAircraftSelector: React.FC<UnifiedAircraftSelectorProps> = ({
                 <div className="flex flex-wrap gap-1">
                   {modelsByPopularity.map((model) => (
                     <div
-                      key={model.model}
+                      key={model.MODEL}
                       className={`px-2 py-1 rounded-full text-xs cursor-pointer ${
-                        selectedModel === model.model
+                        selectedModel === model.MODEL
                           ? 'bg-indigo-100 text-indigo-800 border border-indigo-300'
                           : 'bg-gray-100 text-gray-700 border border-gray-200 hover:bg-gray-200'
                       }`}
-                      onClick={() => selectModel(model.model)}
+                      onClick={() => selectModel(model.MODEL)}
                     >
-                      {model.model} ({model.count})
+                      {model.MODEL} ({model.count})
                     </div>
                   ))}
                 </div>
@@ -1109,10 +1109,10 @@ const UnifiedAircraftSelector: React.FC<UnifiedAircraftSelectorProps> = ({
                       })
                       .slice(0, 3)
                       .map((aircraft) => (
-                        <div key={aircraft.icao24} className="text-xs mt-0.5">
-                          {aircraft.icao24} •{' '}
-                          {aircraft.model ||
-                            aircraft.TYPE_AIRCRAFT ||
+                        <div key={aircraft.ICAO24} className="text-xs mt-0.5">
+                          {aircraft.ICAO24} •{' '}
+                          {aircraft.MODEL ||
+                            aircraft.AIRCRAFT_TYPE ||
                             'Unknown'}{' '}
                           •
                           {typeof aircraft.latitude === 'number' &&
@@ -1148,7 +1148,7 @@ const UnifiedAircraftSelector: React.FC<UnifiedAircraftSelectorProps> = ({
               {selectedModel ? (
                 <span>
                   Tracking{' '}
-                  {activeModels.find((m) => m.model === selectedModel)?.count ||
+                  {activeModels.find((m) => m.MODEL === selectedModel)?.count ||
                     0}{' '}
                   aircraft
                 </span>
@@ -1202,11 +1202,11 @@ const UnifiedAircraftSelector: React.FC<UnifiedAircraftSelectorProps> = ({
           </button>
           <button
             onClick={handleManualRefresh}
-            className={`flex items-center justify-center px-4 py-2 ${
+            className={`flex-1 flex items-center justify-center px-3 py-2 ${
               isRefreshing
                 ? 'bg-gray-400 cursor-not-allowed'
                 : 'bg-indigo-600 hover:bg-indigo-700'
-            } text-white font-medium rounded-md w-full`}
+            } text-white font-medium rounded-md`}
             disabled={
               isRefreshing || (!selectedManufacturer && !isGeofenceActive)
             }

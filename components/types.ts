@@ -1,10 +1,10 @@
 // components/aircraft/selector/types.ts
 import { Aircraft, SelectOption } from '@/types/base';
 
-// Base model interface with common properties
+// Base MODEL interface with common properties
 export interface BaseModel {
-  model: string;
-  manufacturer: string;
+  MODEL: string;
+  MANUFACTURER: string;
   label: string;
 }
 
@@ -12,13 +12,13 @@ export interface BaseModel {
 export interface AircraftModel extends BaseModel {
   activeCount: number;
   totalCount: number;
-  icao24s?: string[];
+  ICAO24s?: string[];
 }
 
 export interface ManufacturerSelectorProps {
   manufacturers: SelectOption[];
   selectedManufacturer: string | null;
-  onSelect: (manufacturer: string | null) => Promise<void>;
+  onSelect: (MANUFACTURER: string | null) => Promise<void>;
   onAircraftUpdate: (aircraft: Aircraft[]) => void;
   onModelsUpdate: (models: AircraftModel[]) => void; // Changed to AircraftModel
   onError: (message: string) => void;
@@ -26,10 +26,10 @@ export interface ManufacturerSelectorProps {
 
 export interface ModelSelectorProps {
   selectedModel: string;
-  setSelectedModel: (model: string) => void;
+  setSelectedModel: (MODEL: string) => void;
   models: AircraftModel[]; // Changed to AircraftModel
   totalActive: number;
-  onModelSelect: (model: string) => void;
+  onModelSelect: (MODEL: string) => void;
 }
 
 // In types.ts
@@ -43,10 +43,10 @@ export interface UnifiedSelectorProps {
   totalActive?: number;
 
   // Handler props
-  setSelectedManufacturer?: (manufacturer: string | null) => void; // Now optional
-  setSelectedModel?: (model: string) => void; // Now optional
-  onManufacturerSelect: (manufacturer: string | null) => Promise<void> | void; // Allow non-Promise return
-  onModelSelect: (model: string | null) => void; // Allow null
+  setSelectedManufacturer?: (MANUFACTURER: string | null) => void; // Now optional
+  setSelectedModel?: (MODEL: string) => void; // Now optional
+  onManufacturerSelect: (MANUFACTURER: string | null) => Promise<void> | void; // Allow non-Promise return
+  onModelSelect: (MODEL: string | null) => void; // Allow null
   onAircraftUpdate?: (aircraft: Aircraft[]) => void; // Now optional
   onModelsUpdate?: (models: AircraftModel[]) => void; // Now optional
   onReset: () => void;

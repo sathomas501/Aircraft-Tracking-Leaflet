@@ -77,10 +77,10 @@ const EnhancedTrailSystem: React.FC<EnhancedTrailSystemProps> = ({
   // Filter trails based on selectedOnly prop
   const filteredTrails = new Map(trails);
 
-  if (selectedOnly && selectedAircraft?.icao24) {
+  if (selectedOnly && selectedAircraft?.ICAO24) {
     // If selectedOnly is true and we have a selected aircraft,
     // only keep the trail for that aircraft
-    const selectedIcao = selectedAircraft.icao24.toLowerCase();
+    const selectedIcao = selectedAircraft.ICAO24.toLowerCase();
 
     // Clear all trails except for the selected aircraft
     filteredTrails.forEach((_, icao) => {
@@ -98,7 +98,7 @@ const EnhancedTrailSystem: React.FC<EnhancedTrailSystemProps> = ({
   // Render the trails
   return (
     <>
-      {Array.from(filteredTrails.entries()).map(([icao24, positions]) => {
+      {Array.from(filteredTrails.entries()).map(([ICAO24, positions]) => {
         // Skip trails with less than 2 positions (need at least 2 to draw a line)
         if (positions.length < 2) return null;
 
@@ -119,16 +119,17 @@ const EnhancedTrailSystem: React.FC<EnhancedTrailSystemProps> = ({
           ];
           const opacity = getOpacityForPoint(position.timestamp);
 
-          // Generate a color based on icao24
-          const hash = icao24
-            .split('')
-            .reduce((acc, char) => acc + char.charCodeAt(0), 0);
+          // Generate a color based on ICAO24
+          const hash = ICAO24.split('').reduce(
+            (acc, char) => acc + char.charCodeAt(0),
+            0
+          );
           const hue = hash % 360;
           const color = `hsla(${hue}, 70%, 50%, ${opacity})`;
 
           return (
             <Polyline
-              key={`${icao24}-${i}`}
+              key={`${ICAO24}-${i}`}
               positions={[prevPosition, currentPosition]}
               pathOptions={{
                 color,

@@ -61,15 +61,15 @@ function processAircraftData(aircraft) {
   return validAircraft.map((plane) => {
     // Create a minimal version for rendering
     const minimalPlane = {
-      icao24: plane.icao24,
+      ICAO24: plane.ICAO24,
       latitude: plane.latitude,
       longitude: plane.longitude,
       altitude: plane.altitude,
       velocity: plane.velocity,
       heading: plane.heading,
-      model: plane.model || plane.TYPE_AIRCRAFT,
-      manufacturer: plane.manufacturer,
-      registration: plane.registration || plane['N-NUMBER'],
+      MODEL: plane.MODEL || plane.AIRCRAFT_TYPE,
+      MANUFACTURER: plane.MANUFACTURER,
+      registration: plane.registration || plane['N_NUMBER'],
       on_ground: plane.on_ground,
     };
 
@@ -77,8 +77,8 @@ function processAircraftData(aircraft) {
     if (plane.owner) minimalPlane.owner = plane.owner;
     if (plane.CITY) minimalPlane.CITY = plane.CITY;
     if (plane.STATE) minimalPlane.STATE = plane.STATE;
-    if (plane.TYPE_AIRCRAFT) minimalPlane.TYPE_AIRCRAFT = plane.TYPE_AIRCRAFT;
-    if (plane['N-NUMBER']) minimalPlane['N-NUMBER'] = plane['N-NUMBER'];
+    if (plane.AIRCRAFT_TYPE) minimalPlane.AIRCRAFT_TYPE = plane.AIRCRAFT_TYPE;
+    if (plane['N_NUMBER']) minimalPlane['N_NUMBER'] = plane['N_NUMBER'];
 
     return minimalPlane;
   });

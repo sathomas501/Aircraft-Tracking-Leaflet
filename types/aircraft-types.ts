@@ -2,8 +2,8 @@
 import { Aircraft } from '@/types/base';
 
 export interface BaseModel {
-  model: string;
-  manufacturer: string;
+  MODEL: string;
+  MANUFACTURER: string;
   label: string;
 }
 
@@ -14,7 +14,7 @@ export interface ModelCount {
 }
 
 export interface AircraftModel extends BaseModel, ModelCount {
-  icao24s?: string[];
+  ICAO24s?: string[];
 }
 
 export interface SelectOption {
@@ -27,13 +27,13 @@ export interface SelectOption {
 export const transformToAircraftModel = (
   aircraft: Aircraft
 ): AircraftModel => ({
-  model: aircraft.model || '',
-  manufacturer: aircraft.manufacturer,
-  label: `${aircraft.model || 'Unknown'}`,
+  MODEL: aircraft.MODEL || '',
+  MANUFACTURER: aircraft.MANUFACTURER,
+  label: `${aircraft.MODEL || 'Unknown'}`,
   count: 1,
   activeCount: aircraft.isTracked ? 1 : 0,
   totalCount: 1,
-  icao24s: [aircraft.icao24],
+  ICAO24s: [aircraft.ICAO24],
 });
 
 export const aggregateAircraftModels = (
@@ -42,16 +42,16 @@ export const aggregateAircraftModels = (
   const modelMap = new Map<string, AircraftModel>();
 
   aircraft.forEach((a) => {
-    if (!a.model) return; // Skip aircraft without model info
+    if (!a.MODEL) return; // Skip aircraft without MODEL info
 
-    const key = `${a.manufacturer}-${a.model}`;
+    const key = `${a.MANUFACTURER}-${a.MODEL}`;
     const existing = modelMap.get(key);
 
     if (existing) {
       existing.count++;
       if (a.isTracked) existing.activeCount++;
       existing.totalCount++;
-      if (existing.icao24s && a.icao24) existing.icao24s.push(a.icao24);
+      if (existing.ICAO24s && a.ICAO24) existing.ICAO24s.push(a.ICAO24);
     } else {
       modelMap.set(key, transformToAircraftModel(a));
     }

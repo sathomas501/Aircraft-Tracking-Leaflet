@@ -6,7 +6,7 @@ import {
 } from './base';
 
 export interface OpenSkyAircraft {
-  icao24: string;
+  ICAO24: string;
   latitude?: number;
   longitude?: number;
   altitude?: number;
@@ -14,16 +14,16 @@ export interface OpenSkyAircraft {
   heading: number;
   on_ground: boolean;
   last_contact: number;
-  manufacturer: string;
-  model?: string;
+  MANUFACTURER: string;
+  MODEL?: string;
 }
 
 export interface OpenSkyAircraft
   extends Omit<PositionData, 'latitude' | 'longitude'> {
   latitude?: number;
   longitude?: number;
-  manufacturer: string;
-  model?: string;
+  MANUFACTURER: string;
+  MODEL?: string;
 }
 
 export interface ExtendedAircraft extends OpenSkyAircraft, Aircraft {
@@ -32,9 +32,9 @@ export interface ExtendedAircraft extends OpenSkyAircraft, Aircraft {
   latitude: number;
   longitude: number;
   velocity: number;
-  'N-NUMBER': string;
-  manufacturer: string;
-  model?: string;
+  N_NUMBER: string;
+  MANUFACTURER: string;
+  MODEL?: string;
   NAME: string;
   CITY: string;
   STATE: string;
@@ -43,7 +43,7 @@ export interface ExtendedAircraft extends OpenSkyAircraft, Aircraft {
 
 export interface AircraftMessage {
   isTracked: boolean;
-  icao24: string;
+  ICAO24: string;
   latitude?: number;
   longitude?: number;
   altitude?: number;
@@ -52,11 +52,11 @@ export interface AircraftMessage {
   onGround?: boolean;
   lastContact?: number;
   N_N?: string;
-  'N-NUMBER'?: string;
-  manufacturer?: string;
-  model?: string;
+  N_NUMBER?: string;
+  MANUFACTURER?: string;
+  MODEL?: string;
   OWNER_TYPE?: string;
-  TYPE_AIRCRAFT?: string;
+  AIRCRAFT_TYPE?: string;
   NAME?: string;
   CITY?: string;
   STATE?: string;
@@ -64,7 +64,7 @@ export interface AircraftMessage {
 
 export interface OpenSkyPositionData {
   // Define the properties of the OpenSky position data
-  icao24: string;
+  ICAO24: string;
   latitude: number;
   longitude: number;
   altitude: number | null;

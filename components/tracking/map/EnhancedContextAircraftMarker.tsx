@@ -6,6 +6,7 @@ import {
   createAircraftIcon,
   createTooltipContent,
   createPopupContent,
+  getOwnerTypeClass,
 } from './AircraftIcon/AircraftIcon';
 import type { ExtendedAircraft } from '@/types/base';
 import L from 'leaflet';
@@ -15,6 +16,34 @@ import AircraftTrail from './components/AircraftTrail';
 interface EnhancedContextAircraftMarkerProps {
   aircraft: ExtendedAircraft;
 }
+
+// Helper function to apply owner type classes to Leaflet tooltip elements
+const applyOwnerTypeStylingToTooltip = (
+  tooltipRef: React.RefObject<L.Tooltip>,
+  ownerTypeClass: string
+) => {
+  if (tooltipRef.current) {
+    const tooltipElement = tooltipRef.current.getElement();
+    if (tooltipElement) {
+      // Remove any previous owner type classes
+      tooltipElement.classList.forEach((cls) => {
+        if (cls.startsWith('owner-') || cls.endsWith('-owner')) {
+          tooltipElement.classList.remove(cls);
+        }
+      });
+
+      // Add the owner type class to the tooltip element
+      tooltipElement.classList.add(`owner-${ownerTypeClass}`);
+      tooltipElement.classList.add(`${ownerTypeClass}-owner`);
+
+      // Force a repaint to ensure styles are applied
+      tooltipElement.style.opacity = '0.99';
+      setTimeout(() => {
+        tooltipElement.style.opacity = '1';
+      }, 10);
+    }
+  }
+};
 
 // Define the component with proper React FC syntax
 const EnhancedContextAircraftMarker: React.FC<
@@ -30,8 +59,9 @@ const EnhancedContextAircraftMarker: React.FC<
     cachedAircraftData, // Get cached data from context
   } = useEnhancedMapContext();
 
-  const isSelected = selectedAircraft?.icao24 === aircraft.icao24;
+  const isSelected = selectedAircraft?.ICAO24 === aircraft.ICAO24;
   const markerRef = useRef<L.Marker>(null);
+  const tooltipRef = useRef<L.Tooltip>(null);
   const [isHovering, setIsHovering] = useState(false);
 
   // Skip rendering if no valid position
@@ -41,18 +71,18 @@ const EnhancedContextAircraftMarker: React.FC<
   const enhancedAircraft = useMemo(() => {
     // If we have cached data for this aircraft, enhance it with static fields
     if (
-      aircraft.icao24 &&
+      aircraft.ICAO24 &&
       cachedAircraftData &&
-      cachedAircraftData[aircraft.icao24]
+      cachedAircraftData[aircraft.ICAO24]
     ) {
-      const cached = cachedAircraftData[aircraft.icao24];
+      const cached = cachedAircraftData[aircraft.ICAO24];
       return {
         ...aircraft, // Start with current data (position, etc.)
         // Preserve specific fields from cache if they're missing in current data
-        manufacturer: aircraft.manufacturer || cached.manufacturer,
-        model: aircraft.model || cached.model,
-        'N-NUMBER': aircraft['N-NUMBER'] || cached['N-NUMBER'],
-        TYPE_AIRCRAFT: aircraft.TYPE_AIRCRAFT || cached.TYPE_AIRCRAFT,
+        MANUFACTURER: aircraft.MANUFACTURER || cached.MANUFACTURER,
+        MODEL: aircraft.MODEL || cached.MODEL,
+        N_NUMBER: aircraft['N_NUMBER'] || cached['N_NUMBER'],
+        AIRCRAFT_TYPE: aircraft.AIRCRAFT_TYPE || cached.AIRCRAFT_TYPE,
         CITY: aircraft.CITY || cached.CITY,
         STATE: aircraft.STATE || cached.STATE,
         OWNER_TYPE: aircraft.OWNER_TYPE || cached.OWNER_TYPE,
@@ -67,9 +97,12 @@ const EnhancedContextAircraftMarker: React.FC<
   // Get the trail for this aircraft
   const trail =
     trailsEnabled && aircraftTrails
-      ? aircraftTrails.get(aircraft.icao24) ||
-        aircraftTrails.get(aircraft.icao24?.toLowerCase())
+      ? aircraftTrails.get(aircraft.ICAO24) ||
+        aircraftTrails.get(aircraft.ICAO24?.toLowerCase())
       : undefined;
+
+  // Get owner type class for the aircraft
+  const ownerClass = getOwnerTypeClass(enhancedAircraft);
 
   // Create tooltip content using the utility function with enhanced data
   const tooltipContent = createTooltipContent(enhancedAircraft, zoomLevel || 9);
@@ -85,10 +118,16 @@ const EnhancedContextAircraftMarker: React.FC<
     });
   }, [enhancedAircraft, isSelected, zoomLevel]); // Explicit dependency on zoomLevel
 
+  // Apply owner type styling to tooltip after render
+  useEffect(() => {
+    if (isHovering && tooltipRef.current) {
+      applyOwnerTypeStylingToTooltip(tooltipRef, ownerClass);
+    }
+  }, [isHovering, tooltipRef.current, ownerClass]);
+
   return (
     <>
       {/* Render trail if enabled and available */}
-      // In EnhancedContextAircraftMarker.tsx
       {trailsEnabled && trail && trail.length >= 2 && (
         <AircraftTrail
           positions={trail.map((pos) => ({
@@ -112,16 +151,16 @@ const EnhancedContextAircraftMarker: React.FC<
         zIndexOffset={isSelected ? 1000 : 0}
         eventHandlers={{
           click: () => {
-            console.log('Marker clicked:', aircraft.icao24);
+            console.log('Marker clicked:', aircraft.ICAO24);
             // Pass the enhanced aircraft to selectAircraft
             selectAircraft(enhancedAircraft);
           },
           mouseover: () => {
-            console.log('Marker hover start:', aircraft.icao24);
+            console.log('Marker hover start:', aircraft.ICAO24);
             setIsHovering(true);
           },
           mouseout: () => {
-            console.log('Marker hover end:', aircraft.icao24);
+            console.log('Marker hover end:', aircraft.ICAO24);
             setIsHovering(false);
           },
         }}
@@ -129,10 +168,11 @@ const EnhancedContextAircraftMarker: React.FC<
         {/* Only show tooltip when hovering */}
         {isHovering && (
           <Tooltip
+            ref={tooltipRef}
             direction="top"
             offset={[0, -20]}
             permanent={true}
-            className="aircraft-tooltip visible"
+            className={`aircraft-tooltip visible owner-${ownerClass} ${ownerClass}-owner`}
           >
             <div dangerouslySetInnerHTML={{ __html: tooltipContent }} />
           </Tooltip>

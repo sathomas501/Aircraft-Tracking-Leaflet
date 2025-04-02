@@ -1,4 +1,4 @@
-// pages/api/aircraft/icao24s.ts
+// pages/api/aircraft/ICAO24s.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
 import IcaoManagementService from '../../../lib/services/IcaoManagementService';
 
@@ -11,21 +11,22 @@ export default async function handler(
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
-  const { manufacturer } = req.body;
-  if (!manufacturer) {
-    return res.status(400).json({ error: 'Missing manufacturer' });
+  const { MANUFACTURER } = req.body;
+  if (!MANUFACTURER) {
+    return res.status(400).json({ error: 'Missing MANUFACTURER' });
   }
 
   try {
-    console.log(`[API] Fetching ICAO24s for ${manufacturer}`);
+    console.log(`[API] Fetching ICAO24s for ${MANUFACTURER}`);
 
     // Fetch ICAO24s with batching to avoid SQLite errors
-    const icao24s = await IcaoManagementService.getIcao24sForManufacturer(manufacturer);
+    const ICAO24s =
+      await IcaoManagementService.getIcao24sForManufacturer(MANUFACTURER);
 
     res.status(200).json({
-      icao24s,
-      manufacturer,
-      count: icao24s.length,
+      ICAO24s,
+      MANUFACTURER,
+      count: ICAO24s.length,
       timestamp: new Date().toISOString(),
     });
   } catch (error) {

@@ -85,7 +85,7 @@ class HomePage extends React.Component<HomePageProps, HomePageState> {
           <title>Aircraft Tracking</title>
           <meta
             name="description"
-            content="Track aircraft by manufacturer and model"
+            content="Track aircraft by MANUFACTURER and MODEL"
           />
           <meta name="viewport" content="width=device-width, initial-scale=1" />
           <link rel="icon" href="/favicon.ico" />

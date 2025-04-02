@@ -25,10 +25,10 @@ const DEFAULT_VALUES = {
 export const BaseTransforms = {
   createBase(currentTime = Date.now()): Aircraft {
     return {
-      icao24: DEFAULT_VALUES.EMPTY_STRING,
-      'N-NUMBER': DEFAULT_VALUES.STRING,
-      manufacturer: DEFAULT_VALUES.STRING,
-      model: DEFAULT_VALUES.STRING,
+      ICAO24: DEFAULT_VALUES.EMPTY_STRING,
+      N_NUMBER: DEFAULT_VALUES.STRING,
+      MANUFACTURER: DEFAULT_VALUES.STRING,
+      MODEL: DEFAULT_VALUES.STRING,
       operator: DEFAULT_VALUES.STRING,
       latitude: DEFAULT_VALUES.NUMBER,
       longitude: DEFAULT_VALUES.NUMBER,
@@ -40,7 +40,7 @@ export const BaseTransforms = {
       NAME: DEFAULT_VALUES.STRING,
       CITY: DEFAULT_VALUES.STRING,
       STATE: DEFAULT_VALUES.STRING,
-      TYPE_AIRCRAFT: DEFAULT_VALUES.STRING,
+      AIRCRAFT_TYPE: DEFAULT_VALUES.STRING,
       OWNER_TYPE: DEFAULT_VALUES.STRING,
       isTracked: DEFAULT_VALUES.BOOL,
       lastSeen: currentTime,
@@ -53,9 +53,9 @@ export const BaseTransforms = {
     return {
       ...base,
       ...partialAircraft,
-      icao24: partialAircraft.icao24 || base.icao24,
-      'N-NUMBER': partialAircraft['N-NUMBER'] || base['N-NUMBER'],
-      manufacturer: partialAircraft.manufacturer || base.manufacturer,
+      ICAO24: partialAircraft.ICAO24 || base.ICAO24,
+      N_NUMBER: partialAircraft['N_NUMBER'] || base['N_NUMBER'],
+      MANUFACTURER: partialAircraft.MANUFACTURER || base.MANUFACTURER,
       latitude: partialAircraft.latitude ?? base.latitude ?? 0, // Ensure valid coords
       longitude: partialAircraft.longitude ?? base.longitude ?? 0,
       altitude: partialAircraft.altitude ?? base.altitude,
@@ -66,7 +66,7 @@ export const BaseTransforms = {
       NAME: partialAircraft.NAME || base.NAME,
       CITY: partialAircraft.CITY || base.CITY,
       STATE: partialAircraft.STATE || base.STATE,
-      TYPE_AIRCRAFT: partialAircraft.TYPE_AIRCRAFT || base.TYPE_AIRCRAFT,
+      AIRCRAFT_TYPE: partialAircraft.AIRCRAFT_TYPE || base.AIRCRAFT_TYPE,
       OWNER_TYPE: partialAircraft.OWNER_TYPE || base.OWNER_TYPE,
       isTracked: partialAircraft.isTracked ?? base.isTracked,
     };
@@ -94,8 +94,8 @@ export const OpenSkyTransforms = {
     const objState = state as Record<string, any>;
 
     // Check required fields
-    if (typeof objState.icao24 !== 'string' || !objState.icao24) {
-      console.log('[OpenSkyTransforms] Invalid icao24:', objState.icao24);
+    if (typeof objState.ICAO24 !== 'string' || !objState.ICAO24) {
+      console.log('[OpenSkyTransforms] Invalid ICAO24:', objState.ICAO24);
       return false;
     }
 
@@ -140,33 +140,33 @@ export const OpenSkyTransforms = {
    */
   toExtendedAircraftFromObject(
     state: Record<string, any>,
-    manufacturer: string
+    MANUFACTURER: string
   ): Aircraft {
     try {
       // Add better logging for diagnosis
       console.log(
-        `[OpenSkyTransforms] Processing object state for ${state.icao24} from manufacturer: "${manufacturer}"`
+        `[OpenSkyTransforms] Processing object state for ${state.ICAO24} from MANUFACTURER: "${MANUFACTURER}"`
       );
 
-      // Check if manufacturer is empty and log a warning
-      if (!manufacturer) {
+      // Check if MANUFACTURER is empty and log a warning
+      if (!MANUFACTURER) {
         console.warn(
-          '[OpenSkyTransforms] Warning: Empty manufacturer provided for aircraft:',
-          state.icao24
+          '[OpenSkyTransforms] Warning: Empty MANUFACTURER provided for aircraft:',
+          state.ICAO24
         );
       }
 
       // Convert on_ground to boolean safely
       const onGround = this.convertToBoolean(state.on_ground);
 
-      // Create the aircraft with the provided manufacturer (even if it's an empty string)
+      // Create the aircraft with the provided MANUFACTURER (even if it's an empty string)
 
       console.log(
-        `[OpenSkyTransforms] 🔍 Debugging ICAO24: ${state.icao24}, Manufacturer: "${manufacturer}", Model: "${state.model}"`
+        `[OpenSkyTransforms] 🔍 Debugging ICAO24: ${state.ICAO24}, Manufacturer: "${MANUFACTURER}", Model: "${state.MODEL}"`
       );
 
       const aircraft = BaseTransforms.normalize({
-        icao24: state.icao24,
+        ICAO24: state.ICAO24,
         latitude: state.latitude,
         longitude: state.longitude,
         altitude: typeof state.altitude === 'number' ? state.altitude : 0,
@@ -177,22 +177,22 @@ export const OpenSkyTransforms = {
           typeof state.last_contact === 'number'
             ? state.last_contact
             : Math.floor(Date.now() / 1000),
-        // Use the provided manufacturer and ensure it's not empty
-        manufacturer: manufacturer || 'Unknown',
-        'N-NUMBER': state['N-NUMBER'] || '',
-        model: state.model || '',
+        // Use the provided MANUFACTURER and ensure it's not empty
+        MANUFACTURER: MANUFACTURER || 'Unknown',
+        N_NUMBER: state['N_NUMBER'] || '',
+        MODEL: state.MODEL || '',
         NAME: state.NAME || '',
         CITY: state.CITY || '',
         STATE: state.STATE || '',
-        TYPE_AIRCRAFT: state.TYPE_AIRCRAFT || '',
+        AIRCRAFT_TYPE: state.AIRCRAFT_TYPE || '',
         OWNER_TYPE: state.OWNER_TYPE || '',
         isTracked: true,
         lastSeen: state.lastSeen || Date.now(),
       });
 
-      // Log the final manufacturer value for verification
+      // Log the final MANUFACTURER value for verification
       console.log(
-        `[OpenSkyTransforms] Aircraft ${state.icao24} manufacturer set to: "${aircraft.manufacturer}"`
+        `[OpenSkyTransforms] Aircraft ${state.ICAO24} MANUFACTURER set to: "${aircraft.MANUFACTURER}"`
       );
 
       return aircraft;
@@ -206,11 +206,11 @@ export const OpenSkyTransforms = {
 
       // Return a minimal valid aircraft object in case of error
       return BaseTransforms.normalize({
-        icao24: typeof state.icao24 === 'string' ? state.icao24 : 'unknown',
+        ICAO24: typeof state.ICAO24 === 'string' ? state.ICAO24 : 'unknown',
         latitude: typeof state.latitude === 'number' ? state.latitude : 0,
         longitude: typeof state.longitude === 'number' ? state.longitude : 0,
-        // Make sure manufacturer is passed here too
-        manufacturer: manufacturer || 'Unknown',
+        // Make sure MANUFACTURER is passed here too
+        MANUFACTURER: MANUFACTURER || 'Unknown',
         isTracked: true,
       });
     }
@@ -218,11 +218,11 @@ export const OpenSkyTransforms = {
 
   toExtendedAircraft(
     state: PartialOpenSkyState,
-    manufacturer: string
+    MANUFACTURER: string
   ): Aircraft {
     try {
       console.log(
-        `[OpenSkyTransforms] Processing state for ${state[0]} from ${manufacturer}`
+        `[OpenSkyTransforms] Processing state for ${state[0]} from ${MANUFACTURER}`
       );
 
       // First check if we have a valid ICAO24 code
@@ -238,15 +238,15 @@ export const OpenSkyTransforms = {
         );
         // Return a minimal valid aircraft
         return BaseTransforms.normalize({
-          icao24: 'unknown',
-          manufacturer: manufacturer || 'Unknown',
+          ICAO24: 'unknown',
+          MANUFACTURER: MANUFACTURER || 'Unknown',
           isTracked: true,
           lastSeen: Date.now(),
         });
       }
 
       // Extract values with safe fallbacks
-      const icao24 = String(state[0]).toLowerCase();
+      const ICAO24 = String(state[0]).toLowerCase();
       const latitude =
         typeof state[6] === 'number' && !isNaN(state[6]) ? state[6] : 0;
       const longitude =
@@ -265,7 +265,7 @@ export const OpenSkyTransforms = {
 
       // Create aircraft
       const aircraft = BaseTransforms.normalize({
-        icao24,
+        ICAO24,
         latitude,
         longitude,
         altitude,
@@ -273,20 +273,20 @@ export const OpenSkyTransforms = {
         heading,
         on_ground: onGround,
         last_contact: lastContact,
-        manufacturer: manufacturer || 'Unknown',
-        'N-NUMBER': '',
-        model: '',
+        MANUFACTURER: MANUFACTURER || 'Unknown',
+        N_NUMBER: '',
+        MODEL: '',
         NAME: '',
         CITY: '',
         STATE: '',
-        TYPE_AIRCRAFT: '',
+        AIRCRAFT_TYPE: '',
         OWNER_TYPE: '',
         isTracked: true,
         lastSeen: Date.now(),
       });
 
       console.log(
-        `[OpenSkyTransforms] Successfully transformed aircraft: ${icao24}`
+        `[OpenSkyTransforms] Successfully transformed aircraft: ${ICAO24}`
       );
       return aircraft;
     } catch (error) {
@@ -299,8 +299,8 @@ export const OpenSkyTransforms = {
 
       // Return a minimal valid aircraft object in case of error
       return BaseTransforms.normalize({
-        icao24: typeof state[0] === 'string' ? state[0] : `error-${Date.now()}`,
-        manufacturer: manufacturer || 'Unknown',
+        ICAO24: typeof state[0] === 'string' ? state[0] : `error-${Date.now()}`,
+        MANUFACTURER: MANUFACTURER || 'Unknown',
         isTracked: true,
         lastSeen: Date.now(),
       });
@@ -355,7 +355,7 @@ export const OpenSkyTransforms = {
       const onGround = this.convertToBoolean(state[8]);
 
       return BaseTransforms.normalize({
-        icao24: state[0],
+        ICAO24: state[0],
         latitude: state[6],
         longitude: state[5],
         altitude: typeof state[7] === 'number' ? state[7] : 0,
@@ -366,13 +366,13 @@ export const OpenSkyTransforms = {
           typeof state[4] === 'number'
             ? state[4]
             : Math.floor(Date.now() / 1000),
-        manufacturer: '',
-        'N-NUMBER': '',
-        model: '',
+        MANUFACTURER: '',
+        N_NUMBER: '',
+        MODEL: '',
         NAME: '',
         CITY: '',
         STATE: '',
-        TYPE_AIRCRAFT: '',
+        AIRCRAFT_TYPE: '',
         OWNER_TYPE: '',
         isTracked: true,
       });
@@ -400,10 +400,10 @@ export const OpenSkyTransforms = {
 export const CacheTransforms = {
   toCache(aircraft: Aircraft): CachedAircraftData {
     return {
-      icao24: aircraft.icao24,
-      'N-NUMBER': aircraft['N-NUMBER'],
-      manufacturer: aircraft.manufacturer,
-      model: aircraft.model,
+      ICAO24: aircraft.ICAO24,
+      N_NUMBER: aircraft['N_NUMBER'],
+      MANUFACTURER: aircraft.MANUFACTURER,
+      MODEL: aircraft.MODEL,
       latitude: aircraft.latitude,
       longitude: aircraft.longitude,
       altitude: aircraft.altitude,
@@ -416,7 +416,7 @@ export const CacheTransforms = {
       NAME: aircraft.NAME,
       CITY: aircraft.CITY,
       STATE: aircraft.STATE,
-      TYPE_AIRCRAFT: aircraft.TYPE_AIRCRAFT,
+      AIRCRAFT_TYPE: aircraft.AIRCRAFT_TYPE,
       OWNER_TYPE: aircraft.OWNER_TYPE,
     };
   },
@@ -435,7 +435,7 @@ export const CacheTransforms = {
 export const DatabaseTransforms = {
   toTracking(aircraft: Aircraft): TrackingData {
     return {
-      icao24: aircraft.icao24,
+      ICAO24: aircraft.ICAO24,
       latitude: aircraft.latitude,
       longitude: aircraft.longitude,
       altitude: aircraft.altitude,
@@ -492,7 +492,7 @@ export const OpenSkyUtils = {
   ): Aircraft {
     const currentTime = Math.floor(Date.now() / 1000);
     return {
-      icao24: state.icao24,
+      ICAO24: state.ICAO24,
       latitude: state.latitude ?? 0,
       longitude: state.longitude ?? 0,
       altitude: state.baro_altitude ?? 0,
@@ -500,12 +500,12 @@ export const OpenSkyUtils = {
       velocity: state.velocity ?? 0,
       on_ground: Boolean(state.on_ground),
       last_contact: state.last_contact ?? currentTime,
-      'N-NUMBER': aircraft['N-NUMBER'] ?? '',
-      manufacturer: aircraft.manufacturer ?? '',
-      model: aircraft.model ?? '',
+      N_NUMBER: aircraft['N_NUMBER'] ?? '',
+      MANUFACTURER: aircraft.MANUFACTURER ?? '',
+      MODEL: aircraft.MODEL ?? '',
       operator: aircraft.operator ?? '',
       OWNER_TYPE: aircraft.OWNER_TYPE ?? '',
-      TYPE_AIRCRAFT: aircraft.TYPE_AIRCRAFT ?? '',
+      AIRCRAFT_TYPE: aircraft.AIRCRAFT_TYPE ?? '',
       NAME: aircraft.NAME ?? '',
       CITY: aircraft.CITY ?? '',
       STATE: aircraft.STATE ?? '',
@@ -518,8 +518,8 @@ export function isOpenSkyState(value: unknown): value is OpenSkyState {
   return (
     typeof value === 'object' &&
     value !== null &&
-    'icao24' in value &&
-    typeof (value as OpenSkyState).icao24 === 'string' &&
+    'ICAO24' in value &&
+    typeof (value as OpenSkyState).ICAO24 === 'string' &&
     'last_contact' in value &&
     typeof (value as OpenSkyState).last_contact === 'number' &&
     'on_ground' in value &&
@@ -531,8 +531,8 @@ export function isValidPositionData(data: unknown): data is PositionData {
   return (
     data !== null &&
     typeof data === 'object' &&
-    'icao24' in data &&
-    typeof (data as PositionData).icao24 === 'string' &&
+    'ICAO24' in data &&
+    typeof (data as PositionData).ICAO24 === 'string' &&
     'latitude' in data &&
     typeof (data as PositionData).latitude === 'number' &&
     'longitude' in data &&
@@ -555,7 +555,7 @@ export function parsePositionData(rawData: unknown[]): PositionData | null {
   if (!Array.isArray(rawData) || rawData.length < 17) return null;
 
   const [
-    icao24,
+    ICAO24,
     _callsign,
     _origin_country,
     _time_position,
@@ -572,7 +572,7 @@ export function parsePositionData(rawData: unknown[]): PositionData | null {
   ] = rawData;
 
   if (
-    typeof icao24 !== 'string' ||
+    typeof ICAO24 !== 'string' ||
     typeof latitude !== 'number' ||
     typeof longitude !== 'number' ||
     isNaN(latitude) ||
@@ -586,7 +586,7 @@ export function parsePositionData(rawData: unknown[]): PositionData | null {
   }
 
   return {
-    icao24,
+    ICAO24,
     latitude,
     longitude,
     altitude: typeof altitude === 'number' && !isNaN(altitude) ? altitude : 0,
@@ -605,7 +605,7 @@ export const transformToExtendedAircraft = (
 ): ExtendedAircraft[] => {
   return aircraft.map((a) => ({
     ...a,
-    type: a.TYPE_AIRCRAFT || 'Unknown', // Ensure 'type' exists
+    type: a.AIRCRAFT_TYPE || 'Unknown', // Ensure 'type' exists
     isGovernment: a.OWNER_TYPE === '5', // Ensure 'isGovernment' exists
   }));
 };
@@ -659,7 +659,7 @@ export const DataCleanupUtils = {
     // Ensure all required fields have proper types
     return {
       ...cleanState,
-      icao24: String(cleanState.icao24 || ''),
+      ICAO24: String(cleanState.ICAO24 || ''),
       latitude: Number(cleanState.latitude) || 0,
       longitude: Number(cleanState.longitude) || 0,
       altitude: Number(cleanState.altitude) || 0,

@@ -23,7 +23,7 @@ interface ModelsSuccessResponse {
   models: SelectOption[];
   meta: {
     total: number;
-    manufacturer: string;
+    MANUFACTURER: string;
     timestamp: string;
   };
 }
@@ -41,8 +41,8 @@ export type { ModelsResponse };
 export interface IcaoResponseData {
   success: boolean;
   data: {
-    manufacturer: string;
-    icao24List: string[];
+    MANUFACTURER: string;
+    ICAO24List: string[];
     states: OpenSkyStateArray[];
     meta: {
       total: number;
@@ -67,5 +67,5 @@ export interface OpenSkyProxyResponse {
 }
 
 export interface OpenSkyProxyRequest {
-  icao24s: string[];
+  ICAO24s: string[];
 }

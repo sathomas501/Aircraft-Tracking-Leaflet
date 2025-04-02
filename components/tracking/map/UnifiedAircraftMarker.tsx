@@ -50,7 +50,7 @@ const UnifiedAircraftMarker: React.FC<UnifiedAircraftMarkerProps> = ({
   const [isHovering, setIsHovering] = useState(false);
 
   // Determine if this aircraft is selected
-  const isSelected = selectedAircraft?.icao24 === aircraft.icao24;
+  const isSelected = selectedAircraft?.ICAO24 === aircraft.ICAO24;
 
   // Apply persistence to enhance aircraft data
   const enhancedAircraft = useMemo(() => {
@@ -59,7 +59,7 @@ const UnifiedAircraftMarker: React.FC<UnifiedAircraftMarkerProps> = ({
 
     // Ensure required ExtendedAircraft fields are present
     if (!persistedAircraft.type) {
-      persistedAircraft.type = persistedAircraft.TYPE_AIRCRAFT || 'unknown';
+      persistedAircraft.type = persistedAircraft.AIRCRAFT_TYPE || 'unknown';
     }
 
     if (persistedAircraft.isGovernment === undefined) {
@@ -97,14 +97,24 @@ const UnifiedAircraftMarker: React.FC<UnifiedAircraftMarkerProps> = ({
 
     // Map owner type to CSS class
     const ownerTypeMap: Record<string, string> = {
-      '1': 'individual-owner',
-      '2': 'partnership-owner',
-      '3': 'corporation-owner',
-      '4': 'co-owned-owner',
-      '5': 'government-owner',
-      '7': 'llc-owner',
-      '8': 'non-citizen-corp-owner',
-      '9': 'non-citizen-co-owned-owner',
+      '1': 'Individual',
+      '2': 'Partnership',
+      '3': 'Corp-owner',
+      '4': 'Co-owned',
+      '7': 'LLC',
+      '8': 'non-citizen-corp-owned',
+      '9': 'Airline',
+      '10': 'Freight',
+      '11': 'Medical',
+      '12': 'Media',
+      '13': 'Historical',
+      '14': 'Flying Club',
+      '15': 'Emergency',
+      '16': 'Local Govt',
+      '17': 'Education',
+      '18': 'Federal Govt',
+      '19': 'Flight School',
+      '20': 'Leasing Corp',
     };
 
     return ownerTypeMap[ownerType] || 'unknown-owner';
@@ -123,7 +133,7 @@ const UnifiedAircraftMarker: React.FC<UnifiedAircraftMarkerProps> = ({
   // Get trail for this aircraft if enabled
   const trail =
     trailsEnabled && aircraftTrails
-      ? aircraftTrails.get(aircraft.icao24)
+      ? aircraftTrails.get(aircraft.ICAO24)
       : undefined;
 
   // Create tooltip content
@@ -174,7 +184,7 @@ const UnifiedAircraftMarker: React.FC<UnifiedAircraftMarkerProps> = ({
           <Tooltip
             ref={tooltipRef}
             direction="top"
-            className={`aircraft-tooltip ${isStale ? 'stale-tooltip' : ''} ${getOwnerTypeClass}`}
+            className={`aircraft-tooltip ${isStale ? 'stale-tooltip' : ''} ${getOwnerTypeClass(enhancedAircraft)}`}
             opacity={0.9}
             offset={[0, -5] as L.PointTuple}
             permanent={isHovering}

@@ -193,7 +193,7 @@ export async function fetchAircraftInGeofence(
     const rawAircraft = data.data.states.map((aircraft: any) => ({
       ...aircraft,
       // Ensure core fields exist
-      icao24: aircraft.icao24 || aircraft.transponder || '',
+      ICAO24: aircraft.ICAO24 || aircraft.transponder || '',
       lastSeen: Date.now(),
     }));
 

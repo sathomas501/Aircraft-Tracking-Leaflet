@@ -110,7 +110,7 @@
 │   │   ├── 📂 proxy
 │   │   │   └── 📄 opensky.ts
 │   │   └── 📂 tracking
-│   │       ├── 📄 icao24s.ts
+│   │       ├── 📄 ICAO24s.ts
 │   │       ├── 📄 live.ts
 │   │       └── 📄 manufacturers.ts
 │   ├── 📄 index.tsx
@@ -173,4 +173,4 @@
     ├── 📄 batchprocessor.ts
     ├── 📄 cn.ts
     ├── 📄 database-transforms.ts
-    └── 📄 model-transforms.ts
+    └── 📄 MODEL-transforms.ts

@@ -9,26 +9,26 @@ export const sortModels = (models: Model[]): Model[] => {
     const countA = a.activeCount ?? 0;
     const countB = b.activeCount ?? 0;
     const diff = countB - countA;
-    return diff !== 0 ? diff : (a.model ?? '').localeCompare(b.model ?? '');
+    return diff !== 0 ? diff : (a.MODEL ?? '').localeCompare(b.MODEL ?? '');
   });
 };
 
 /**
- * Initialize tracking for a manufacturer's aircraft
- * @param manufacturer The manufacturer name
+ * Initialize tracking for a MANUFACTURER's aircraft
+ * @param MANUFACTURER The MANUFACTURER name
  * @returns Response data including count of tracked aircraft
  */
-export async function initializeTracking(manufacturer: string) {
+export async function initializeTracking(MANUFACTURER: string) {
   try {
     console.log(
-      `[Aircraft Service] 🔄 Initializing tracking for ${manufacturer}`
+      `[Aircraft Service] 🔄 Initializing tracking for ${MANUFACTURER}`
     );
     const response = await fetch('/api/aircraft/track', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ manufacturer }),
+      body: JSON.stringify({ MANUFACTURER }),
     });
 
     if (!response.ok) {
@@ -47,14 +47,14 @@ export async function initializeTracking(manufacturer: string) {
 }
 
 /**
- * Check current tracking status for a manufacturer
- * @param manufacturer The manufacturer name
+ * Check current tracking status for a MANUFACTURER
+ * @param MANUFACTURER The MANUFACTURER name
  * @returns Status data including tracked aircraft
  */
-export async function checkTrackingStatus(manufacturer: string) {
+export async function checkTrackingStatus(MANUFACTURER: string) {
   try {
     const response = await fetch(
-      `/api/tracking/tracked?manufacturer=${encodeURIComponent(manufacturer)}`
+      `/api/tracking/tracked?MANUFACTURER=${encodeURIComponent(MANUFACTURER)}`
     );
 
     if (!response.ok) {
@@ -72,20 +72,20 @@ export async function checkTrackingStatus(manufacturer: string) {
 }
 
 /**
- * Track aircraft for a specific manufacturer
- * @param manufacturer The manufacturer name
+ * Track aircraft for a specific MANUFACTURER
+ * @param MANUFACTURER The MANUFACTURER name
  * @returns Object containing array of live aircraft IDs
  */
 export async function trackManufacturer(
-  manufacturer: string
+  MANUFACTURER: string
 ): Promise<{ liveAircraft: string[] }> {
   try {
     console.log(
-      `[Aircraft Service] 🔄 Tracking aircraft for manufacturer: ${manufacturer}`
+      `[Aircraft Service] 🔄 Tracking aircraft for MANUFACTURER: ${MANUFACTURER}`
     );
 
     const response = await fetch(
-      `/api/aircraft/tracking?manufacturer=${encodeURIComponent(manufacturer)}`,
+      `/api/aircraft/tracking?MANUFACTURER=${encodeURIComponent(MANUFACTURER)}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -100,7 +100,7 @@ export async function trackManufacturer(
 
     return { liveAircraft: data.liveAircraft };
   } catch (error) {
-    console.error('[Aircraft Service] ❌ Failed to track manufacturer:', error);
+    console.error('[Aircraft Service] ❌ Failed to track MANUFACTURER:', error);
     return { liveAircraft: [] };
   }
 }

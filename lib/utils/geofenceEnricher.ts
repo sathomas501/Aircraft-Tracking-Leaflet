@@ -27,7 +27,7 @@ export async function enrichGeofenceAircraft(
 
   // Extract ICAO24 codes from the aircraft data
   const icaoCodes = geofenceAircraft
-    .map((aircraft) => aircraft.icao24?.toLowerCase())
+    .map((aircraft) => aircraft.ICAO24?.toLowerCase())
     .filter(Boolean) as string[];
 
   if (icaoCodes.length === 0) {
@@ -69,9 +69,9 @@ export async function enrichGeofenceAircraft(
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          icao24s: uncachedIcaos,
+          ICAO24s: uncachedIcaos,
           includeStatic: true, // Important: This tells the API to include DB data
-          manufacturer: 'geofence', // Just a label for logging
+          MANUFACTURER: 'geofence', // Just a label for logging
         }),
       });
 
@@ -84,8 +84,8 @@ export async function enrichGeofenceAircraft(
 
       // Add new results to cache
       apiResults.forEach((aircraft) => {
-        if (aircraft.icao24) {
-          const icao = aircraft.icao24.toLowerCase();
+        if (aircraft.ICAO24) {
+          const icao = aircraft.ICAO24.toLowerCase();
           icaoCache.set(icao, {
             data: aircraft,
             timestamp: now,
@@ -107,8 +107,8 @@ export async function enrichGeofenceAircraft(
   // Convert API results to lookup map
   const apiLookup: Record<string, any> = {};
   apiResults.forEach((aircraft) => {
-    if (aircraft.icao24) {
-      apiLookup[aircraft.icao24.toLowerCase()] = aircraft;
+    if (aircraft.ICAO24) {
+      apiLookup[aircraft.ICAO24.toLowerCase()] = aircraft;
     }
   });
 
@@ -117,9 +117,9 @@ export async function enrichGeofenceAircraft(
 
   // Enrich aircraft with static data
   const enrichedAircraft = geofenceAircraft.map((aircraft) => {
-    if (!aircraft.icao24) return aircraft;
+    if (!aircraft.ICAO24) return aircraft;
 
-    const icao = aircraft.icao24.toLowerCase();
+    const icao = aircraft.ICAO24.toLowerCase();
     const staticData = combinedLookup[icao];
 
     if (staticData) {
@@ -128,23 +128,23 @@ export async function enrichGeofenceAircraft(
         ...staticData, // Start with static database data
         ...aircraft, // Override with geofence data (positions, etc.)
         // Make sure these fields are taken from static data even if geofence data has them
-        manufacturer:
-          staticData.manufacturer || aircraft.manufacturer || 'Unknown',
-        model:
-          staticData.model ||
-          aircraft.model ||
-          staticData.TYPE_AIRCRAFT ||
+        MANUFACTURER:
+          staticData.MANUFACTURER || aircraft.MANUFACTURER || 'Unknown',
+        MODEL:
+          staticData.MODEL ||
+          aircraft.MODEL ||
+          staticData.AIRCRAFT_TYPE ||
           'Unknown',
-        TYPE_AIRCRAFT:
-          staticData.TYPE_AIRCRAFT ||
-          aircraft.TYPE_AIRCRAFT ||
-          staticData.model ||
+        AIRCRAFT_TYPE:
+          staticData.AIRCRAFT_TYPE ||
+          aircraft.AIRCRAFT_TYPE ||
+          staticData.MODEL ||
           'Unknown',
         // Ensure type and isGovernment are set for icon rendering
         type: getAircraftType(staticData),
         isGovernment: isGovernmentAircraft(staticData),
         // Other key fields from static data to preserve
-        'N-NUMBER': staticData['N-NUMBER'] || aircraft['N-NUMBER'] || '',
+        N_NUMBER: staticData['N_NUMBER'] || aircraft['N_NUMBER'] || '',
         NAME: staticData.NAME || staticData.name || aircraft.NAME || '',
         CITY: staticData.CITY || staticData.city || aircraft.CITY || '',
         STATE: staticData.STATE || staticData.state || aircraft.STATE || '',
@@ -169,14 +169,14 @@ export async function enrichGeofenceAircraft(
     // No static data found, ensure the aircraft has type and isGovernment for rendering
     return {
       ...aircraft,
-      type: aircraft.type || determineTypeFromModel(aircraft.model) || 'plane',
+      type: aircraft.type || determineTypeFromModel(aircraft.MODEL) || 'plane',
       isGovernment: aircraft.isGovernment || false,
     };
   });
 
   // Log some stats about the enrichment
   const enrichedCount = enrichedAircraft.filter(
-    (a) => a.manufacturer !== 'Unknown'
+    (a) => a.MANUFACTURER !== 'Unknown'
   ).length;
   console.log(
     `[GeofenceEnricher] Successfully enriched ${enrichedCount} out of ${geofenceAircraft.length} aircraft`
@@ -195,7 +195,7 @@ function getAircraftType(aircraft: any): string {
   }
 
   // Combine possible type fields for checking
-  const typeString = [aircraft.TYPE_AIRCRAFT, aircraft.model]
+  const typeString = [aircraft.AIRCRAFT_TYPE, aircraft.MODEL]
     .filter(Boolean)
     .join(' ')
     .toLowerCase();
@@ -204,43 +204,43 @@ function getAircraftType(aircraft: any): string {
 }
 
 /**
- * Determines aircraft type from model string
+ * Determines aircraft type from MODEL string
  */
 function determineTypeFromModel(modelString?: string): string | null {
   if (!modelString) return null;
 
-  const model = modelString.toLowerCase();
+  const MODEL = modelString.toLowerCase();
 
   // Check for different aircraft types
-  if (model.includes('helicopter') || model.includes('rotor')) {
+  if (MODEL.includes('helicopter') || MODEL.includes('rotor')) {
     return 'helicopter';
   }
 
-  if (model.includes('jet') || model.includes('airliner')) {
+  if (MODEL.includes('jet') || MODEL.includes('airliner')) {
     return 'jet';
   }
 
-  if (model.includes('turboprop') || model.includes('turbo prop')) {
+  if (MODEL.includes('turboprop') || MODEL.includes('turbo prop')) {
     return 'turboprop';
   }
 
-  if (model.includes('twin')) {
+  if (MODEL.includes('twin')) {
     return 'twinEngine';
   }
 
-  if (model.includes('single') || model.includes('piston')) {
+  if (MODEL.includes('single') || MODEL.includes('piston')) {
     return 'singleEngine';
   }
 
   // Check for common manufacturers
-  if (model.includes('bell') || model.includes('robinson')) {
+  if (MODEL.includes('bell') || MODEL.includes('robinson')) {
     return 'helicopter';
   }
 
   if (
-    model.includes('boeing 7') ||
-    model.includes('airbus') ||
-    model.includes('embraer')
+    MODEL.includes('boeing 7') ||
+    MODEL.includes('airbus') ||
+    MODEL.includes('embraer')
   ) {
     return 'jet';
   }

@@ -32,7 +32,7 @@ interface CachedAircraftData {
 }
 
 interface AircraftTrail {
-  icao24: string;
+  ICAO24: string;
   positions: AircraftPosition[];
   maxPositions: number; // Maximum trail length
 }
@@ -134,8 +134,8 @@ class OpenSkyTrackingService {
 
     // Add all valid ICAO24 codes from tracked aircraft
     this.trackedAircraft.forEach((aircraft) => {
-      if (aircraft.icao24) {
-        this.trackedIcao24s.add(aircraft.icao24);
+      if (aircraft.ICAO24) {
+        this.trackedIcao24s.add(aircraft.ICAO24);
       }
     });
 
@@ -170,7 +170,7 @@ class OpenSkyTrackingService {
     if (this.trackedAircraft.length > 0) {
       callback({
         aircraft: this.trackedAircraft,
-        manufacturer: this.currentManufacturer,
+        MANUFACTURER: this.currentManufacturer,
         timestamp: this.lastRefreshTime,
       });
     }
@@ -238,8 +238,8 @@ class OpenSkyTrackingService {
     return Array.from(this.trackedIcao24s);
   }
 
-  public isAircraftTracked(icao24: string): boolean {
-    return this.trackedIcao24s.has(icao24);
+  public isAircraftTracked(ICAO24: string): boolean {
+    return this.trackedIcao24s.has(ICAO24);
   }
   /**
    * Enable or disable aircraft trails
@@ -304,15 +304,15 @@ class OpenSkyTrackingService {
 
     // Update trails for each aircraft
     this.trackedAircraft.forEach((aircraft) => {
-      if (!aircraft.icao24 || !aircraft.latitude || !aircraft.longitude) return;
+      if (!aircraft.ICAO24 || !aircraft.latitude || !aircraft.longitude) return;
 
-      const icao = aircraft.icao24.toLowerCase();
+      const icao = aircraft.ICAO24.toLowerCase();
 
       // Get or create trail for this aircraft
       let trail = this.trails.get(icao);
       if (!trail) {
         trail = {
-          icao24: icao,
+          ICAO24: icao,
           positions: [],
           maxPositions: this.maxTrailLength,
         };
@@ -363,7 +363,7 @@ class OpenSkyTrackingService {
 
     // Clean up trails for aircraft no longer tracked
     const trackedIcaos = new Set(
-      this.trackedAircraft.map((a) => a.icao24?.toLowerCase()).filter(Boolean)
+      this.trackedAircraft.map((a) => a.ICAO24?.toLowerCase()).filter(Boolean)
     );
 
     let removed = 0;
@@ -382,8 +382,8 @@ class OpenSkyTrackingService {
   /**
    * Get trail for a specific aircraft
    */
-  public getAircraftTrails(icao24: string): AircraftPosition[] {
-    return this.trails.get(icao24)?.positions || [];
+  public getAircraftTrails(ICAO24: string): AircraftPosition[] {
+    return this.trails.get(ICAO24)?.positions || [];
   }
 
   /**
@@ -397,10 +397,10 @@ class OpenSkyTrackingService {
     }
 
     // Convert from our internal trail format to the expected output format
-    this.trails.forEach((trail, icao24) => {
+    this.trails.forEach((trail, ICAO24) => {
       // Only include trails with at least 2 positions (needed to draw a line)
       if (trail.positions.length >= 2) {
-        result.set(icao24, [...trail.positions]); // Ensure we return a copy
+        result.set(ICAO24, [...trail.positions]); // Ensure we return a copy
       }
     });
 
@@ -421,9 +421,9 @@ class OpenSkyTrackingService {
     let count = 0;
 
     this.trackedAircraft.forEach((aircraft) => {
-      if (!aircraft.icao24 || !aircraft.latitude || !aircraft.longitude) return;
+      if (!aircraft.ICAO24 || !aircraft.latitude || !aircraft.longitude) return;
 
-      const icao = aircraft.icao24.toLowerCase();
+      const icao = aircraft.ICAO24.toLowerCase();
       const trail: AircraftPosition[] = [];
 
       // Generate a trail that goes back in time from the current position
@@ -447,7 +447,7 @@ class OpenSkyTrackingService {
 
       // Store the mock trail
       this.trails.set(icao, {
-        icao24: icao,
+        ICAO24: icao,
         positions: trail,
         maxPositions: this.maxTrailLength,
       });
@@ -487,10 +487,10 @@ class OpenSkyTrackingService {
 
     // Create mock trails for all aircraft
     this.trackedAircraft.forEach((aircraft) => {
-      if (!aircraft.icao24 || !aircraft.latitude || !aircraft.longitude) return;
+      if (!aircraft.ICAO24 || !aircraft.latitude || !aircraft.longitude) return;
 
       const positions: AircraftPosition[] = [];
-      const icao = aircraft.icao24.toLowerCase();
+      const icao = aircraft.ICAO24.toLowerCase();
 
       // Generate trail points
       for (let i = 0; i < this.maxTrailLength; i++) {
@@ -513,7 +513,7 @@ class OpenSkyTrackingService {
 
       // Store the trail - use AircraftTrail interface format
       this.trails.set(icao, {
-        icao24: icao,
+        ICAO24: icao,
         positions: positions,
         maxPositions: this.maxTrailLength,
       });
@@ -531,7 +531,7 @@ class OpenSkyTrackingService {
    * Refresh specific aircraft by ICAO24 codes
    */
   // In OpenSkyTrackingService.ts
-  public async refreshSpecificAircraft(icao24s: string[]): Promise<Aircraft[]> {
+  public async refreshSpecificAircraft(ICAO24s: string[]): Promise<Aircraft[]> {
     if (this.isRefreshingPositions) {
       return this.trackedAircraft;
     }
@@ -539,14 +539,14 @@ class OpenSkyTrackingService {
     this.isRefreshingPositions = true;
 
     try {
-      if (!this.currentManufacturer || icao24s.length === 0) {
+      if (!this.currentManufacturer || ICAO24s.length === 0) {
         return this.trackedAircraft;
       }
 
       // Simple implementation - just get data for specific aircraft
       const updatedAircraft = await this.getLiveAircraftData(
         this.currentManufacturer,
-        icao24s,
+        ICAO24s,
         false
       );
 
@@ -565,30 +565,30 @@ class OpenSkyTrackingService {
   }
 
   /**
-   * Start tracking a manufacturer's aircraft
+   * Start tracking a MANUFACTURER's aircraft
    */
-  public async trackManufacturer(manufacturer: string): Promise<Aircraft[]> {
-    if (this.trackingActive && this.currentManufacturer === manufacturer) {
-      console.log(`[OpenSky] Already tracking ${manufacturer}`);
+  public async trackManufacturer(MANUFACTURER: string): Promise<Aircraft[]> {
+    if (this.trackingActive && this.currentManufacturer === MANUFACTURER) {
+      console.log(`[OpenSky] Already tracking ${MANUFACTURER}`);
       return this.trackedAircraft;
     }
 
     // Stop any existing tracking
     this.stopTracking();
 
-    if (!manufacturer) {
+    if (!MANUFACTURER) {
       return [];
     }
 
-    console.log(`[OpenSky] Starting tracking for ${manufacturer}`);
-    this.currentManufacturer = manufacturer;
+    console.log(`[OpenSky] Starting tracking for ${MANUFACTURER}`);
+    this.currentManufacturer = MANUFACTURER;
     this.trackingActive = true;
 
     // Clear active set
     this.activeIcao24s.clear();
 
     // Initial fetch
-    await this.fetchAndUpdateAircraft(manufacturer);
+    await this.fetchAndUpdateAircraft(MANUFACTURER);
 
     // Initialize our active aircraft set
     this.updateActiveAircraftSet(this.trackedAircraft);
@@ -597,7 +597,7 @@ class OpenSkyTrackingService {
     this.lastFullRefreshTime = Date.now();
 
     console.log(
-      `[OpenSky] Tracking started for ${manufacturer}, ${this.trackedAircraft.length} aircraft`
+      `[OpenSky] Tracking started for ${MANUFACTURER}, ${this.trackedAircraft.length} aircraft`
     );
 
     return this.trackedAircraft;
@@ -631,50 +631,50 @@ class OpenSkyTrackingService {
     // Clear previous stats
     this.modelStats.clear();
 
-    // Count total aircraft by model from the database or cached data
-    // This would need to be populated when you first fetch the model list
+    // Count total aircraft by MODEL from the database or cached data
+    // This would need to be populated when you first fetch the MODEL list
 
-    // Count active aircraft by model from currently tracked aircraft
+    // Count active aircraft by MODEL from currently tracked aircraft
     this.trackedAircraft.forEach((aircraft) => {
-      const model = aircraft.model || aircraft.TYPE_AIRCRAFT;
-      if (!model) return;
+      const MODEL = aircraft.MODEL || aircraft.AIRCRAFT_TYPE;
+      if (!MODEL) return;
 
-      if (!this.modelStats.has(model)) {
-        this.modelStats.set(model, { active: 0, total: 0 });
+      if (!this.modelStats.has(MODEL)) {
+        this.modelStats.set(MODEL, { active: 0, total: 0 });
       }
 
-      const stats = this.modelStats.get(model)!;
+      const stats = this.modelStats.get(MODEL)!;
       stats.active += 1;
     });
   }
 
   /**
-   * Get active model counts for currently tracked aircraft
+   * Get active MODEL counts for currently tracked aircraft
    */
   public getActiveModelCounts(): AircraftModel[] {
-    // Count active aircraft by model
+    // Count active aircraft by MODEL
     const modelCounts = new Map<string, number>();
 
     this.trackedAircraft.forEach((aircraft) => {
-      const model = aircraft.model || aircraft.TYPE_AIRCRAFT || 'Unknown';
-      const currentCount = modelCounts.get(model) || 0;
-      modelCounts.set(model, currentCount + 1);
+      const MODEL = aircraft.MODEL || aircraft.AIRCRAFT_TYPE || 'Unknown';
+      const currentCount = modelCounts.get(MODEL) || 0;
+      modelCounts.set(MODEL, currentCount + 1);
     });
 
     // Convert to array of AircraftModel objects
-    return Array.from(modelCounts.entries()).map(([model, count]) => ({
-      model,
-      label: model, // Required by AircraftModel
+    return Array.from(modelCounts.entries()).map(([MODEL, count]) => ({
+      MODEL,
+      label: MODEL, // Required by AircraftModel
       count: count,
       activeCount: count,
       totalCount: count,
-      // Ensure manufacturer is always a string
-      manufacturer: this.currentManufacturer || 'Unknown',
+      // Ensure MANUFACTURER is always a string
+      MANUFACTURER: this.currentManufacturer || 'Unknown',
     }));
   }
 
   /**
-   * Get model statistics
+   * Get MODEL statistics
    */
   public getModelStats(): {
     models: AircraftModel[];
@@ -708,15 +708,15 @@ class OpenSkyTrackingService {
   /**
    * Fetch aircraft data
    */
-  private async fetchAndUpdateAircraft(manufacturer: string): Promise<void> {
+  private async fetchAndUpdateAircraft(MANUFACTURER: string): Promise<void> {
     try {
-      console.log(`[OpenSky] Fetching aircraft for ${manufacturer}`);
+      console.log(`[OpenSky] Fetching aircraft for ${MANUFACTURER}`);
 
-      // First get ICAO codes for this manufacturer
-      const icao24s = await this.getIcao24sForManufacturer(manufacturer);
+      // First get ICAO codes for this MANUFACTURER
+      const ICAO24s = await this.getIcao24sForManufacturer(MANUFACTURER);
 
-      if (icao24s.length === 0) {
-        console.log(`[OpenSky] No ICAO codes found for ${manufacturer}`);
+      if (ICAO24s.length === 0) {
+        console.log(`[OpenSky] No ICAO codes found for ${MANUFACTURER}`);
         this.trackedAircraft = [];
         this.trackedIcao24s.clear(); // Clear tracking set
         this.notifySubscribers();
@@ -725,8 +725,8 @@ class OpenSkyTrackingService {
 
       // Then get live tracking data for these ICAO codes
       const liveAircraft = await this.getLiveAircraftData(
-        manufacturer,
-        icao24s
+        MANUFACTURER,
+        ICAO24s
       );
 
       this.updateTrails();
@@ -738,11 +738,11 @@ class OpenSkyTrackingService {
       this.notifySubscribers();
 
       console.log(
-        `[OpenSky] Updated tracking data for ${manufacturer}: ${liveAircraft.length} aircraft`
+        `[OpenSky] Updated tracking data for ${MANUFACTURER}: ${liveAircraft.length} aircraft`
       );
     } catch (error) {
       console.error(
-        `[OpenSky] Error fetching aircraft for ${manufacturer}:`,
+        `[OpenSky] Error fetching aircraft for ${MANUFACTURER}:`,
         error
       );
     }
@@ -753,40 +753,40 @@ class OpenSkyTrackingService {
    */
   public getTrackingStatus(): {
     active: boolean;
-    manufacturer: string | null;
+    MANUFACTURER: string | null;
     count: number;
     lastRefresh: number;
   } {
     return {
       active: this.trackingActive,
-      manufacturer: this.currentManufacturer,
+      MANUFACTURER: this.currentManufacturer,
       count: this.trackedAircraft.length,
       lastRefresh: this.lastRefreshTime,
     };
   }
 
   /**
-   * Get ICAO24 codes for a manufacturer
+   * Get ICAO24 codes for a MANUFACTURER
    */
   private async getIcao24sForManufacturer(
-    manufacturer: string
+    MANUFACTURER: string
   ): Promise<string[]> {
-    const requestKey = `icao24s-${manufacturer}`;
+    const requestKey = `ICAO24s-${MANUFACTURER}`;
     if (activeRequests.has(requestKey)) {
       console.log(
-        `[OpenSky] Using existing ICAO24s request for ${manufacturer}`
+        `[OpenSky] Using existing ICAO24s request for ${MANUFACTURER}`
       );
       return activeRequests.get(requestKey)!;
     }
 
     const request = new Promise<string[]>(async (resolve, reject) => {
       try {
-        console.log(`[OpenSky] Fetching ICAO24s for ${manufacturer}`);
+        console.log(`[OpenSky] Fetching ICAO24s for ${MANUFACTURER}`);
 
-        const response = await fetch('/api/tracking/icao24s', {
+        const response = await fetch('/api/tracking/ICAO24s', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ manufacturer }),
+          body: JSON.stringify({ MANUFACTURER }),
         });
 
         if (!response.ok) {
@@ -794,10 +794,10 @@ class OpenSkyTrackingService {
         }
 
         const data = await response.json();
-        resolve(data.icao24s || []);
+        resolve(data.ICAO24s || []);
       } catch (error) {
         console.error(
-          `[OpenSky] Error fetching ICAO24s for ${manufacturer}:`,
+          `[OpenSky] Error fetching ICAO24s for ${MANUFACTURER}:`,
           error
         );
         reject(error);
@@ -811,32 +811,32 @@ class OpenSkyTrackingService {
   public getExtendedAircraft(modelFilter?: string): ExtendedAircraft[] {
     let filtered = this.trackedAircraft;
 
-    // Apply model filter if provided
+    // Apply MODEL filter if provided
     if (modelFilter) {
       filtered = filtered.filter(
         (aircraft) =>
-          aircraft.model === modelFilter ||
-          aircraft.TYPE_AIRCRAFT === modelFilter
+          aircraft.MODEL === modelFilter ||
+          aircraft.AIRCRAFT_TYPE === modelFilter
       );
     }
 
     // Transform to extended aircraft
     return filtered.map((aircraft) => ({
       ...aircraft,
-      type: aircraft.TYPE_AIRCRAFT || 'Unknown',
+      type: aircraft.AIRCRAFT_TYPE || 'Unknown',
       isGovernment:
         aircraft.operator?.toLowerCase().includes('government') ?? false,
     })) as ExtendedAircraft[];
   }
 
   private async getLiveAircraftData(
-    manufacturer: string,
-    icao24s: string[],
+    MANUFACTURER: string,
+    ICAO24s: string[],
     includeStatic: boolean = true,
     activeOnly: boolean = false
   ): Promise<Aircraft[]> {
     // Keep your existing method code but modify the part where you process results
-    const cacheKey = `live-${manufacturer}-${includeStatic ? 'full' : 'pos'}-${icao24s.length}`;
+    const cacheKey = `live-${MANUFACTURER}-${includeStatic ? 'full' : 'pos'}-${ICAO24s.length}`;
     // ... existing code ...
 
     // Modify your existing fetchData function or add this processing after you get the results
@@ -848,15 +848,15 @@ class OpenSkyTrackingService {
 
         // Process batches without using Promise.race
         const aircraftResults = await processBatchedRequests<string, Aircraft>(
-          icao24s,
+          ICAO24s,
           async (batch) => {
             try {
               const response = await fetch('/api/tracking/live', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                  manufacturer,
-                  icao24s: batch,
+                  MANUFACTURER,
+                  ICAO24s: batch,
                   includeStatic,
                   activeOnly,
                 }),
@@ -885,9 +885,9 @@ class OpenSkyTrackingService {
 
         // Process the returned aircraft and merge with cached data
         const processedAircraft = aircraftResults.map((aircraft: Aircraft) => {
-          if (!aircraft.icao24) return aircraft;
+          if (!aircraft.ICAO24) return aircraft;
 
-          const icao = aircraft.icao24.toLowerCase();
+          const icao = aircraft.ICAO24.toLowerCase();
           const cachedAircraft = this.persistentAircraftCache.get(icao);
 
           if (cachedAircraft) {
@@ -977,7 +977,7 @@ class OpenSkyTrackingService {
 
     const data = {
       aircraft: this.trackedAircraft,
-      manufacturer: this.currentManufacturer,
+      MANUFACTURER: this.currentManufacturer,
       count: this.trackedAircraft.length,
       timestamp: this.lastRefreshTime,
       trails: trailData, // This is now properly formatted for components
@@ -1032,14 +1032,14 @@ class OpenSkyTrackingService {
   }
 
   /**
-   * Get currently tracked manufacturer
+   * Get currently tracked MANUFACTURER
    */
   public getCurrentManufacturer(): string | null {
     return this.currentManufacturer;
   }
 
   /**
-   * This should be called after any tracking update to ensure model counts are current
+   * This should be called after any tracking update to ensure MODEL counts are current
    */
   private updateTrackedAircraftState(): void {
     // Update last refresh time
@@ -1070,7 +1070,7 @@ class OpenSkyTrackingService {
 
     // If we're not tracking anything, there's nothing to refresh
     if (!this.trackingActive || !this.currentManufacturer) {
-      console.log('[OpenSky] No active tracking or manufacturer to refresh');
+      console.log('[OpenSky] No active tracking or MANUFACTURER to refresh');
       return this.trackedAircraft;
     }
 
@@ -1085,20 +1085,20 @@ class OpenSkyTrackingService {
         this.activeIcao24s.size === 0 ||
         Date.now() - this.lastFullRefreshTime > 3600000; // 1 hour
 
-      // Store manufacturer as a non-null variable to satisfy TypeScript
-      const manufacturer = this.currentManufacturer;
+      // Store MANUFACTURER as a non-null variable to satisfy TypeScript
+      const MANUFACTURER = this.currentManufacturer;
 
       if (shouldDoFullRefresh) {
         console.log(
           '[OpenSky] Performing full refresh to discover active aircraft'
         );
 
-        // First, get all ICAO24 codes for the manufacturer
-        const allIcao24s = await this.getIcao24sForManufacturer(manufacturer);
+        // First, get all ICAO24 codes for the MANUFACTURER
+        const allIcao24s = await this.getIcao24sForManufacturer(MANUFACTURER);
 
         // Then get live data, but only for aircraft with position data
         const updatedAircraft = await this.getLiveAircraftData(
-          manufacturer,
+          MANUFACTURER,
           allIcao24s,
           true, // includeStatic
           true // activeOnly
@@ -1107,8 +1107,8 @@ class OpenSkyTrackingService {
         // Update the set of active aircraft
         this.activeIcao24s.clear();
         updatedAircraft.forEach((aircraft) => {
-          if (aircraft.icao24) {
-            this.activeIcao24s.add(aircraft.icao24.toLowerCase());
+          if (aircraft.ICAO24) {
+            this.activeIcao24s.add(aircraft.ICAO24.toLowerCase());
           }
         });
 
@@ -1133,7 +1133,7 @@ class OpenSkyTrackingService {
 
         // Only request data for active aircraft
         const updatedAircraft = await this.getLiveAircraftData(
-          manufacturer,
+          MANUFACTURER,
           activeIcaos,
           false, // No need for static data during position updates
           true // activeOnly - ensure we only get aircraft with position data
@@ -1142,8 +1142,8 @@ class OpenSkyTrackingService {
         // Update the set of active aircraft to remove any that are no longer active
         this.activeIcao24s.clear();
         updatedAircraft.forEach((aircraft) => {
-          if (aircraft.icao24) {
-            this.activeIcao24s.add(aircraft.icao24.toLowerCase());
+          if (aircraft.ICAO24) {
+            this.activeIcao24s.add(aircraft.ICAO24.toLowerCase());
           }
         });
 
@@ -1178,8 +1178,8 @@ class OpenSkyTrackingService {
    * Get position updates for specific ICAO24 codes
    * This method makes a focused API request for just position data
    */
-  private async getPositionUpdates(icao24s: string[]): Promise<Aircraft[]> {
-    const cacheKey = `positions-${icao24s.length}`;
+  private async getPositionUpdates(ICAO24s: string[]): Promise<Aircraft[]> {
+    const cacheKey = `positions-${ICAO24s.length}`;
 
     // Check if request is already in progress
     if (activeRequests.has(cacheKey)) {
@@ -1200,7 +1200,7 @@ class OpenSkyTrackingService {
 
         // Process batches
         const positionResults = await processBatchedRequests<string, Aircraft>(
-          icao24s,
+          ICAO24s,
           async (batch) => {
             try {
               // Use a dedicated endpoint for position-only updates
@@ -1208,7 +1208,7 @@ class OpenSkyTrackingService {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                  icao24s: batch,
+                  ICAO24s: batch,
                 }),
               });
 
@@ -1283,8 +1283,8 @@ class OpenSkyTrackingService {
    */
   private updateActiveAircraftSet(aircraft: Aircraft[]): void {
     aircraft.forEach((plane) => {
-      if (plane.icao24 && plane.latitude && plane.longitude) {
-        this.activeIcao24s.add(plane.icao24.toLowerCase());
+      if (plane.ICAO24 && plane.latitude && plane.longitude) {
+        this.activeIcao24s.add(plane.ICAO24.toLowerCase());
       }
     });
 
@@ -1302,8 +1302,8 @@ class OpenSkyTrackingService {
   ): void {
     const receivedIcaos = new Set<string>();
     receivedAircraft.forEach((aircraft) => {
-      if (aircraft.icao24 && aircraft.latitude && aircraft.longitude) {
-        receivedIcaos.add(aircraft.icao24.toLowerCase());
+      if (aircraft.ICAO24 && aircraft.latitude && aircraft.longitude) {
+        receivedIcaos.add(aircraft.ICAO24.toLowerCase());
       }
     });
 
@@ -1326,8 +1326,8 @@ class OpenSkyTrackingService {
   private mergePositionUpdates(positionUpdates: Aircraft[]): void {
     const positionMap = new Map<string, Aircraft>();
     positionUpdates.forEach((aircraft) => {
-      if (aircraft.icao24) {
-        positionMap.set(aircraft.icao24.toLowerCase(), aircraft);
+      if (aircraft.ICAO24) {
+        positionMap.set(aircraft.ICAO24.toLowerCase(), aircraft);
       }
     });
 
@@ -1335,9 +1335,9 @@ class OpenSkyTrackingService {
 
     // Update trackedAircraft with merged data
     this.trackedAircraft = this.trackedAircraft.map((aircraft) => {
-      if (!aircraft.icao24) return aircraft;
+      if (!aircraft.ICAO24) return aircraft;
 
-      const icao = aircraft.icao24.toLowerCase();
+      const icao = aircraft.ICAO24.toLowerCase();
       const positionUpdate = positionMap.get(icao);
 
       // If we have a position update, merge it with existing data

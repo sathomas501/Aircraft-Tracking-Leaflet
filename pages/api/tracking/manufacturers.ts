@@ -21,11 +21,11 @@ export default async function handler(
     // Use a simpler query with explicit column name targeting
     const query = `
       SELECT 
-        manufacturer AS name, 
+        MANUFACTURER AS name, 
         COUNT(*) AS count 
       FROM aircraft 
-      WHERE manufacturer IS NOT NULL 
-      GROUP BY manufacturer 
+      WHERE MANUFACTURER IS NOT NULL 
+      GROUP BY MANUFACTURER 
       HAVING count > 0 
       ORDER BY count DESC 
       LIMIT 50

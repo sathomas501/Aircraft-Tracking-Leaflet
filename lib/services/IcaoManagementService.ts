@@ -28,20 +28,20 @@ class IcaoManagementService {
   public constructor() {}
 
   /**
-   * Fetch ICAO24s for a manufacturer, directly from the database.
+   * Fetch ICAO24s for a MANUFACTURER, directly from the database.
    */
   public async getIcao24sForManufacturer(
-    manufacturer: string
+    MANUFACTURER: string
   ): Promise<string[]> {
-    console.log(`[IcaoManagement] Fetching ICAO24s for ${manufacturer}`);
+    console.log(`[IcaoManagement] Fetching ICAO24s for ${MANUFACTURER}`);
 
     try {
       // Get ICAO codes directly from the database instead of making an API call
       const allIcao24s =
-        await dbManager.getIcao24sForManufacturer(manufacturer);
+        await dbManager.getIcao24sForManufacturer(MANUFACTURER);
 
       if (allIcao24s.length === 0) {
-        console.warn(`[IcaoManagement] No ICAO24s found for ${manufacturer}`);
+        console.warn(`[IcaoManagement] No ICAO24s found for ${MANUFACTURER}`);
         return [];
       }
 
@@ -78,7 +78,7 @@ class IcaoManagementService {
    */
   private async fetchLiveAircraftBatch(
     icaos: string[],
-    manufacturer: string
+    MANUFACTURER: string
   ): Promise<Aircraft[]> {
     const batchKey = JSON.stringify(icaos.sort());
 
@@ -106,8 +106,8 @@ class IcaoManagementService {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          icao24s: icaos,
-          manufacturer,
+          ICAO24s: icaos,
+          MANUFACTURER,
         }),
         signal: controller.signal,
       });

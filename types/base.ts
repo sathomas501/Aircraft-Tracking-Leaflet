@@ -22,7 +22,7 @@ export interface AircraftPosition extends Position {
  * Core aircraft data from OpenSky API
  */
 export interface OpenSkyState {
-  icao24: string;
+  ICAO24: string;
   latitude?: number;
   longitude?: number;
   baro_altitude?: number;
@@ -31,18 +31,18 @@ export interface OpenSkyState {
   on_ground?: boolean;
   last_contact?: number;
   registration?: string;
-  manufacturer?: string;
-  name?: string;
-  city?: string;
-  state?: string;
-  type_aircraft?: string;
-  owner_type?: string;
-  operator?: string;
+  MANUFACTURER?: string;
+  NAME?: string;
+  CITY?: string;
+  STATE?: string;
+  AIRCRAFT_TYPE?: string;
+  OWNER_TYPE?: string;
+  OPERATOR?: string;
   isTracked?: boolean;
 }
 
 export type OpenSkyStateArray = [
-  icao24: string, // [0]
+  ICAO24: string, // [0]
   callsign: string, // [1]
   country: string, // [2]
   timePosition: number, // [3]
@@ -68,11 +68,11 @@ export type PartialOpenSkyState = any[];
  */
 export interface Aircraft {
   // Core identification
-  icao24: string;
-  'N-NUMBER': string;
-  manufacturer: string;
-  model?: string;
-  operator?: string;
+  ICAO24: string;
+  N_NUMBER: string;
+  MANUFACTURER: string;
+  MODEL?: string;
+  OPERATOR?: string;
 
   // Location and movement data
   latitude: number;
@@ -89,7 +89,7 @@ export interface Aircraft {
   CITY: string;
   STATE: string;
   OWNER_TYPE: string;
-  TYPE_AIRCRAFT: string;
+  AIRCRAFT_TYPE: string;
 
   // Tracking state
   isTracked: boolean;
@@ -97,7 +97,7 @@ export interface Aircraft {
   // Optional fields
   registration?: string;
   manufacturerName?: string;
-  owner?: string;
+  OWNER?: string;
   registered?: string;
   manufacturerIcao?: string;
   operatorIcao?: string;
@@ -109,24 +109,24 @@ export interface Aircraft {
 
 export interface AircraftRecord {
   id: number;
-  n_number: string;
-  icao24: string;
-  manufacturer: string;
-  model: string;
-  operator: string | null;
-  ownerType?: string;
-  name: string | null;
-  city: string | null;
-  state: string | null;
+  N_NUMBER: string;
+  ICAO24: string;
+  MANUFACTURER: string;
+  MODEL: string;
+  OPERATOR: string | null;
+  OWNER_TYPE?: string;
+  NAME: string | null;
+  CITY: string | null;
+  STATE: string | null;
   created_at: string; // or Date if you're parsing timestamps
-  type_aircraft: string | null;
+  AIRCRAFT_TYPE: string | null;
 }
 
 /**
  * Position data from OpenSky API
  */
 export interface PositionData {
-  icao24: string;
+  ICAO24: string;
   latitude: number;
   longitude: number;
   velocity?: number;
@@ -134,8 +134,8 @@ export interface PositionData {
   altitude?: number;
   on_ground: boolean;
   last_contact: number;
-  model?: string;
-  manufacturer?: string;
+  MODEL?: string;
+  MANUFACTURER?: string;
   last_seen?: number;
 }
 
@@ -152,18 +152,18 @@ export interface AircraftState extends PositionData {
  */
 export interface AircraftMarker extends AircraftPosition {
   id: string;
-  icao24: string;
+  ICAO24: string;
   registration?: string;
   manufacturerName?: string;
-  model?: string;
-  operator?: string;
+  MODEL?: string;
+  OPERATOR?: string;
 }
 
 /**
  * Historical position trails for aircraft
  */
 export interface Trails {
-  [icao24: string]: Position[];
+  [ICAO24: string]: Position[];
 }
 
 /**
@@ -179,7 +179,7 @@ export interface SimpleMapProps {
  */
 export interface CachedAircraftData {
   // Core identification
-  icao24: string;
+  ICAO24: string;
 
   // Position and movement data
   latitude: number;
@@ -196,13 +196,13 @@ export interface CachedAircraftData {
 
   // Static data
   registration?: string;
-  'N-NUMBER'?: string;
-  manufacturer?: string;
-  model?: string;
+  N_NUMBER?: string;
+  MANUFACTURER?: string;
+  MODEL?: string;
   NAME?: string;
   CITY?: string;
   STATE?: string;
-  TYPE_AIRCRAFT?: string;
+  AIRCRAFT_TYPE?: string;
   OWNER_TYPE?: string;
 }
 
@@ -218,7 +218,7 @@ export interface AircraftTrackingBatch {
  * Individual aircraft tracking data
  */
 export interface TrackingData {
-  icao24: string;
+  ICAO24: string;
   latitude: number;
   longitude: number;
   altitude: number;
@@ -253,7 +253,7 @@ export interface IActiveCounts {
   total: number;
 }
 
-// src/types/manufacturer.ts
+// src/types/MANUFACTURER.ts
 /**
  * Manufacturer information
  */
@@ -264,7 +264,7 @@ export interface IManufacturer {
 }
 
 /**
- * Detailed manufacturer data
+ * Detailed MANUFACTURER data
  */
 export interface ManufacturerData {
   id: number;
@@ -275,8 +275,8 @@ export interface ManufacturerData {
 }
 
 export interface Model {
-  model: string;
-  manufacturer: string;
+  MODEL: string;
+  MANUFACTURER: string;
   activeCount?: number;
   label?: string;
   count?: number;
@@ -297,25 +297,25 @@ export interface SubscriptionManager {
   notifySubscribers: (key: string, data: Aircraft[]) => void;
 }
 
-// Base model interface with common properties
+// Base MODEL interface with common properties
 export interface BaseModel {
-  model: string;
-  manufacturer: string;
+  MODEL: string;
+  MANUFACTURER: string;
   label: string;
 }
 
-// Static model extends base with count
+// Static MODEL extends base with count
 export interface StaticModel extends BaseModel {
   count: number;
 }
 
-// Active model extends base with activeCount
+// Active MODEL extends base with activeCount
 export interface ActiveModel extends BaseModel {
   activeCount: number;
   totalCount: number;
   count?: number;
-  city?: string;
-  state?: string;
+  CITY?: string;
+  STATE?: string;
   ownerType?: string;
   name?: string;
 }
@@ -323,10 +323,10 @@ export interface ActiveModel extends BaseModel {
 // Props interface for ModelSelector component
 export interface ModelSelectorProps {
   selectedModel: string;
-  setSelectedModel: (model: string) => void;
+  setSelectedModel: (MODEL: string) => void;
   models: StaticModel[];
   totalActive?: number;
-  onModelSelect: (model: string) => void;
+  onModelSelect: (MODEL: string) => void;
 }
 
 export interface ExtendedAircraft extends Aircraft {

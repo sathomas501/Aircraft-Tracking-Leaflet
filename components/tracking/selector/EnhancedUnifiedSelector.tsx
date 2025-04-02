@@ -41,7 +41,7 @@ interface ModelSelectionProps {
   totalActive: number;
   groupedModels: Record<string, AircraftModel[]>;
   handleModelSelect: (value: string) => void;
-  selectModel: (model: string | null) => void;
+  selectModel: (MODEL: string | null) => void;
   reset: () => void;
   activeModels: AircraftModel[];
   isLoading: boolean;
@@ -65,7 +65,7 @@ const SelectorHeader: React.FC<SelectorHeaderProps> = ({
     >
       <h2 className="font-semibold flex items-center justify-center space-x-2 text-center w-full">
         {selectedManufacturer ? (
-          // Display only the manufacturer name without aircraft count
+          // Display only the MANUFACTURER name without aircraft count
           <span className="truncate max-w-44 mx-auto">
             {getManufacturerLabel()}
           </span>
@@ -186,7 +186,7 @@ const ManufacturerSelection: React.FC<ManufacturerSelectionProps> = ({
               </span>
             ) : (
               <span className="text-gray-500 truncate">
-                Select manufacturer...
+                Select MANUFACTURER...
               </span>
             )}
             <svg
@@ -307,19 +307,19 @@ const ManufacturerSelection: React.FC<ManufacturerSelectionProps> = ({
                     No matches found
                   </div>
                 ) : (
-                  filteredManufacturers.map((manufacturer) => (
+                  filteredManufacturers.map((MANUFACTURER) => (
                     <div
-                      key={manufacturer.value}
+                      key={MANUFACTURER.value}
                       className={`px-3 py-2 hover:bg-indigo-50 cursor-pointer ${
-                        selectedManufacturer === manufacturer.value
+                        selectedManufacturer === MANUFACTURER.value
                           ? 'bg-indigo-50 font-medium text-indigo-700'
                           : 'text-gray-700'
                       }`}
                       onClick={() =>
-                        selectManufacturerAndClose(manufacturer.value)
+                        selectManufacturerAndClose(MANUFACTURER.value)
                       }
                     >
-                      {manufacturer.label}
+                      {MANUFACTURER.label}
                     </div>
                   ))
                 )}
@@ -344,7 +344,7 @@ const ManufacturerSelection: React.FC<ManufacturerSelectionProps> = ({
               clipRule="evenodd"
             />
           </svg>
-          Select a manufacturer to view available aircraft models
+          Select a MANUFACTURER to view available aircraft models
         </p>
       </div>
     </div>
@@ -452,20 +452,20 @@ const ModelSelection: React.FC<ModelSelectionProps> = ({
                       {letter}
                     </div>
                     {models
-                      .sort((a, b) => a.model.localeCompare(b.model))
-                      .map((model) => (
+                      .sort((a, b) => a.MODEL.localeCompare(b.MODEL))
+                      .map((MODEL) => (
                         <div
-                          key={model.model}
+                          key={MODEL.MODEL}
                           className={`px-3 py-2 hover:bg-indigo-50 cursor-pointer flex justify-between ${
-                            selectedModel === model.model
+                            selectedModel === MODEL.MODEL
                               ? 'bg-indigo-50 font-medium text-indigo-700'
                               : 'text-gray-700'
                           }`}
-                          onClick={() => handleModelSelect(model.model)}
+                          onClick={() => handleModelSelect(MODEL.MODEL)}
                         >
-                          <span>{model.model}</span>
+                          <span>{MODEL.MODEL}</span>
                           <span className="text-gray-500 text-sm">
-                            {model.count}
+                            {MODEL.count}
                           </span>
                         </div>
                       ))}
@@ -491,7 +491,7 @@ const ModelSelection: React.FC<ModelSelectionProps> = ({
             {selectedModel ? (
               <span>
                 Tracking{' '}
-                {activeModels.find((m) => m.model === selectedModel)?.count ||
+                {activeModels.find((m) => m.MODEL === selectedModel)?.count ||
                   0}{' '}
                 aircraft
               </span>
@@ -530,7 +530,7 @@ const ModelSelection: React.FC<ModelSelectionProps> = ({
                 ) : totalActive === 0 ? (
                   <span className="text-xs text-gray-600 mt-1">
                     No aircraft currently being tracked. Try refreshing data or
-                    selecting a different manufacturer.
+                    selecting a different MANUFACTURER.
                   </span>
                 ) : null}
               </div>
@@ -539,18 +539,18 @@ const ModelSelection: React.FC<ModelSelectionProps> = ({
 
           {/* Top models by popularity */}
           <div className="flex flex-wrap gap-1 mt-1 max-h-24 overflow-y-auto">
-            {modelsByPopularity.map((model) => (
+            {modelsByPopularity.map((MODEL) => (
               <div
-                key={model.model}
+                key={MODEL.MODEL}
                 className={`px-2 py-1 rounded-full text-xs cursor-pointer ${
-                  selectedModel === model.model
+                  selectedModel === MODEL.MODEL
                     ? 'bg-indigo-100 text-indigo-800 border border-indigo-300'
                     : 'bg-gray-100 text-gray-700 border border-gray-200 hover:bg-gray-200'
                 }`}
-                onClick={() => selectModel(model.model)}
-                title={`Select ${model.model}`}
+                onClick={() => selectModel(MODEL.MODEL)}
+                title={`Select ${MODEL.MODEL}`}
               >
-                {model.model} ({model.count})
+                {MODEL.MODEL} ({MODEL.count})
               </div>
             ))}
           </div>
@@ -652,8 +652,8 @@ const EnhancedUnifiedSelector: React.FC<EnhancedUnifiedSelectorProps> = ({
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   // Filter manufacturers by search term
-  const filteredManufacturers = manufacturers.filter((manufacturer) =>
-    manufacturer.label.toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredManufacturers = manufacturers.filter((MANUFACTURER) =>
+    MANUFACTURER.label.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   // Handle dropdown visibility with a delay to ensure proper rendering
@@ -672,7 +672,7 @@ const EnhancedUnifiedSelector: React.FC<EnhancedUnifiedSelectorProps> = ({
     }
   }, [isManufacturerMenuOpen]);
 
-  // Update compact mode based on manufacturer selection
+  // Update compact mode based on MANUFACTURER selection
   useEffect(() => {
     setIsCompact(!!selectedManufacturer);
   }, [selectedManufacturer]);
@@ -752,12 +752,12 @@ const EnhancedUnifiedSelector: React.FC<EnhancedUnifiedSelectorProps> = ({
 
   // Group models alphabetically for easier selection
   const groupedModels = activeModels.reduce(
-    (groups: Record<string, AircraftModel[]>, model) => {
-      const firstChar = model.model.charAt(0).toUpperCase();
+    (groups: Record<string, AircraftModel[]>, MODEL) => {
+      const firstChar = MODEL.MODEL.charAt(0).toUpperCase();
       if (!groups[firstChar]) {
         groups[firstChar] = [];
       }
-      groups[firstChar].push(model);
+      groups[firstChar].push(MODEL);
       return groups;
     },
     {}
@@ -782,7 +782,7 @@ const EnhancedUnifiedSelector: React.FC<EnhancedUnifiedSelectorProps> = ({
       : 'Select Manufacturer';
   };
 
-  // Get currently active models for the model tag display
+  // Get currently active models for the MODEL tag display
   const modelsByPopularity = [...activeModels]
     .sort((a, b) => b.count - a.count)
     .slice(0, 10);

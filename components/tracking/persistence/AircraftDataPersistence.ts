@@ -339,10 +339,10 @@ function mergeAircraftFields(
   // Update static fields only if they have values in current data
   const staticFields = [
     'registration',
-    'model',
-    'manufacturer',
-    'N-NUMBER',
-    'TYPE_AIRCRAFT',
+    'MODEL',
+    'MANUFACTURER',
+    'N_NUMBER',
+    'AIRCRAFT_TYPE',
     'NAME',
     'OWNER_TYPE',
     'CITY',

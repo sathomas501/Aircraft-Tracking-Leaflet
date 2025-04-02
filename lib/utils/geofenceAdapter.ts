@@ -40,7 +40,7 @@ export function adaptGeofenceAircraft(
     // First, normalize to base Aircraft type using your existing utilities
     const baseAircraft = BaseTransforms.normalize({
       // Required core fields
-      icao24: aircraft.icao24 || '',
+      ICAO24: aircraft.ICAO24 || '',
 
       // Map coordinates - handle both formats
       latitude: aircraft.latitude || aircraft.lat || 0,
@@ -68,16 +68,16 @@ export function adaptGeofenceAircraft(
       lastSeen: aircraft.lastSeen || Date.now(),
 
       // Aircraft information
-      'N-NUMBER': aircraft['N-NUMBER'] || aircraft.registration || '',
-      manufacturer:
-        aircraft.manufacturer || aircraft.manufacturerName || 'Unknown',
-      model: aircraft.model || aircraft.type_aircraft || '',
+      N_NUMBER: aircraft['N_NUMBER'] || aircraft.registration || '',
+      MANUFACTURER:
+        aircraft.MANUFACTURER || aircraft.manufacturerName || 'Unknown',
+      MODEL: aircraft.MODEL || aircraft.type_aircraft || '',
       operator: aircraft.operator || '',
       NAME: aircraft.NAME || aircraft.name || '',
       CITY: aircraft.CITY || aircraft.city || '',
       STATE: aircraft.STATE || aircraft.state || '',
-      TYPE_AIRCRAFT:
-        aircraft.TYPE_AIRCRAFT ||
+      AIRCRAFT_TYPE:
+        aircraft.AIRCRAFT_TYPE ||
         aircraft.type_aircraft ||
         aircraft.type ||
         'Unknown',
@@ -111,7 +111,7 @@ export function adaptGeofenceAircraft(
   // Debug the first adapted aircraft if available
   if (adapted.length > 0) {
     console.log('[GeofenceAdapter] First aircraft after adaptation:', {
-      icao24: adapted[0].icao24,
+      ICAO24: adapted[0].ICAO24,
       latitude: adapted[0].latitude,
       longitude: adapted[0].longitude,
       heading: adapted[0].heading,
@@ -131,7 +131,7 @@ export function adaptGeofenceAircraft(
  */
 function determineAircraftType(aircraft: Aircraft): string {
   // Check if it mentions helicopter in various fields
-  const possibleHelicopterFields = ['TYPE_AIRCRAFT', 'model', 'manufacturer'];
+  const possibleHelicopterFields = ['AIRCRAFT_TYPE', 'MODEL', 'MANUFACTURER'];
 
   for (const field of possibleHelicopterFields) {
     const value = aircraft[field as keyof Aircraft];

@@ -38,7 +38,7 @@ export default async function handler(
   }
 
   // Extract request parameters: either ICAO24 codes or geofence
-  const { icao24s, geofence } = req.body;
+  const { ICAO24s, geofence } = req.body;
 
   // Generate a cache key based on the request
   let requestKey: string;
@@ -63,10 +63,9 @@ export default async function handler(
     );
   }
   // Otherwise, process as ICAO24 request (existing logic)
-  else if (Array.isArray(icao24s) && icao24s.length > 0) {
+  else if (Array.isArray(ICAO24s) && ICAO24s.length > 0) {
     // Validate ICAO codes (6 hex characters)
-    const validIcaos = icao24s
-      .filter((code) => typeof code === 'string')
+    const validIcaos = ICAO24s.filter((code) => typeof code === 'string')
       .map((code) => code.trim().toLowerCase())
       .filter((code) => /^[0-9a-f]{6}$/.test(code));
 
@@ -86,14 +85,14 @@ export default async function handler(
     }
 
     requestKey = JSON.stringify(validIcaos.sort());
-    params.append('icao24', validIcaos.join(','));
+    params.append('ICAO24', validIcaos.join(','));
     params.append('extended', '1');
   }
   // Invalid request - missing both ICAO24 codes and geofence
   else {
     return res.status(400).json({
       success: false,
-      error: 'Must provide either valid icao24s array or geofence parameters',
+      error: 'Must provide either valid ICAO24s array or geofence parameters',
     });
   }
 
@@ -189,7 +188,7 @@ export default async function handler(
         .map((state: any[]) => {
           // OpenSky API returns an array with specific indexes
           const [
-            icao24,
+            ICAO24,
             callsign,
             origin_country,
             time_position,
@@ -205,7 +204,7 @@ export default async function handler(
           ] = state;
 
           return {
-            icao24: icao24?.toLowerCase(),
+            ICAO24: ICAO24?.toLowerCase(),
             callsign: callsign?.trim(),
             origin_country,
             last_contact,
@@ -231,7 +230,7 @@ export default async function handler(
           requestType: requestType,
           ...(requestType === 'geofence'
             ? { geofence }
-            : { requested: (icao24s as string[]).length }),
+            : { requested: (ICAO24s as string[]).length }),
         },
       },
     };

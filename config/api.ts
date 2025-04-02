@@ -16,7 +16,7 @@ export const API_CONFIG = {
     LONG_POLL: 60000,
   },
   PARAMS: {
-    ICAO24: 'icao24',
+    ICAO24: 'ICAO24',
     TIME: 'time',
     EXTENDED: 'extended',
     MAX_ICAO_QUERY: 200,

@@ -42,7 +42,7 @@ export const getAircraftIconUrl = (
     isGovernment?: boolean;
     on_ground?: boolean;
     OWNER_TYPE?: string;
-    TYPE_AIRCRAFT?: string;
+    AIRCRAFT_TYPE?: string;
   }
 ): string => {
   // Check if it's a government aircraft
@@ -96,12 +96,12 @@ export const getAircraftIconUrl = (
 export const determineAircraftType = (
   aircraft: Aircraft & {
     type?: string;
-    TYPE_AIRCRAFT?: string;
-    model?: string;
+    AIRCRAFT_TYPE?: string;
+    MODEL?: string;
   }
 ): string => {
   // Combine possible type fields for checking
-  const typeString = [aircraft.type, aircraft.TYPE_AIRCRAFT, aircraft.model]
+  const typeString = [aircraft.type, aircraft.AIRCRAFT_TYPE, aircraft.MODEL]
     .filter(Boolean)
     .join(' ')
     .toLowerCase();
@@ -182,18 +182,18 @@ export const determineAircraftType = (
 export const getDetailedAircraftType = (
   aircraft: Aircraft & {
     type?: string;
-    TYPE_AIRCRAFT?: string;
-    model?: string;
+    AIRCRAFT_TYPE?: string;
+    MODEL?: string;
   }
 ): string => {
-  // Use TYPE_AIRCRAFT as primary source if available
-  if (aircraft.TYPE_AIRCRAFT) {
-    return aircraft.TYPE_AIRCRAFT;
+  // Use AIRCRAFT_TYPE as primary source if available
+  if (aircraft.AIRCRAFT_TYPE) {
+    return aircraft.AIRCRAFT_TYPE;
   }
 
-  // Fall back to model if available
-  if (aircraft.model) {
-    return aircraft.model;
+  // Fall back to MODEL if available
+  if (aircraft.MODEL) {
+    return aircraft.MODEL;
   }
 
   // Otherwise use our type detection
@@ -220,7 +220,7 @@ export const createAircraftIcon = (
     isGovernment?: boolean;
     on_ground?: boolean;
     OWNER_TYPE?: string;
-    TYPE_AIRCRAFT?: string;
+    AIRCRAFT_TYPE?: string;
   },
   options: AircraftIconOptions = {}
 ): L.DivIcon | null => {
@@ -281,7 +281,7 @@ export const createAircraftIcon = (
 export const getReadableAircraftType = (
   aircraft: Aircraft & {
     type?: string;
-    TYPE_AIRCRAFT?: string;
+    AIRCRAFT_TYPE?: string;
   }
 ): string => {
   const aircraftType = determineAircraftType(aircraft);
@@ -310,14 +310,24 @@ export const getOwnerTypeClass = (
 
   // Map owner type to CSS class
   const ownerTypeMap: Record<string, string> = {
-    '1': 'individual-owner',
-    '2': 'partnership-owner',
-    '3': 'corporation-owner',
-    '4': 'co-owned-owner',
-    '5': 'government-owner',
-    '7': 'llc-owner',
-    '8': 'non-citizen-corp-owner',
-    '9': 'non-citizen-co-owned-owner',
+    '1': 'Individual',
+    '2': 'Partnership',
+    '3': 'Corp-owner',
+    '4': 'Co-owned',
+    '7': 'LLC',
+    '8': 'non-citizen-corp-owned',
+    '9': 'Airline',
+    '10': 'Freight',
+    '11': 'Medical',
+    '12': 'Media',
+    '13': 'Historical',
+    '14': 'Flying Club',
+    '15': 'Emergency',
+    '16': 'Local Govt',
+    '17': 'Education',
+    '18': 'Federal Govt',
+    '19': 'Flight School',
+    '20': 'Leasing Corp',
   };
 
   // Default to 'unknown-owner' if type not found
@@ -328,9 +338,9 @@ export const getOwnerTypeClass = (
 export const createTooltipContent = (
   aircraft: Aircraft & {
     registration?: string;
-    'N-NUMBER'?: string;
-    TYPE_AIRCRAFT?: string;
-    manufacturer?: string;
+    N_NUMBER?: string;
+    AIRCRAFT_TYPE?: string;
+    MANUFACTURER?: string;
     type?: string;
     isGovernment?: boolean;
     OWNER_TYPE?: string;
@@ -339,7 +349,7 @@ export const createTooltipContent = (
 ): string => {
   // Registration or N-Number display (with fallbacks)
   const registration =
-    aircraft.registration || aircraft['N-NUMBER'] || aircraft.icao24;
+    aircraft.registration || aircraft['N_NUMBER'] || aircraft.ICAO24;
 
   // Format altitude with commas for thousands
   const formattedAltitude = aircraft.altitude
@@ -365,7 +375,7 @@ export const createTooltipContent = (
     <div class="aircraft-tooltip-wrapper ${ownerTypeClass}">
       <div class="aircraft-tooltip-header ${aircraftType}-type">
         <div class="aircraft-callsign">${registration}</div>
-        <div class="aircraft-model">${aircraft.model || aircraft.TYPE_AIRCRAFT || readableType}</div>
+        <div class="aircraft-MODEL">${aircraft.MODEL || aircraft.AIRCRAFT_TYPE || readableType}</div>
       </div>
       <div class="aircraft-tooltip-content">
         <div class="aircraft-data-grid">
@@ -392,11 +402,11 @@ export const createTooltipContent = (
               : ''
           }
           ${
-            zoomLevel >= 10 && aircraft.manufacturer
+            zoomLevel >= 10 && aircraft.MANUFACTURER
               ? `
           <div class="aircraft-data-full">
             <span class="data-label">Mfr:</span>
-            <span class="data-value">${aircraft.manufacturer}</span>
+            <span class="data-value">${aircraft.MANUFACTURER}</span>
           </div>
           `
               : ''
@@ -426,13 +436,13 @@ export const createTooltipContent = (
   `;
 };
 
-// Enhanced popup content with owner type classes applied properly
+// Enhanced popup content with collapsible functionality
 export const createPopupContent = (
   aircraft: Aircraft & {
     registration?: string;
-    'N-NUMBER'?: string;
-    TYPE_AIRCRAFT?: string;
-    manufacturer?: string;
+    N_NUMBER?: string;
+    AIRCRAFT_TYPE?: string;
+    MANUFACTURER?: string;
     CITY?: string;
     STATE?: string;
     OWNER_TYPE?: string;
@@ -446,7 +456,7 @@ export const createPopupContent = (
 ): string => {
   // Registration or N-Number display (with fallbacks)
   const registration =
-    aircraft.registration || aircraft['N-NUMBER'] || aircraft.icao24;
+    aircraft.registration || aircraft['N_NUMBER'] || aircraft.ICAO24;
 
   // Format altitude with commas for thousands
   const formattedAltitude = aircraft.altitude
@@ -471,115 +481,36 @@ export const createPopupContent = (
     ? getOwnerTypeLabel(aircraft.OWNER_TYPE)
     : 'Unknown';
 
-  // Government-specific content section
-  let typeSpecificContent = '';
-
-  if (ownerTypeClass === 'government-owner') {
-    typeSpecificContent = `
-      <div class="type-specific-section government-section mt-3 p-2 bg-blue-50 rounded">
-        <h4 class="font-medium text-blue-700 mb-1 text-sm">Government Aircraft</h4>
-        <div class="grid grid-cols-2 gap-y-1 text-xs">
-          <div class="text-gray-600">Operations:</div>
-          <div class="font-medium">Official Use</div>
-          <div class="text-gray-600">Type:</div>
-          <div class="font-medium">${readableType}</div>
-        </div>
-      </div>
-    `;
-  } else if (aircraftType === 'helicopter') {
-    typeSpecificContent = `
-      <div class="type-specific-section helicopter-section mt-3 p-2 bg-indigo-50 rounded">
-        <h4 class="font-medium text-indigo-700 mb-1 text-sm">Helicopter Details</h4>
-        <div class="grid grid-cols-2 gap-y-1 text-xs">
-          <div class="text-gray-600">Type:</div>
-          <div class="font-medium">${aircraft.TYPE_AIRCRAFT || 'Rotorcraft'}</div>
-          <div class="text-gray-600">Operations:</div>
-          <div class="font-medium">Standard Category</div>
-        </div>
-      </div>
-    `;
-  } else if (aircraftType === 'jet') {
-    typeSpecificContent = `
-      <div class="type-specific-section jet-section mt-3 p-2 bg-cyan-50 rounded">
-        <h4 class="font-medium text-cyan-700 mb-1 text-sm">Jet Aircraft</h4>
-        <div class="grid grid-cols-2 gap-y-1 text-xs">
-          <div class="text-gray-600">Engine Type:</div>
-          <div class="font-medium">Turbofan</div>
-          <div class="text-gray-600">Category:</div>
-          <div class="font-medium">${aircraft.model?.includes('heavy') ? 'Heavy' : 'Standard'}</div>
-        </div>
-      </div>
-    `;
-  }
-
-  // Create responsive popup with owner type class applied to the entire popup
   return `
     <div class="aircraft-popup p-3 ${aircraftType}-popup ${ownerTypeClass}">
       <div class="flex justify-between items-center mb-2">
         <h3 class="text-lg font-bold">${registration}</h3>
-        <div class="aircraft-type-badge ${aircraftType}-badge">${readableType}</div>
-        <button class="text-gray-500 hover:text-gray-700" onclick="window.dispatchEvent(new CustomEvent('close-popup'))">
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="18" y1="6" x2="6" y2="18"></line>
-            <line x1="6" y1="6" x2="18" y2="18"></line>
-          </svg>
-        </button>
+        <div class="flex items-center">
+          <div class="aircraft-type-badge ${aircraftType}-badge mr-2">${readableType}</div>
+          <button id="toggleDetailsBtn" class="toggle-details-btn">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+          </button>
+          <button class="text-gray-500 hover:text-gray-700" onclick="window.dispatchEvent(new CustomEvent('close-popup'))">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
       </div>
       
-      <div class="grid grid-cols-2 gap-y-2 text-sm">
+      <!-- Always visible summary information -->
+      <div class="aircraft-summary grid grid-cols-2 gap-y-2 text-sm">
         <div class="text-gray-600">Model:</div>
-        <div class="font-medium">${aircraft.model || aircraft.TYPE_AIRCRAFT || 'Unknown'}</div>
-        
-        ${
-          aircraft.manufacturer
-            ? `
-        <div class="text-gray-600">Manufacturer:</div>
-        <div class="font-medium">${aircraft.manufacturer}</div>
-        `
-            : ''
-        }
+        <div class="font-medium">${aircraft.MODEL || aircraft.AIRCRAFT_TYPE || 'Unknown'}</div>
         
         <div class="text-gray-600">Altitude:</div>
         <div class="font-medium">${formattedAltitude}</div>
         
         <div class="text-gray-600">Speed:</div>
         <div class="font-medium">${formattedSpeed}</div>
-        
-        ${
-          aircraft.heading
-            ? `
-        <div class="text-gray-600">Heading:</div>
-        <div class="font-medium">${Math.round(aircraft.heading)}°</div>
-        `
-            : ''
-        }
-        
-        ${
-          aircraft.name
-            ? `
-        <div class="text-gray-600">Name:</div>
-        <div class="font-medium">${aircraft.name}</div>
-        `
-            : ''
-        }
-        
-        ${
-          hasLocation
-            ? `
-        <div class="text-gray-600">Location:</div>
-        <div class="font-medium">${[city, state].filter(Boolean).join(', ')}</div>
-        `
-            : ''
-        }
-        
-        ${
-          aircraft.OWNER_TYPE
-            ? `
-        <div class="text-gray-600">Owner Type:</div>
-        <div class="font-medium owner-type-indicator ${ownerTypeClass}">${ownerType}</div>
-        `
-            : ''
-        }
         
         ${
           aircraft.on_ground !== undefined
@@ -595,14 +526,85 @@ export const createPopupContent = (
         }
       </div>
       
-      ${typeSpecificContent}
+      <!-- Collapsible detailed information -->
+      <div id="detailedInfo" class="aircraft-details hidden">
+        <div class="grid grid-cols-2 gap-y-2 text-sm">
+          ${
+            aircraft.MANUFACTURER
+              ? `
+          <div class="text-gray-600">Manufacturer:</div>
+          <div class="font-medium">${aircraft.MANUFACTURER}</div>
+          `
+              : ''
+          }
+          
+          ${
+            aircraft.heading
+              ? `
+          <div class="text-gray-600">Heading:</div>
+          <div class="font-medium">${Math.round(aircraft.heading)}°</div>
+          `
+              : ''
+          }
+          
+          ${
+            aircraft.name
+              ? `
+          <div class="text-gray-600">Name:</div>
+          <div class="font-medium">${aircraft.name}</div>
+          `
+              : ''
+          }
+          
+          ${
+            hasLocation
+              ? `
+          <div class="text-gray-600">Location:</div>
+          <div class="font-medium">${[city, state].filter(Boolean).join(', ')}</div>
+          `
+              : ''
+          }
+          
+          ${
+            aircraft.OWNER_TYPE
+              ? `
+          <div class="text-gray-600">Owner Type:</div>
+          <div class="font-medium owner-type-indicator ${ownerTypeClass}">${ownerType}</div>
+          `
+              : ''
+          }
+        </div>
+      </div>
       
       <div class="mt-3 text-center">
-        <button class="popup-button ${ownerTypeClass}" onclick="window.dispatchEvent(new CustomEvent('select-aircraft', {detail: '${aircraft.icao24}'}))">
+        <button class="popup-button ${ownerTypeClass}" onclick="window.dispatchEvent(new CustomEvent('select-aircraft', {detail: '${aircraft.ICAO24}'}))">
           View Details
         </button>
       </div>
     </div>
+    
+    <script>
+      (function() {
+        // Get elements
+        const toggleBtn = document.getElementById('toggleDetailsBtn');
+        const detailedInfo = document.getElementById('detailedInfo');
+        
+        if (toggleBtn && detailedInfo) {
+          // Toggle detailed info on click
+          toggleBtn.addEventListener('click', function() {
+            const isHidden = detailedInfo.classList.contains('hidden');
+            
+            if (isHidden) {
+              detailedInfo.classList.remove('hidden');
+              toggleBtn.classList.add('expanded');
+            } else {
+              detailedInfo.classList.add('hidden');
+              toggleBtn.classList.remove('expanded');
+            }
+          });
+        }
+      })();
+    </script>
   `;
 };
 

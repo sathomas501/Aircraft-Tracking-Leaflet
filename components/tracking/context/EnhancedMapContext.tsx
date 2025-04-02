@@ -65,8 +65,8 @@ interface EnhancedMapContextType {
   aircraftTrails: Map<string, AircraftPosition[]>;
 
   // Actions
-  selectManufacturer: (manufacturer: string | null) => Promise<void>;
-  selectModel: (model: string | null) => void;
+  selectManufacturer: (MANUFACTURER: string | null) => Promise<void>;
+  selectModel: (MODEL: string | null) => void;
   reset: () => Promise<void>;
   refreshPositions: () => Promise<void>;
   fullRefresh: () => Promise<void>;
@@ -268,11 +268,11 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
       const newAircraftMap: Record<string, CachedAircraftData> = {};
 
       newAircraftArray.forEach((aircraft) => {
-        if (aircraft.icao24) {
-          newAircraftMap[aircraft.icao24] = {
+        if (aircraft.ICAO24) {
+          newAircraftMap[aircraft.ICAO24] = {
             ...aircraft,
             // Ensure required fields for CachedAircraftData are present
-            icao24: aircraft.icao24,
+            ICAO24: aircraft.ICAO24,
             latitude: aircraft.latitude || 0,
             longitude: aircraft.longitude || 0,
             altitude: aircraft.altitude || 0,
@@ -293,10 +293,10 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
       setLastPersistenceUpdate(Date.now());
 
       // If the selected aircraft is updated, update the selection
-      if (selectedAircraft && newAircraftMap[selectedAircraft.icao24]) {
+      if (selectedAircraft && newAircraftMap[selectedAircraft.ICAO24]) {
         const updatedAircraft = {
           ...selectedAircraft,
-          ...newAircraftMap[selectedAircraft.icao24],
+          ...newAircraftMap[selectedAircraft.ICAO24],
         };
         setSelectedAircraft(updatedAircraft as ExtendedAircraft);
       }
@@ -312,14 +312,14 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
     setTrackingStatus('Cache cleared');
   }, []);
 
-  // Update aircraft display based on selected model
+  // Update aircraft display based on selected MODEL
   const updateAircraftDisplay = useCallback(() => {
-    // Get extended aircraft based on selected model
+    // Get extended aircraft based on selected MODEL
     const extendedAircraft = openSkyTrackingService.getExtendedAircraft(
       selectedModel || undefined
     );
 
-    // Get model stats from the service
+    // Get MODEL stats from the service
     const { models, totalActive: total } =
       openSkyTrackingService.getModelStats();
 
@@ -336,7 +336,7 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
     setIsLoading(openSkyTrackingService.isLoading());
   }, [selectedModel, updateAircraftData, isGeofenceMode]);
 
-  // Update display when model selection changes
+  // Update display when MODEL selection changes
   useEffect(() => {
     updateAircraftDisplay();
   }, [selectedModel, updateAircraftDisplay]);
@@ -360,38 +360,38 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
       // Update stats
       setTotalActive(geofenceAircraft.length);
 
-      // Extract model stats for the sidebar
+      // Extract MODEL stats for the sidebar
       const modelCounts = geofenceAircraft.reduce(
         (acc, aircraft) => {
-          const model = aircraft.model || aircraft.TYPE_AIRCRAFT || 'Unknown';
-          if (!acc[model]) {
-            acc[model] = {
-              model,
+          const MODEL = aircraft.MODEL || aircraft.AIRCRAFT_TYPE || 'Unknown';
+          if (!acc[MODEL]) {
+            acc[MODEL] = {
+              MODEL,
               count: 0,
-              manufacturer: aircraft.manufacturer || 'Unknown',
+              MANUFACTURER: aircraft.MANUFACTURER || 'Unknown',
               // Add required properties for AircraftModel
-              label: model,
+              label: MODEL,
               activeCount: 0,
               totalCount: 0,
             };
           }
-          acc[model].count++;
-          acc[model].activeCount++;
-          acc[model].totalCount++;
+          acc[MODEL].count++;
+          acc[MODEL].activeCount++;
+          acc[MODEL].totalCount++;
           return acc;
         },
         {} as Record<string, AircraftModel>
       );
 
       // Convert to array for the activeModels state
-      const modelArray = Object.values(modelCounts).map((model) => ({
-        model: model.model,
-        count: model.count,
-        manufacturer: model.manufacturer,
+      const modelArray = Object.values(modelCounts).map((MODEL) => ({
+        MODEL: MODEL.MODEL,
+        count: MODEL.count,
+        MANUFACTURER: MODEL.MANUFACTURER,
         // Add required properties for AircraftModel type
-        label: model.model,
-        activeCount: model.count,
-        totalCount: model.count,
+        label: MODEL.MODEL,
+        activeCount: MODEL.count,
+        totalCount: MODEL.count,
       }));
 
       setActiveModels(modelArray);
@@ -402,34 +402,34 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
     [updateAircraftData]
   );
 
-  // Handle manufacturer selection
-  const selectManufacturer = async (manufacturer: string | null) => {
-    // Exit geofence mode when selecting a manufacturer
+  // Handle MANUFACTURER selection
+  const selectManufacturer = async (MANUFACTURER: string | null) => {
+    // Exit geofence mode when selecting a MANUFACTURER
     setIsGeofenceMode(false);
 
-    setSelectedManufacturer(manufacturer);
+    setSelectedManufacturer(MANUFACTURER);
     setSelectedModel(null);
     setIsLoading(true);
     setLastRefreshed(null);
 
     try {
-      // Track the new manufacturer, ensuring it's always a string
-      await openSkyTrackingService.trackManufacturer(manufacturer ?? '');
+      // Track the new MANUFACTURER, ensuring it's always a string
+      await openSkyTrackingService.trackManufacturer(MANUFACTURER ?? '');
 
       // Update the lastRefreshed timestamp after successful tracking
       setLastRefreshed(new Date().toLocaleTimeString());
     } catch (error) {
       onError(
-        `Error tracking manufacturer: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Error tracking MANUFACTURER: ${error instanceof Error ? error.message : 'Unknown error'}`
       );
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Handle model selection
-  const selectModel = (model: string | null) => {
-    setSelectedModel(model);
+  // Handle MODEL selection
+  const selectModel = (MODEL: string | null) => {
+    setSelectedModel(MODEL);
   };
 
   // Handle aircraft selection
@@ -437,10 +437,10 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
     setSelectedAircraft(aircraft);
 
     // If selecting an aircraft, check if we have cached data to enhance it
-    if (aircraft && aircraft.icao24 && cachedAircraftData[aircraft.icao24]) {
+    if (aircraft && aircraft.ICAO24 && cachedAircraftData[aircraft.ICAO24]) {
       const enhancedAircraft = {
         ...aircraft,
-        ...cachedAircraftData[aircraft.icao24],
+        ...cachedAircraftData[aircraft.ICAO24],
       };
       setSelectedAircraft(enhancedAircraft as ExtendedAircraft);
     }
@@ -496,7 +496,7 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
 
       // Get active aircraft (those with position data)
       const activeAircraft = allTrackedAircraft.filter(
-        (aircraft) => aircraft.icao24 && aircraft.latitude && aircraft.longitude
+        (aircraft) => aircraft.ICAO24 && aircraft.latitude && aircraft.longitude
       );
 
       const needsFullRefresh =
@@ -519,7 +519,7 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
       } else {
         // Do an optimized refresh
         const activeIcaos = activeAircraft
-          .map((aircraft) => aircraft.icao24)
+          .map((aircraft) => aircraft.ICAO24)
           .filter(Boolean) as string[];
 
         if (activeIcaos.length > 0) {
@@ -612,7 +612,7 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
     setActiveModels([]);
     setTotalActive(0);
 
-    // If there was a previously selected manufacturer, we can restore it
+    // If there was a previously selected MANUFACTURER, we can restore it
     if (selectedManufacturer) {
       // Small delay to ensure state updates properly
       setTimeout(() => {

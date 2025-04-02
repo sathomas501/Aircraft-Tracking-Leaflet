@@ -22,9 +22,9 @@ export default async function handler(
 
   try {
     // Extract ICAO24 codes from request body
-    const { icao24s } = req.body;
+    const { ICAO24s } = req.body;
 
-    if (!Array.isArray(icao24s) || icao24s.length === 0) {
+    if (!Array.isArray(ICAO24s) || ICAO24s.length === 0) {
       return res.status(400).json({
         success: false,
         error: 'Request must include an array of ICAO24 codes',
@@ -33,7 +33,7 @@ export default async function handler(
 
     // Limit the number of codes in a single request to prevent abuse
     const MAX_ICAOS_PER_REQUEST = 200;
-    if (icao24s.length > MAX_ICAOS_PER_REQUEST) {
+    if (ICAO24s.length > MAX_ICAOS_PER_REQUEST) {
       return res.status(400).json({
         success: false,
         error: `Too many ICAO24 codes in request. Maximum is ${MAX_ICAOS_PER_REQUEST}`,
@@ -44,7 +44,7 @@ export default async function handler(
     await dbManager.initialize();
 
     // Fetch aircraft data from database
-    const aircraft = await dbManager.getAircraftByIcao24s(icao24s);
+    const aircraft = await dbManager.getAircraftByIcao24s(ICAO24s);
 
     // Return success response
     return res.status(200).json({

@@ -8,9 +8,9 @@ export interface TrackingUpdateRequest {
     | 'removeAircraft'
     | 'fetchAndStoreActiveAircraft'
     | 'upsertActiveAircraftBatch';
-  manufacturer?: string;
+  MANUFACTURER?: string;
   positions?: Aircraft[];
   aircraft?: Aircraft[];
-  icao24s?: string[];
-  icao24?: string;
+  ICAO24s?: string[];
+  ICAO24?: string;
 }

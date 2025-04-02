@@ -2,8 +2,8 @@
 import { Aircraft, Model, ExtendedAircraft } from '@/types/base';
 
 export interface BaseModel {
-  model: string;
-  manufacturer: string;
+  MODEL: string;
+  MANUFACTURER: string;
   label: string;
 }
 
@@ -20,7 +20,7 @@ export interface ModelCount {
 }
 
 export interface AircraftModel extends BaseModel, ModelCount {
-  icao24s?: string[];
+  ICAO24s?: string[];
 }
 
 export interface SelectOption {
@@ -33,13 +33,13 @@ export interface SelectOption {
 export const transformToAircraftModel = (
   aircraft: Aircraft
 ): AircraftModel => ({
-  model: aircraft.model || '',
-  manufacturer: aircraft.manufacturer,
-  label: `${aircraft.model || 'Unknown'}`,
+  MODEL: aircraft.MODEL || '',
+  MANUFACTURER: aircraft.MANUFACTURER,
+  label: `${aircraft.MODEL || 'Unknown'}`,
   count: 1,
   activeCount: aircraft.isTracked ? 1 : 0,
   totalCount: 1,
-  icao24s: [aircraft.icao24],
+  ICAO24s: [aircraft.ICAO24],
 });
 
 export const aggregateAircraftModels = (
@@ -48,16 +48,16 @@ export const aggregateAircraftModels = (
   const modelMap = new Map<string, AircraftModel>();
 
   aircraft.forEach((a) => {
-    if (!a.model) return; // Skip aircraft without model info
+    if (!a.MODEL) return; // Skip aircraft without MODEL info
 
-    const key = `${a.manufacturer}-${a.model}`;
+    const key = `${a.MANUFACTURER}-${a.MODEL}`;
     const existing = modelMap.get(key);
 
     if (existing) {
       existing.count++;
       if (a.isTracked) existing.activeCount++;
       existing.totalCount++;
-      if (existing.icao24s && a.icao24) existing.icao24s.push(a.icao24);
+      if (existing.ICAO24s && a.ICAO24) existing.ICAO24s.push(a.ICAO24);
     } else {
       modelMap.set(key, transformToAircraftModel(a));
     }
@@ -68,14 +68,14 @@ export const aggregateAircraftModels = (
 
 // Utility function for type conversion
 export function toActiveModel(
-  model: AircraftModel | Partial<ActiveModel>
+  MODEL: AircraftModel | Partial<ActiveModel>
 ): ActiveModel {
   return {
-    model: model.model || '',
-    manufacturer: model.manufacturer || '',
-    label: model.label || `${model.model || 'Unknown'} (0 active)`,
-    activeCount: model.activeCount || 0,
-    totalCount: model.totalCount || 0,
+    MODEL: MODEL.MODEL || '',
+    MANUFACTURER: MODEL.MANUFACTURER || '',
+    label: MODEL.label || `${MODEL.MODEL || 'Unknown'} (0 active)`,
+    activeCount: MODEL.activeCount || 0,
+    totalCount: MODEL.totalCount || 0,
   };
 }
 
@@ -84,8 +84,8 @@ export function transformToExtendedAircraft(
 ): ExtendedAircraft {
   return {
     ...aircraft,
-    type: aircraft.TYPE_AIRCRAFT || 'Unknown', // Map it properly
+    type: aircraft.AIRCRAFT_TYPE || 'Unknown', // Map it properly
     isGovernment:
-      aircraft.operator?.toLowerCase().includes('government') ?? false,
+      aircraft.OPERATOR?.toLowerCase().includes('government') ?? false,
   };
 }

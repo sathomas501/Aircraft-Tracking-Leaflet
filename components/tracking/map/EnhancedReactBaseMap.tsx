@@ -23,6 +23,7 @@ import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 import openSkyTrackingService from '../../../lib/services/openSkyTrackingService';
 import 'leaflet/dist/leaflet.css';
 import UnifiedAircraftSelector from '../selector/UnifiedAircraftSelector';
+import OwnershipColorKey from './components/OwnershipColorKey';
 
 // Map Events component to handle zoom changes
 const MapEvents: React.FC = () => {
@@ -208,11 +209,16 @@ const EnhancedReactBaseMap: React.FC<ReactBaseMapProps> = ({ onError }) => {
         {/* Aircraft markers using our unified marker component */}
         {validAircraft.map((aircraft: ExtendedAircraft) => (
           <UnifiedAircraftMarker
-            key={aircraft.icao24}
+            key={aircraft.ICAO24}
             aircraft={aircraft}
             onMarkerClick={handleMarkerClick}
           />
         ))}
+
+        <div id="map" style={{ height: '100vh', width: '100%' }}>
+          {/* Your map is rendered here */}
+        </div>
+        <OwnershipColorKey />
       </MapContainer>
 
       {/* UI Components using our unified system */}

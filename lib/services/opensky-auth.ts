@@ -127,7 +127,7 @@ export class OpenSkyAuth {
 
       // Make a minimal request to verify auth
       const response = await fetch(
-        'https://opensky-network.org/api/states/all?time=0&icao24=a00001',
+        'https://opensky-network.org/api/states/all?time=0&ICAO24=a00001',
         {
           headers: {
             Authorization: `Basic ${authString}`,

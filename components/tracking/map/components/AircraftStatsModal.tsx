@@ -43,11 +43,11 @@ const AircraftStatsModal: React.FC<AircraftStatsModalProps> = ({
   const inFlight = displayedAircraft.filter((a) => !a.on_ground).length;
   const onGround = displayedAircraft.filter((a) => a.on_ground).length;
 
-  // Group by model type
+  // Group by MODEL type
   const modelCounts = displayedAircraft.reduce(
     (counts, aircraft) => {
-      const model = aircraft.model || aircraft.TYPE_AIRCRAFT || 'Unknown';
-      counts[model] = (counts[model] || 0) + 1;
+      const MODEL = aircraft.MODEL || aircraft.AIRCRAFT_TYPE || 'Unknown';
+      counts[MODEL] = (counts[MODEL] || 0) + 1;
       return counts;
     },
     {} as Record<string, number>
@@ -111,7 +111,7 @@ const AircraftStatsModal: React.FC<AircraftStatsModalProps> = ({
             <p className="text-gray-600">
               {selectedModel
                 ? `Filtering to ${selectedModel} aircraft`
-                : `Tracking all models - ${activeModels.length} model types, ${totalActive} total aircraft`}
+                : `Tracking all models - ${activeModels.length} MODEL types, ${totalActive} total aircraft`}
             </p>
           </div>
 
@@ -188,13 +188,13 @@ const AircraftStatsModal: React.FC<AircraftStatsModalProps> = ({
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {sortedModels.map(([model, count], index) => (
+                  {sortedModels.map(([MODEL, count], index) => (
                     <tr
                       key={index}
                       className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}
                     >
                       <td className="px-4 py-2 whitespace-nowrap text-sm font-medium text-gray-900">
-                        {model}
+                        {MODEL}
                       </td>
                       <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
                         {count}

@@ -105,11 +105,11 @@ export const DataPersistenceProvider: React.FC<{ children: ReactNode }> = ({
         const currentData: Record<string, CachedAircraftData> = {};
 
         aircraftList.forEach((aircraft) => {
-          if (aircraft.icao24) {
+          if (aircraft.ICAO24) {
             // Convert to CachedAircraftData format
-            currentData[aircraft.icao24] = {
+            currentData[aircraft.ICAO24] = {
               ...aircraft,
-              icao24: aircraft.icao24,
+              ICAO24: aircraft.ICAO24,
               lastUpdated: Date.now(),
               // Ensure required fields are present with default values
               latitude: aircraft.latitude || 0,
@@ -142,11 +142,11 @@ export const DataPersistenceProvider: React.FC<{ children: ReactNode }> = ({
   // Get enhanced aircraft with cached data
   const getEnhancedAircraft = useCallback(
     (aircraft: ExtendedAircraft): ExtendedAircraft => {
-      if (!aircraft.icao24 || !cachedAircraft[aircraft.icao24]) {
+      if (!aircraft.ICAO24 || !cachedAircraft[aircraft.ICAO24]) {
         return aircraft;
       }
 
-      const cached = cachedAircraft[aircraft.icao24];
+      const cached = cachedAircraft[aircraft.ICAO24];
 
       // Start with current aircraft data (for latest position)
       const enhanced = { ...aircraft };
@@ -154,10 +154,10 @@ export const DataPersistenceProvider: React.FC<{ children: ReactNode }> = ({
       // Add missing fields from cache (only if they're empty in current data)
       const staticFields: Array<keyof CachedAircraftData> = [
         'registration',
-        'model',
-        'manufacturer',
-        'N-NUMBER',
-        'TYPE_AIRCRAFT',
+        'MODEL',
+        'MANUFACTURER',
+        'N_NUMBER',
+        'AIRCRAFT_TYPE',
         'NAME',
         'OWNER_TYPE',
         'CITY',
