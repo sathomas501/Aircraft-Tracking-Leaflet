@@ -270,7 +270,7 @@ function isGovernmentAircraft(aircraft: any): boolean {
     'federal',
   ];
 
-  const fieldsToCheck = [aircraft.operator, aircraft.NAME, aircraft.name]
+  const fieldsToCheck = [aircraft.OPERATOR, aircraft.NAME, aircraft.name]
     .filter(Boolean)
     .join(' ')
     .toLowerCase();

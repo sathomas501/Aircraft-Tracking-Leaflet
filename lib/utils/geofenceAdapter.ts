@@ -72,7 +72,7 @@ export function adaptGeofenceAircraft(
       MANUFACTURER:
         aircraft.MANUFACTURER || aircraft.manufacturerName || 'Unknown',
       MODEL: aircraft.MODEL || aircraft.type_aircraft || '',
-      operator: aircraft.operator || '',
+      OPERATOR: aircraft.OPERATOR || '',
       NAME: aircraft.NAME || aircraft.name || '',
       CITY: aircraft.CITY || aircraft.city || '',
       STATE: aircraft.STATE || aircraft.state || '',

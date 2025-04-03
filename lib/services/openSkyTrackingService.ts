@@ -825,7 +825,7 @@ class OpenSkyTrackingService {
       ...aircraft,
       type: aircraft.AIRCRAFT_TYPE || 'Unknown',
       isGovernment:
-        aircraft.operator?.toLowerCase().includes('government') ?? false,
+        aircraft.OPERATOR?.toLowerCase().includes('government') ?? false,
     })) as ExtendedAircraft[];
   }
 

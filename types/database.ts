@@ -40,7 +40,7 @@ export interface AircraftRecord {
   N_NUMBER: string;
   MANUFACTURER: string;
   MODEL?: string;
-  operator?: string;
+  OPERATOR?: string;
   NAME: string;
   CITY: string;
   STATE: string;
