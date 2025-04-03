@@ -332,5 +332,6 @@ export interface ModelSelectorProps {
 export interface ExtendedAircraft extends Aircraft {
   type: string; // From DynamicMap
   isGovernment: boolean; // From DynamicMap
+  zoomLevel?: number;
   // Add any additional OpenSky properties if needed
 }

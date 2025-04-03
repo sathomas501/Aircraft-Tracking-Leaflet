@@ -13,17 +13,19 @@ import LeafletTouchFix from './components/LeafletTouchFix';
 import { useEnhancedMapContext } from '../context/EnhancedMapContext';
 import { ExtendedAircraft } from '@/types/base';
 import MapControllerWithOptions from './MapControllerWithOptions';
-import type { SelectOption } from '@/types/base';
-import UnifiedAircraftMarker from './UnifiedAircraftMarker';
-import { useEnhancedUI } from '../../tracking/context/EnhancedUIContext';
+import SimplifiedAircraftMarker from './SimplifiedAircraftMarker';
+import { useEnhancedUI } from '../context/EnhancedUIContext';
 import DraggablePanel from '../DraggablePanel';
-import EnhancedTooltip from '../map/components/AircraftTooltip';
-import EnhancedTrailSystem from '../../tracking/map/components/EnhancedTrailSystem';
+import EnhancedTooltip from './components/AircraftTooltip';
+import EnhancedTrailSystem from './components/EnhancedTrailSystem';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 import openSkyTrackingService from '../../../lib/services/openSkyTrackingService';
 import 'leaflet/dist/leaflet.css';
 import UnifiedAircraftSelector from '../selector/UnifiedAircraftSelector';
 import OwnershipColorKey from './components/OwnershipColorKey';
+// Import the tooltip provider
+import { AircraftTooltipProvider } from '../context/AircraftTooltipContext';
+import type { SelectOption } from '@/types/base';
 
 // Map Events component to handle zoom changes
 const MapEvents: React.FC = () => {
@@ -90,18 +92,11 @@ export interface ReactBaseMapProps {
 
 const EnhancedReactBaseMap: React.FC<ReactBaseMapProps> = ({ onError }) => {
   const [manufacturers, setManufacturers] = useState<SelectOption[]>([]);
-  const { displayedAircraft, isRefreshing, setZoomLevel } =
+  const { displayedAircraft, isRefreshing, setZoomLevel, zoomLevel } =
     useEnhancedMapContext();
-  const {
-    selectAircraft,
-    openPanel,
-    closePanel,
-    panels,
-    isLoading,
-    trailSettings,
-    updateTrailSettings,
-    toggleTrails,
-  } = useEnhancedUI();
+
+  const { selectAircraft, openPanel, closePanel, panels, isLoading } =
+    useEnhancedUI();
 
   // Fetch manufacturers
   useEffect(() => {
@@ -137,39 +132,6 @@ const EnhancedReactBaseMap: React.FC<ReactBaseMapProps> = ({ onError }) => {
     openPanel('settings', null, { x: 20, y: 20 }, 'Map Settings');
   };
 
-  // Handle trail settings change
-  const handleTrailSettingsChange = (settings: {
-    maxTrailLength: number;
-    fadeTime: number;
-    selectedOnly: boolean;
-  }) => {
-    // Update UI context settings
-    updateTrailSettings(settings);
-
-    // Also update the tracking service settings
-    openSkyTrackingService.setMaxTrailLength(settings.maxTrailLength);
-  };
-
-  // Handle trail toggle
-  const handleToggleTrails = () => {
-    // Toggle trails in UI context
-    toggleTrails();
-
-    // Also toggle in tracking service
-    const newState = !openSkyTrackingService.areTrailsEnabled();
-    openSkyTrackingService.setTrailsEnabled(newState);
-
-    // Force generate trails if enabling
-    if (newState) {
-      openSkyTrackingService.forceGenerateTrails();
-    }
-  };
-
-  // Force refresh trails
-  const handleRefreshTrails = () => {
-    openSkyTrackingService.forceGenerateTrails();
-  };
-
   return (
     <div className="relative w-full h-full">
       {/* Loading indicator */}
@@ -197,23 +159,16 @@ const EnhancedReactBaseMap: React.FC<ReactBaseMapProps> = ({ onError }) => {
         <LeafletTouchFix />
         <LayersControl position="topright">{/* Layer options */}</LayersControl>
 
-        {/* Aircraft trails - only render if enabled */}
-        {trailSettings.enabled && (
-          <EnhancedTrailSystem
-            maxTrailLength={trailSettings.maxTrailLength}
-            fadeTime={trailSettings.fadeTime}
-            selectedOnly={trailSettings.selectedOnly}
-          />
-        )}
-
-        {/* Aircraft markers using our unified marker component */}
-        {validAircraft.map((aircraft: ExtendedAircraft) => (
-          <UnifiedAircraftMarker
-            key={aircraft.ICAO24}
-            aircraft={aircraft}
-            onMarkerClick={handleMarkerClick}
-          />
-        ))}
+        {/* Wrap aircraft markers with the tooltip provider */}
+        <AircraftTooltipProvider>
+          {/* Aircraft markers using our simplified marker component */}
+          {validAircraft.map((aircraft: ExtendedAircraft) => (
+            <SimplifiedAircraftMarker
+              key={aircraft.ICAO24}
+              aircraft={aircraft}
+            />
+          ))}
+        </AircraftTooltipProvider>
 
         <div id="map" style={{ height: '100vh', width: '100%' }}>
           {/* Your map is rendered here */}
@@ -249,19 +204,6 @@ const EnhancedReactBaseMap: React.FC<ReactBaseMapProps> = ({ onError }) => {
             <h3 className="font-medium mb-2">Display Options</h3>
             {/* Settings content would go here */}
           </div>
-        </DraggablePanel>
-      )}
-
-      {/* Custom panel for trail settings */}
-      {panels.custom.isOpen && panels.custom.customContent && (
-        <DraggablePanel
-          isOpen={panels.custom.isOpen}
-          onClose={() => closePanel('custom')}
-          title={panels.custom.title || 'Custom Panel'}
-          initialPosition={panels.custom.position}
-          className="bg-white rounded-lg shadow-lg"
-        >
-          {panels.custom.customContent}
         </DraggablePanel>
       )}
 

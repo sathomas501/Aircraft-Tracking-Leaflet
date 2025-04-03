@@ -1,49 +1,54 @@
 // components/tracking/map/components/AircraftTooltipComponent.tsx
 import React, { FC } from 'react';
 import { Tooltip } from 'react-leaflet';
-import {
-  getOwnerTypeClass,
-  createTooltipContent,
-} from '../AircraftIcon/AircraftIcon';
 import { useAircraftTooltip } from '../../context/AircraftTooltipContext';
+import type { ExtendedAircraft } from '@/types/base';
+import AircraftTooltipContent from './AircraftTooltipContent';
+
+interface AircraftTooltipComponentProps {
+  aircraft: ExtendedAircraft;
+  isStale?: boolean;
+}
 
 /**
  * Centralized Aircraft Tooltip Component
  * This component is responsible for rendering tooltips for aircraft markers
  * It uses the AircraftTooltipContext to determine when to show tooltips
  */
-const AircraftTooltipComponent: FC = () => {
-  const {
-    isTooltipVisible,
-    tooltipAircraft,
-    tooltipOffset,
-    isPermanentTooltip,
-  } = useAircraftTooltip();
+const AircraftTooltipComponent: FC<AircraftTooltipComponentProps> = ({
+  aircraft,
+  isStale = false,
+}) => {
+  const { visibleTooltips, tooltipOffset, isPermanentTooltip } =
+    useAircraftTooltip();
+
+  // Check if this tooltip should be visible
+  const aircraftId = aircraft.ICAO24 || '';
+  const shouldShow = visibleTooltips.has(aircraftId);
+
+  // Get the tooltip aircraft data (with zoom level)
+  const tooltipAircraft = shouldShow
+    ? visibleTooltips.get(aircraftId) || aircraft
+    : null;
 
   // If no tooltip should be shown, return null
-  if (!isTooltipVisible || !tooltipAircraft) {
+  if (!shouldShow || !tooltipAircraft) {
     return null;
   }
 
-  // Get owner type class for styling
-  const ownerTypeClass = getOwnerTypeClass(tooltipAircraft);
-
-  // Get zoom level from context or default to 9
+  // Get zoom level from data or default to 9
   const zoomLevel = tooltipAircraft.zoomLevel || 9;
-
-  // Generate tooltip content
-  const tooltipContent = createTooltipContent(tooltipAircraft, zoomLevel);
 
   return (
     <Tooltip
       direction="top"
       offset={tooltipOffset}
       permanent={isPermanentTooltip}
-      className="aircraft-tooltip visible"
+      className={`aircraft-tooltip visible ${isStale ? 'stale-tooltip' : ''}`}
     >
-      <div
-        dangerouslySetInnerHTML={{ __html: tooltipContent }}
-        className={`aircraft-tooltip-wrapper ${ownerTypeClass}`}
+      <AircraftTooltipContent
+        aircraft={tooltipAircraft}
+        zoomLevel={zoomLevel}
       />
     </Tooltip>
   );

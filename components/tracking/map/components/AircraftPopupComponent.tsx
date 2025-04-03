@@ -1,46 +1,64 @@
 // components/tracking/map/components/AircraftPopupComponent.tsx
 import React, { FC } from 'react';
 import { Popup } from 'react-leaflet';
-import {
-  getOwnerTypeClass,
-  createPopupContent,
-} from '../AircraftIcon/AircraftIcon';
 import { useAircraftTooltip } from '../../context/AircraftTooltipContext';
+import { useEnhancedUI } from '../../context/EnhancedUIContext';
+import type { ExtendedAircraft } from '@/types/base';
+import AircraftPopupContent from './AircraftPopupContent';
+
+interface AircraftPopupComponentProps {
+  aircraft: ExtendedAircraft;
+}
 
 /**
  * Centralized Aircraft Popup Component
  * This component is responsible for rendering popups for aircraft markers
  * It uses the AircraftTooltipContext to determine when to show popups
  */
-const AircraftPopupComponent: FC = () => {
-  const { isPopupVisible, popupAircraft, hidePopup } = useAircraftTooltip();
+const AircraftPopupComponent: FC<AircraftPopupComponentProps> = ({
+  aircraft,
+}) => {
+  const { visiblePopups, hidePopup } = useAircraftTooltip();
+
+  const { selectAircraft } = useEnhancedUI();
+
+  // Check if this popup should be visible
+  const aircraftId = aircraft.ICAO24 || '';
+  const shouldShow = visiblePopups.has(aircraftId);
+
+  // Get the popup aircraft data (with zoom level)
+  const popupAircraft = shouldShow
+    ? visiblePopups.get(aircraftId) || aircraft
+    : null;
 
   // If no popup should be shown, return null
-  if (!isPopupVisible || !popupAircraft) {
+  if (!shouldShow || !popupAircraft) {
     return null;
   }
 
-  // Get owner type class for styling
-  const ownerTypeClass = getOwnerTypeClass(popupAircraft);
+  // Handle closing the popup
+  const handleClose = () => {
+    hidePopup(aircraftId);
+  };
 
-  // Get zoom level from context or default to 9
-  const zoomLevel = popupAircraft.zoomLevel || 9;
-
-  // Generate popup content
-  const popupContent = createPopupContent(popupAircraft, zoomLevel);
+  // Handle selecting the aircraft
+  const handleSelectAircraft = (icao24: string) => {
+    selectAircraft(popupAircraft);
+  };
 
   return (
     <Popup
-      className={`aircraft-popup ${ownerTypeClass}`}
-      closeButton={true}
+      className={`aircraft-popup`}
+      closeButton={false}
       autoPan={true}
       eventHandlers={{
-        remove: hidePopup,
+        remove: handleClose,
       }}
     >
-      <div
-        dangerouslySetInnerHTML={{ __html: popupContent }}
-        className={`aircraft-popup-content ${ownerTypeClass}`}
+      <AircraftPopupContent
+        aircraft={popupAircraft}
+        onSelectAircraft={handleSelectAircraft}
+        onClose={handleClose}
       />
     </Popup>
   );

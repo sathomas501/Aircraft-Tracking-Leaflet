@@ -1,49 +1,21 @@
 // EnhancedContextAircraftMarker.tsx
-import React, { useRef, useState, useEffect, memo, useMemo } from 'react';
-import { Marker, Popup, Tooltip, useMap } from 'react-leaflet';
+import React, { useRef, useState, memo, useMemo } from 'react';
+import { Marker, useMap } from 'react-leaflet';
 import { useEnhancedMapContext } from '../context/EnhancedMapContext';
 import {
   createAircraftIcon,
-  createTooltipContent,
-  createPopupContent,
   getOwnerTypeClass,
 } from './AircraftIcon/AircraftIcon';
 import type { ExtendedAircraft } from '@/types/base';
 import L from 'leaflet';
-import AircraftTrail from './components/AircraftTrail';
+import { useAircraftTooltip } from '../context/AircraftTooltipContext';
+import AircraftTooltipComponent from './components/AircraftTooltipComponent';
+import AircraftPopupComponent from './components/AircraftPopupComponent';
 
 // Define the props interface
 interface EnhancedContextAircraftMarkerProps {
   aircraft: ExtendedAircraft;
 }
-
-// Helper function to apply owner type classes to Leaflet tooltip elements
-const applyOwnerTypeStylingToTooltip = (
-  tooltipRef: React.RefObject<L.Tooltip>,
-  ownerTypeClass: string
-) => {
-  if (tooltipRef.current) {
-    const tooltipElement = tooltipRef.current.getElement();
-    if (tooltipElement) {
-      // Remove any previous owner type classes
-      tooltipElement.classList.forEach((cls) => {
-        if (cls.startsWith('owner-') || cls.endsWith('-owner')) {
-          tooltipElement.classList.remove(cls);
-        }
-      });
-
-      // Add the owner type class to the tooltip element
-      tooltipElement.classList.add(`owner-${ownerTypeClass}`);
-      tooltipElement.classList.add(`${ownerTypeClass}-owner`);
-
-      // Force a repaint to ensure styles are applied
-      tooltipElement.style.opacity = '0.99';
-      setTimeout(() => {
-        tooltipElement.style.opacity = '1';
-      }, 10);
-    }
-  }
-};
 
 // Define the component with proper React FC syntax
 const EnhancedContextAircraftMarker: React.FC<
@@ -59,9 +31,11 @@ const EnhancedContextAircraftMarker: React.FC<
     cachedAircraftData, // Get cached data from context
   } = useEnhancedMapContext();
 
+  const { showTooltip, hideTooltip, showPopup, setIsPermanentTooltip } =
+    useAircraftTooltip();
+
   const isSelected = selectedAircraft?.ICAO24 === aircraft.ICAO24;
   const markerRef = useRef<L.Marker>(null);
-  const tooltipRef = useRef<L.Tooltip>(null);
   const [isHovering, setIsHovering] = useState(false);
 
   // Skip rendering if no valid position
@@ -104,12 +78,6 @@ const EnhancedContextAircraftMarker: React.FC<
   // Get owner type class for the aircraft
   const ownerClass = getOwnerTypeClass(enhancedAircraft);
 
-  // Create tooltip content using the utility function with enhanced data
-  const tooltipContent = createTooltipContent(enhancedAircraft, zoomLevel || 9);
-
-  // Create popup content using the utility function with enhanced data
-  const popupContent = createPopupContent(enhancedAircraft, zoomLevel || 9);
-
   // Get aircraft icon
   const icon = useMemo(() => {
     return createAircraftIcon(enhancedAircraft, {
@@ -118,31 +86,45 @@ const EnhancedContextAircraftMarker: React.FC<
     });
   }, [enhancedAircraft, isSelected, zoomLevel]); // Explicit dependency on zoomLevel
 
-  // Apply owner type styling to tooltip after render
-  useEffect(() => {
-    if (isHovering && tooltipRef.current) {
-      applyOwnerTypeStylingToTooltip(tooltipRef, ownerClass);
-    }
-  }, [isHovering, tooltipRef.current, ownerClass]);
+  // Event handlers
+  const handleMarkerClick = () => {
+    console.log('Marker clicked:', aircraft.ICAO24);
+    // Pass the enhanced aircraft to selectAircraft
+    selectAircraft(enhancedAircraft);
+
+    // Show popup for this aircraft
+    showPopup({
+      ...enhancedAircraft,
+      zoomLevel: zoomLevel || 9,
+    });
+  };
+
+  const handleMouseOver = () => {
+    console.log('Marker hover start:', aircraft.ICAO24);
+    setIsHovering(true);
+
+    // Add zoom level to aircraft for tooltip rendering
+    const aircraftWithZoom = {
+      ...enhancedAircraft,
+      zoomLevel: zoomLevel || 9,
+    };
+
+    // Show tooltip and make it permanent
+    showTooltip(aircraftWithZoom);
+    setIsPermanentTooltip(true);
+  };
+
+  const handleMouseOut = () => {
+    console.log('Marker hover end:', aircraft.ICAO24);
+    setIsHovering(false);
+
+    // Hide tooltip
+    hideTooltip(aircraft.ICAO24);
+    setIsPermanentTooltip(false);
+  };
 
   return (
     <>
-      {/* Render trail if enabled and available */}
-      {trailsEnabled && trail && trail.length >= 2 && (
-        <AircraftTrail
-          positions={trail.map((pos) => ({
-            lat: typeof pos.latitude === 'number' ? pos.latitude : 0,
-            lng: typeof pos.longitude === 'number' ? pos.longitude : 0,
-            altitude: pos.altitude,
-            timestamp: pos.timestamp || Date.now(),
-          }))}
-          color={isSelected ? '#3388ff' : '#3388ff80'}
-          weight={isSelected ? 3 : 2}
-          opacity={isSelected ? 0.9 : 0.65}
-          fadeEffect={true}
-          selected={isSelected}
-        />
-      )}
       {/* Single marker approach - no more duplicates */}
       <Marker
         ref={markerRef}
@@ -150,33 +132,14 @@ const EnhancedContextAircraftMarker: React.FC<
         icon={icon || undefined}
         zIndexOffset={isSelected ? 1000 : 0}
         eventHandlers={{
-          click: () => {
-            console.log('Marker clicked:', aircraft.ICAO24);
-            // Pass the enhanced aircraft to selectAircraft
-            selectAircraft(enhancedAircraft);
-          },
-          mouseover: () => {
-            console.log('Marker hover start:', aircraft.ICAO24);
-            setIsHovering(true);
-          },
-          mouseout: () => {
-            console.log('Marker hover end:', aircraft.ICAO24);
-            setIsHovering(false);
-          },
+          click: handleMarkerClick,
+          mouseover: handleMouseOver,
+          mouseout: handleMouseOut,
         }}
       >
-        {/* Only show tooltip when hovering */}
-        {isHovering && (
-          <Tooltip
-            ref={tooltipRef}
-            direction="top"
-            offset={[0, -20]}
-            permanent={true}
-            className={`aircraft-tooltip visible owner-${ownerClass} ${ownerClass}-owner`}
-          >
-            <div dangerouslySetInnerHTML={{ __html: tooltipContent }} />
-          </Tooltip>
-        )}
+        {/* Tooltip and Popup components */}
+        <AircraftTooltipComponent aircraft={enhancedAircraft} />
+        <AircraftPopupComponent aircraft={enhancedAircraft} />
       </Marker>
     </>
   );

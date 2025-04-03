@@ -5,18 +5,18 @@ import type { ExtendedAircraft } from '@/types/base';
 // Define the context interface
 interface AircraftTooltipContextType {
   // Tooltip state
-  isTooltipVisible: boolean;
-  tooltipAircraft: ExtendedAircraft | null;
+  visibleTooltips: Map<string, ExtendedAircraft>; // Map of ICAO24 -> aircraft
 
   // Popup state
-  isPopupVisible: boolean;
-  popupAircraft: ExtendedAircraft | null;
+  visiblePopups: Map<string, ExtendedAircraft>; // Map of ICAO24 -> aircraft
 
   // Actions
   showTooltip: (aircraft: ExtendedAircraft) => void;
-  hideTooltip: () => void;
+  hideTooltip: (icao24: string) => void;
+  hideAllTooltips: () => void;
   showPopup: (aircraft: ExtendedAircraft) => void;
-  hidePopup: () => void;
+  hidePopup: (icao24: string) => void;
+  hideAllPopups: () => void;
 
   // Styling options
   tooltipOffset: [number, number];
@@ -36,16 +36,13 @@ const AircraftTooltipContext = createContext<
 export const AircraftTooltipProvider: React.FC<{ children: ReactNode }> = ({
   children,
 }) => {
-  // Tooltip state
-  const [isTooltipVisible, setIsTooltipVisible] = useState(false);
-  const [tooltipAircraft, setTooltipAircraft] =
-    useState<ExtendedAircraft | null>(null);
-
-  // Popup state
-  const [isPopupVisible, setIsPopupVisible] = useState(false);
-  const [popupAircraft, setPopupAircraft] = useState<ExtendedAircraft | null>(
-    null
-  );
+  // Tooltip state - use Maps keyed by ICAO24 to store active tooltips/popups
+  const [visibleTooltips, setVisibleTooltips] = useState<
+    Map<string, ExtendedAircraft>
+  >(new Map());
+  const [visiblePopups, setVisiblePopups] = useState<
+    Map<string, ExtendedAircraft>
+  >(new Map());
 
   // Styling options
   const [tooltipOffset, setTooltipOffset] = useState<[number, number]>([
@@ -55,33 +52,59 @@ export const AircraftTooltipProvider: React.FC<{ children: ReactNode }> = ({
 
   // Actions
   const showTooltip = (aircraft: ExtendedAircraft) => {
-    setTooltipAircraft(aircraft);
-    setIsTooltipVisible(true);
+    if (!aircraft.ICAO24) return;
+
+    setVisibleTooltips((prev) => {
+      const newMap = new Map(prev);
+      newMap.set(aircraft.ICAO24, aircraft);
+      return newMap;
+    });
   };
 
-  const hideTooltip = () => {
-    setIsTooltipVisible(false);
+  const hideTooltip = (icao24: string) => {
+    setVisibleTooltips((prev) => {
+      const newMap = new Map(prev);
+      newMap.delete(icao24);
+      return newMap;
+    });
+  };
+
+  const hideAllTooltips = () => {
+    setVisibleTooltips(new Map());
   };
 
   const showPopup = (aircraft: ExtendedAircraft) => {
-    setPopupAircraft(aircraft);
-    setIsPopupVisible(true);
+    if (!aircraft.ICAO24) return;
+
+    setVisiblePopups((prev) => {
+      const newMap = new Map(prev);
+      newMap.set(aircraft.ICAO24, aircraft);
+      return newMap;
+    });
   };
 
-  const hidePopup = () => {
-    setIsPopupVisible(false);
+  const hidePopup = (icao24: string) => {
+    setVisiblePopups((prev) => {
+      const newMap = new Map(prev);
+      newMap.delete(icao24);
+      return newMap;
+    });
+  };
+
+  const hideAllPopups = () => {
+    setVisiblePopups(new Map());
   };
 
   // Context value
   const value = {
-    isTooltipVisible,
-    tooltipAircraft,
-    isPopupVisible,
-    popupAircraft,
+    visibleTooltips,
+    visiblePopups,
     showTooltip,
     hideTooltip,
+    hideAllTooltips,
     showPopup,
     hidePopup,
+    hideAllPopups,
     tooltipOffset,
     setTooltipOffset,
     isPermanentTooltip,

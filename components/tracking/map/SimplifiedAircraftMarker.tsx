@@ -25,14 +25,22 @@ const SimplifiedAircraftMarker: React.FC<SimplifiedAircraftMarkerProps> = ({
 }) => {
   const { selectedAircraft, zoomLevel } = useEnhancedMapContext();
   const { selectAircraft } = useEnhancedUI();
-  const { showTooltip, hideTooltip, showPopup, setIsPermanentTooltip } =
-    useAircraftTooltip();
+  const {
+    showTooltip,
+    hideTooltip,
+    showPopup,
+    hidePopup,
+    setIsPermanentTooltip,
+  } = useAircraftTooltip();
 
   // Determine if this aircraft is selected
   const isSelected = selectedAircraft?.ICAO24 === aircraft.ICAO24;
 
+  // Ensure aircraft has ICAO24
+  const aircraftId = aircraft.ICAO24 || '';
+
   // Validate position data
-  if (!aircraft.latitude || !aircraft.longitude) {
+  if (!aircraft.latitude || !aircraft.longitude || !aircraftId) {
     return null;
   }
 
@@ -75,26 +83,28 @@ const SimplifiedAircraftMarker: React.FC<SimplifiedAircraftMarkerProps> = ({
   };
 
   const handleMouseOut = () => {
-    // Hide tooltip
-    hideTooltip();
+    // Hide tooltip for this specific aircraft
+    hideTooltip(aircraftId);
     setIsPermanentTooltip(false);
   };
 
   return (
-    <Marker
-      position={position}
-      icon={aircraftIcon || undefined}
-      zIndexOffset={isSelected ? 1000 : 0}
-      eventHandlers={{
-        click: handleMarkerClick,
-        mouseover: handleMouseOver,
-        mouseout: handleMouseOut,
-      }}
-    >
-      {/* Tooltip and Popup components */}
-      <AircraftTooltipComponent />
-      <AircraftPopupComponent />
-    </Marker>
+    <>
+      <Marker
+        position={position}
+        icon={aircraftIcon || undefined}
+        zIndexOffset={isSelected ? 1000 : 0}
+        eventHandlers={{
+          click: handleMarkerClick,
+          mouseover: handleMouseOver,
+          mouseout: handleMouseOut,
+        }}
+      >
+        {/* Each marker has its own tooltip and popup component */}
+        <AircraftTooltipComponent aircraft={aircraft} isStale={isStale} />
+        <AircraftPopupComponent aircraft={aircraft} />
+      </Marker>
+    </>
   );
 };
 

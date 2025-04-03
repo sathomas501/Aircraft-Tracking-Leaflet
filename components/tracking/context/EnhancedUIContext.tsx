@@ -18,14 +18,6 @@ export type PanelType =
   | 'details'
   | 'custom';
 
-// Trail settings interface
-export interface TrailSettings {
-  enabled: boolean;
-  maxTrailLength: number;
-  fadeTime: number;
-  selectedOnly: boolean;
-}
-
 interface PanelState {
   isOpen: boolean;
   type: PanelType;
@@ -76,11 +68,6 @@ interface EnhancedUIContextState {
   ) => void;
   hideTooltip: () => void;
 
-  // Trail settings
-  trailSettings: TrailSettings;
-  updateTrailSettings: (settings: Partial<TrailSettings>) => void;
-  toggleTrails: () => void;
-
   // Other UI state
   isLoading: boolean;
   setIsLoading: (loading: boolean) => void;
@@ -109,14 +96,6 @@ const DEFAULT_POSITIONS = {
     x: typeof window !== 'undefined' ? window.innerWidth / 2 - 200 : 300,
     y: 100,
   },
-};
-
-// Default trail settings
-const DEFAULT_TRAIL_SETTINGS: TrailSettings = {
-  enabled: false,
-  maxTrailLength: 100,
-  fadeTime: 30, // minutes
-  selectedOnly: false,
 };
 
 // Provider component
@@ -169,23 +148,6 @@ export const EnhancedUIProvider: React.FC<{ children: ReactNode }> = ({
     position: null,
     targetId: null,
   });
-
-  // Initialize trail settings from the tracking service
-  const [trailSettings, setTrailSettings] = useState<TrailSettings>({
-    ...DEFAULT_TRAIL_SETTINGS,
-    enabled: openSkyTrackingService.areTrailsEnabled(),
-    maxTrailLength: openSkyTrackingService.getMaxTrailLength(),
-  });
-
-  // Sync with tracking service on mount
-  useEffect(() => {
-    // Set initial trail settings from service
-    setTrailSettings((prev) => ({
-      ...prev,
-      enabled: openSkyTrackingService.areTrailsEnabled(),
-      maxTrailLength: openSkyTrackingService.getMaxTrailLength(),
-    }));
-  }, []);
 
   // Other UI state
   const [isLoading, setIsLoading] = useState(false);
@@ -295,45 +257,6 @@ export const EnhancedUIProvider: React.FC<{ children: ReactNode }> = ({
     }));
   }, []);
 
-  // Trail settings actions
-  const updateTrailSettings = useCallback(
-    (settings: Partial<TrailSettings>) => {
-      setTrailSettings((prev) => {
-        const newSettings = {
-          ...prev,
-          ...settings,
-        };
-
-        // Update the tracking service with new settings
-        if (settings.maxTrailLength !== undefined) {
-          openSkyTrackingService.setMaxTrailLength(settings.maxTrailLength);
-        }
-
-        return newSettings;
-      });
-    },
-    []
-  );
-
-  const toggleTrails = useCallback(() => {
-    setTrailSettings((prev) => {
-      const enabled = !prev.enabled;
-
-      // Update the tracking service
-      openSkyTrackingService.setTrailsEnabled(enabled);
-
-      // If enabling trails, force generate them
-      if (enabled) {
-        openSkyTrackingService.forceGenerateTrails();
-      }
-
-      return {
-        ...prev,
-        enabled,
-      };
-    });
-  }, []);
-
   const value = {
     panels,
     openPanel,
@@ -345,9 +268,6 @@ export const EnhancedUIProvider: React.FC<{ children: ReactNode }> = ({
     tooltip,
     showTooltip,
     hideTooltip,
-    trailSettings,
-    updateTrailSettings,
-    toggleTrails,
     isLoading,
     setIsLoading,
     errorMessage,
