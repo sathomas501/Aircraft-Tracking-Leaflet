@@ -310,6 +310,51 @@
 }
 
 /* === Aircraft Popups === */
+/* Right-side popup styling */
+.right-side-popup {
+  max-width: 350px !important;
+}
+
+.right-side-popup .leaflet-popup-content-wrapper {
+  border-radius: 8px !important;
+  box-shadow: -2px 2px 12px rgba(0, 0, 0, 0.2) !important;
+}
+
+/* Fix positioning issues that might be causing the flashing */
+.leaflet-popup.right-side-popup {
+  opacity: 1 !important;
+  visibility: visible !important;
+  pointer-events: auto !important;
+}
+
+/* Make sure the popup animation doesn't interfere with positioning */
+.leaflet-fade-anim .leaflet-popup.right-side-popup {
+  transition: none !important;
+}
+
+/* Ensure the popup doesn't get hidden behind other elements */
+.right-side-popup.leaflet-popup {
+  z-index: 3500 !important;
+}
+
+/* Keep owner type styling for right-side popups */
+.right-side-popup.aircraft-popup.Federal-Govt,
+.right-side-popup.aircraft-popup.Individual,
+.right-side-popup.aircraft-popup.Corp-owner,
+.right-side-popup.aircraft-popup.LLC,
+.right-side-popup.aircraft-popup.Partnership,
+.right-side-popup.aircraft-popup.Airline,
+.right-side-popup.aircraft-popup.Freight,
+.right-side-popup.aircraft-popup.Emergency,
+.right-side-popup.aircraft-popup.Medical,
+.right-side-popup.aircraft-popup.Education,
+.right-side-popup.aircraft-popup.Flight-School,
+.right-side-popup.aircraft-popup.Local-Govt,
+.right-side-popup.aircraft-popup.unknown-owner {
+  border-top-width: 3px !important;
+  border-top-style: solid !important;
+}
+
 .aircraft-popup {
   min-width: 220px;
   max-width: 90vw;

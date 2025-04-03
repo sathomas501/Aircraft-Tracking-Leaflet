@@ -121,12 +121,22 @@ const getOwnerTypeLabel = (ownerType: string): string => {
   const ownerTypes: Record<string, string> = {
     '1': 'Individual',
     '2': 'Partnership',
-    '3': 'Corporation',
-    '4': 'Co-Owned',
-    '5': 'Government',
+    '3': 'Corp-owner',
+    '4': 'Co-owned',
     '7': 'LLC',
-    '8': 'Non-Citizen Corporation',
-    '9': 'Non-Citizen Co-Owned',
+    '8': 'non-citizen-corp-owned',
+    '9': 'Airline',
+    '10': 'Freight',
+    '11': 'Medical',
+    '12': 'Media',
+    '13': 'Historical',
+    '14': 'Flying Club',
+    '15': 'Emergency',
+    '16': 'Local Govt',
+    '17': 'Education',
+    '18': 'Federal Govt',
+    '19': 'Flight School',
+    '20': 'Leasing Corp',
   };
   return ownerTypes[ownerType] || `Type ${ownerType}`;
 };
@@ -140,7 +150,7 @@ const AircraftPopupContent: React.FC<AircraftPopupContentProps> = ({
 
   // Format data
   const registration =
-    aircraft.registration || aircraft.N_NUMBER || aircraft.ICAO24;
+    aircraft.N_NUMBER || aircraft.registration || aircraft.ICAO24;
   const formattedAltitude = aircraft.altitude
     ? Math.round(aircraft.altitude).toLocaleString() + ' ft'
     : 'N/A';
@@ -148,12 +158,7 @@ const AircraftPopupContent: React.FC<AircraftPopupContentProps> = ({
     ? Math.round(aircraft.velocity) + ' kts'
     : 'N/A';
 
-  // Get city and state (check both uppercase and lowercase properties)
-  const city = aircraft.CITY || aircraft.CITY || '';
-  const state = aircraft.STATE || aircraft.STATE || '';
-  const hasLocation = city || state;
-
-  // Get aircraft type and styling classes - using local functions
+  // Get aircraft type and styling classes
   const aircraftType = determineAircraftType(aircraft);
   const ownerTypeClass = getOwnerTypeClass(aircraft);
   const readableType = getReadableAircraftType(aircraft);
@@ -161,16 +166,29 @@ const AircraftPopupContent: React.FC<AircraftPopupContentProps> = ({
     ? getOwnerTypeLabel(aircraft.OWNER_TYPE)
     : 'Unknown';
 
+  // Determine if this is an airline aircraft
+  const isAirline =
+    aircraft.OPERATOR &&
+    (aircraft.OPERATOR.toLowerCase().includes('airline') ||
+      aircraft.OPERATOR.toLowerCase().includes('airways') ||
+      ownerTypeClass === 'Airline');
+
   return (
-    <div
-      className={`aircraft-popup p-3 ${aircraftType}-popup ${ownerTypeClass}`}
-    >
-      <div className="flex justify-between items-center mb-2">
-        <h3 className="text-lg font-bold">{registration}</h3>
-        <div className="flex items-center">
-          <div className={`aircraft-type-badge ${aircraftType}-badge mr-2`}>
-            {readableType}
-          </div>
+    <div className={`aircraft-tooltip-wrapper ${ownerTypeClass}`}>
+      {/* Header styled like the tooltip */}
+      <div className={`aircraft-tooltip-header ${aircraftType}-type`}>
+        <div className="aircraft-callsign">
+          {aircraft.NAME || (isAirline ? aircraft.OPERATOR : registration)}
+        </div>
+        {/* Show registration if NAME is present */}
+        {(aircraft.NAME || isAirline) && (
+          <div className="aircraft-registration">{registration}</div>
+        )}
+      </div>
+
+      <div className="aircraft-tooltip-content p-2">
+        {/* Control buttons */}
+        <div className="flex justify-between items-center mb-2">
           <button
             className={`toggle-details-btn ${detailsVisible ? 'expanded' : ''}`}
             onClick={() => setDetailsVisible(!detailsVisible)}
@@ -189,6 +207,11 @@ const AircraftPopupContent: React.FC<AircraftPopupContentProps> = ({
               <polyline points="6 9 12 15 18 9"></polyline>
             </svg>
           </button>
+
+          <div className={`aircraft-type-badge ${aircraftType}-badge`}>
+            {readableType}
+          </div>
+
           <button
             className="text-gray-500 hover:text-gray-700"
             onClick={onClose}
@@ -209,64 +232,93 @@ const AircraftPopupContent: React.FC<AircraftPopupContentProps> = ({
             </svg>
           </button>
         </div>
-      </div>
 
-      {/* Always visible summary information */}
-      <div className="aircraft-summary grid grid-cols-2 gap-y-2 text-sm">
-        <div className="text-gray-600">Model:</div>
-        <div className="font-medium">
-          {aircraft.MODEL || aircraft.AIRCRAFT_TYPE || 'Unknown'}
+        {/* Aircraft data in a grid layout */}
+        <div className="aircraft-data-grid">
+          {/* Always show manufacturer if available */}
+          {aircraft.MANUFACTURER && (
+            <div className="aircraft-data-full">
+              <span className="data-label">Mfr:</span>
+              <span className="data-value">{aircraft.MANUFACTURER}</span>
+            </div>
+          )}
+
+          {/* Always show model */}
+          <div className="aircraft-data-full">
+            <span className="data-label">Model:</span>
+            <span className="data-value">
+              {aircraft.MODEL || aircraft.AIRCRAFT_TYPE || readableType}
+            </span>
+          </div>
+
+          {/* Always show owner type if available */}
+          {aircraft.OWNER_TYPE && (
+            <div className="aircraft-data-full">
+              <span className="data-label">Owner:</span>
+              <span
+                className={`data-value owner-type-indicator ${ownerTypeClass}`}
+              >
+                {ownerType}
+              </span>
+            </div>
+          )}
+
+          <div>
+            <span className="data-label">Alt:</span>
+            <span className="data-value">{formattedAltitude}</span>
+          </div>
+
+          <div>
+            <span className="data-label">Spd:</span>
+            <span className="data-value">{formattedSpeed}</span>
+          </div>
+
+          {aircraft.heading && (
+            <div>
+              <span className="data-label">Hdg:</span>
+              <span className="data-value">
+                {Math.round(aircraft.heading)}°
+              </span>
+            </div>
+          )}
+
+          {aircraft.on_ground !== undefined && (
+            <div>
+              <span className="data-label">Status:</span>
+              <span
+                className={`data-value ${aircraft.on_ground ? 'on-ground-status' : 'in-flight-status'}`}
+              >
+                {aircraft.on_ground ? 'Ground' : 'Flight'}
+              </span>
+            </div>
+          )}
         </div>
 
-        <div className="text-gray-600">Altitude:</div>
-        <div className="font-medium">{formattedAltitude}</div>
+        {/* Collapsible detailed information */}
+        {detailsVisible && (
+          <div className="aircraft-details mt-3 pt-3 border-t border-gray-200">
+            <div className="aircraft-data-grid">
+              {aircraft.CITY && aircraft.STATE && (
+                <div className="aircraft-data-full">
+                  <span className="data-label">Location:</span>
+                  <span className="data-value">
+                    {aircraft.CITY}, {aircraft.STATE}
+                  </span>
+                </div>
+              )}
 
-        <div className="text-gray-600">Speed:</div>
-        <div className="font-medium">{formattedSpeed}</div>
-
-        {aircraft.on_ground !== undefined && (
-          <>
-            <div className="text-gray-600">Status:</div>
-            <div>
-              {aircraft.on_ground ? (
-                <span className="status-badge on-ground">On Ground</span>
-              ) : (
-                <span className="status-badge in-flight">In Flight</span>
+              {aircraft.lastSeen && (
+                <div className="aircraft-data-full">
+                  <span className="data-label">Updated:</span>
+                  <span className="data-value">
+                    {new Date(aircraft.lastSeen).toLocaleTimeString()}
+                  </span>
+                </div>
               )}
             </div>
-          </>
+          </div>
         )}
       </div>
-
-      {/* Collapsible detailed information */}
-      {detailsVisible && (
-        <div className="aircraft-details">
-          <div className="grid grid-cols-2 gap-y-2 text-sm">
-            {aircraft.MANUFACTURER && (
-              <>
-                <div className="text-gray-600">Manufacturer:</div>
-                <div className="font-medium">{aircraft.MANUFACTURER}</div>
-              </>
-            )}
-
-            {aircraft.heading && (
-              <>
-                <div className="text-gray-600">Heading:</div>
-                <div className="font-medium">
-                  {Math.round(aircraft.heading)}°
-                </div>
-              </>
-            )}
-
-            {aircraft.NAME && (
-              <>
-                <div className="text-gray-600">Name:</div>
-                <div className="font-medium">{aircraft.NAME}</div>
-              </>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 };

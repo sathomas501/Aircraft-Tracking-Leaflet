@@ -120,12 +120,22 @@ const getOwnerTypeLabel = (ownerType: string): string => {
   const ownerTypes: Record<string, string> = {
     '1': 'Individual',
     '2': 'Partnership',
-    '3': 'Corporation',
-    '4': 'Co-Owned',
-    '5': 'Government',
+    '3': 'Corp-owner',
+    '4': 'Co-owned',
     '7': 'LLC',
-    '8': 'Non-Citizen Corporation',
-    '9': 'Non-Citizen Co-Owned',
+    '8': 'non-citizen-corp-owned',
+    '9': 'Airline',
+    '10': 'Freight',
+    '11': 'Medical',
+    '12': 'Media',
+    '13': 'Historical',
+    '14': 'Flying Club',
+    '15': 'Emergency',
+    '16': 'Local Govt',
+    '17': 'Education',
+    '18': 'Federal Govt',
+    '19': 'Flight School',
+    '20': 'Leasing Corp',
   };
   return ownerTypes[ownerType] || `Type ${ownerType}`;
 };
@@ -134,9 +144,9 @@ const AircraftTooltipContent: React.FC<AircraftTooltipContentProps> = ({
   aircraft,
   zoomLevel,
 }) => {
-  // Registration or N-Number display (with fallbacks)
+  // Registration or N-Number
   const registration =
-    aircraft.registration || aircraft.N_NUMBER || aircraft.ICAO24;
+    aircraft.N_NUMBER || aircraft.registration || aircraft.ICAO24;
 
   // Format altitude with commas for thousands
   const formattedAltitude = aircraft.altitude
@@ -159,13 +169,46 @@ const AircraftTooltipContent: React.FC<AircraftTooltipContentProps> = ({
   return (
     <div className={`aircraft-tooltip-wrapper ${ownerTypeClass}`}>
       <div className={`aircraft-tooltip-header ${aircraftType}-type`}>
-        <div className="aircraft-callsign">{registration}</div>
-        <div className="aircraft-MODEL">
-          {aircraft.MODEL || aircraft.AIRCRAFT_TYPE || readableType}
+        {/* Show aircraft name if available, otherwise registration */}
+        <div className="aircraft-callsign">
+          {aircraft.NAME ? aircraft.NAME : registration}
         </div>
+        {/* Show registration separately if NAME is present */}
+        {aircraft.NAME && (
+          <div className="aircraft-registration">{registration}</div>
+        )}
       </div>
       <div className="aircraft-tooltip-content">
         <div className="aircraft-data-grid">
+          {/* Always show manufacturer if available */}
+          {aircraft.MANUFACTURER && (
+            <div className="aircraft-data-full">
+              <span className="data-label">Mfr:</span>
+              <span className="data-value">{aircraft.MANUFACTURER}</span>
+            </div>
+          )}
+
+          {/* Always show model if available */}
+          <div className="aircraft-data-full">
+            <span className="data-label">Model:</span>
+            <span className="data-value">
+              {aircraft.MODEL || aircraft.AIRCRAFT_TYPE || readableType}
+            </span>
+          </div>
+
+          {/* Always show owner type if available */}
+          {aircraft.OWNER_TYPE && (
+            <div className="aircraft-data-full">
+              <span className="data-label">Owner:</span>
+              <span
+                className={`data-value owner-type-indicator ${ownerTypeClass}`}
+              >
+                {getOwnerTypeLabel(aircraft.OWNER_TYPE)}
+              </span>
+            </div>
+          )}
+
+          {/* Flight information */}
           <div>
             <span className="data-label">Alt:</span>
             <span className="data-value">{formattedAltitude}</span>
@@ -189,24 +232,6 @@ const AircraftTooltipContent: React.FC<AircraftTooltipContentProps> = ({
               </span>
             </div>
           )}
-
-          {zoomLevel >= 10 && aircraft.MANUFACTURER && (
-            <div className="aircraft-data-full">
-              <span className="data-label">Mfr:</span>
-              <span className="data-value">{aircraft.MANUFACTURER}</span>
-            </div>
-          )}
-
-          {zoomLevel >= 10 && aircraft.OWNER_TYPE && (
-            <div className="aircraft-data-full">
-              <span className="data-label">Owner:</span>
-              <span
-                className={`data-value owner-type-indicator ${ownerTypeClass}`}
-              >
-                {getOwnerTypeLabel(aircraft.OWNER_TYPE)}
-              </span>
-            </div>
-          )}
         </div>
 
         {aircraft.lastSeen && (
@@ -219,4 +244,5 @@ const AircraftTooltipContent: React.FC<AircraftTooltipContentProps> = ({
   );
 };
 
+// At the bottom of AircraftTooltipContent.tsx
 export default AircraftTooltipContent;

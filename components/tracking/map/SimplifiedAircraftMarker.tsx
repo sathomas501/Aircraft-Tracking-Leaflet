@@ -68,6 +68,9 @@ const SimplifiedAircraftMarker: React.FC<SimplifiedAircraftMarkerProps> = ({
       ...aircraft,
       zoomLevel,
     });
+
+    // Important: Make the tooltip permanent to prevent it from disappearing
+    setIsPermanentTooltip(true);
   };
 
   const handleMouseOver = () => {

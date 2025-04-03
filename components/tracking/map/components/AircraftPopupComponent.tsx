@@ -10,16 +10,10 @@ interface AircraftPopupComponentProps {
   aircraft: ExtendedAircraft;
 }
 
-/**
- * Centralized Aircraft Popup Component
- * This component is responsible for rendering popups for aircraft markers
- * It uses the AircraftTooltipContext to determine when to show popups
- */
 const AircraftPopupComponent: FC<AircraftPopupComponentProps> = ({
   aircraft,
 }) => {
   const { visiblePopups, hidePopup } = useAircraftTooltip();
-
   const { selectAircraft } = useEnhancedUI();
 
   // Check if this popup should be visible
@@ -49,8 +43,9 @@ const AircraftPopupComponent: FC<AircraftPopupComponentProps> = ({
   return (
     <Popup
       className={`aircraft-popup`}
-      closeButton={false}
+      closeButton={true}
       autoPan={true}
+      offset={[0, 0]}
       eventHandlers={{
         remove: handleClose,
       }}
