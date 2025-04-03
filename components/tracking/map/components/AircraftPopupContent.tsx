@@ -6,6 +6,7 @@ interface AircraftPopupContentProps {
   aircraft: ExtendedAircraft;
   onSelectAircraft: (icao24: string) => void;
   onClose: () => void;
+  inPanel?: boolean; // New prop to indicate if content is in a panel
 }
 
 // Include utility functions directly in this file to avoid import issues
@@ -145,6 +146,7 @@ const AircraftPopupContent: React.FC<AircraftPopupContentProps> = ({
   aircraft,
   onSelectAircraft,
   onClose,
+  inPanel = false, // Default to false
 }) => {
   const [detailsVisible, setDetailsVisible] = useState(false);
 
@@ -175,67 +177,88 @@ const AircraftPopupContent: React.FC<AircraftPopupContentProps> = ({
 
   return (
     <div className={`aircraft-tooltip-wrapper ${ownerTypeClass}`}>
-      {/* Header styled like the tooltip */}
-      <div className={`aircraft-tooltip-header ${aircraftType}-type`}>
-        <div className="aircraft-callsign">
-          {aircraft.NAME || (isAirline ? aircraft.OPERATOR : registration)}
+      {/* Only show the header if not in a panel */}
+      {!inPanel && (
+        <div className={`aircraft-tooltip-header ${aircraftType}-type`}>
+          <div className="aircraft-callsign">
+            {aircraft.NAME || (isAirline ? aircraft.OPERATOR : registration)}
+          </div>
+          {(aircraft.NAME || isAirline) && (
+            <div className="aircraft-registration">{registration}</div>
+          )}
         </div>
-        {/* Show registration if NAME is present */}
-        {(aircraft.NAME || isAirline) && (
-          <div className="aircraft-registration">{registration}</div>
-        )}
-      </div>
+      )}
 
       <div className="aircraft-tooltip-content p-2">
-        {/* Control buttons */}
-        <div className="flex justify-between items-center mb-2">
-          <button
-            className={`toggle-details-btn ${detailsVisible ? 'expanded' : ''}`}
-            onClick={() => setDetailsVisible(!detailsVisible)}
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+        {/* Controls - only show if not in panel, since panel has its own controls */}
+        {!inPanel && (
+          <div className="flex justify-between items-center mb-2">
+            <button
+              className={`toggle-details-btn ${detailsVisible ? 'expanded' : ''}`}
+              onClick={() => setDetailsVisible(!detailsVisible)}
             >
-              <polyline points="6 9 12 15 18 9"></polyline>
-            </svg>
-          </button>
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <polyline points="6 9 12 15 18 9"></polyline>
+              </svg>
+            </button>
 
-          <div className={`aircraft-type-badge ${aircraftType}-badge`}>
-            {readableType}
+            <button
+              className="text-gray-500 hover:text-gray-700"
+              onClick={onClose}
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
+            </button>
           </div>
-
-          <button
-            className="text-gray-500 hover:text-gray-700"
-            onClick={onClose}
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+        )}
+        {/* In panel mode, add details toggle button */}
+        {inPanel && (
+          <div className="flex justify-center mb-2">
+            <button
+              className={`toggle-details-btn ${detailsVisible ? 'expanded' : ''}`}
+              onClick={() => setDetailsVisible(!detailsVisible)}
             >
-              <line x1="18" y1="6" x2="6" y2="18"></line>
-              <line x1="6" y1="6" x2="18" y2="18"></line>
-            </svg>
-          </button>
-        </div>
+              {detailsVisible ? 'Hide Details' : 'Show Details'}
+            </button>
+          </div>
+        )}
+        {inPanel && (aircraft.NAME || isAirline) && (
+          <div className="text-center text-sm text-gray-600 mb-2">
+            {registration}
+          </div>
+        )}
 
-        {/* Aircraft data in a grid layout */}
+        {inPanel && aircraft.NAME && (
+          <div className="aircraft-data-full mb-2">
+            <span className="data-label">Name:</span>
+            <span className="data-value">{aircraft.NAME}</span>
+          </div>
+        )}
+        {/* Aircraft data in a compact grid layout */}
         <div className="aircraft-data-grid">
-          {/* Always show manufacturer if available */}
+          {/* Manufacturer if available */}
           {aircraft.MANUFACTURER && (
             <div className="aircraft-data-full">
               <span className="data-label">Mfr:</span>
@@ -251,7 +274,7 @@ const AircraftPopupContent: React.FC<AircraftPopupContentProps> = ({
             </span>
           </div>
 
-          {/* Always show owner type if available */}
+          {/* Owner type if available */}
           {aircraft.OWNER_TYPE && (
             <div className="aircraft-data-full">
               <span className="data-label">Owner:</span>
@@ -293,7 +316,6 @@ const AircraftPopupContent: React.FC<AircraftPopupContentProps> = ({
             </div>
           )}
         </div>
-
         {/* Collapsible detailed information */}
         {detailsVisible && (
           <div className="aircraft-details mt-3 pt-3 border-t border-gray-200">

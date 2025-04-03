@@ -8,7 +8,6 @@ import React, {
   useEffect,
 } from 'react';
 import { ExtendedAircraft } from '@/types/base';
-import openSkyTrackingService from '../../../lib/services/openSkyTrackingService';
 
 // Define UI element types
 export type PanelType =

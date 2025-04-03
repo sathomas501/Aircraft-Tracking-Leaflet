@@ -13,28 +13,34 @@ const OwnershipColorKey = () => {
       description: 'Privately owned by an individual',
     },
     {
+      id: 'partnership',
+      name: 'Partnership',
+      color: '#8e24aa',
+      description: 'Partnership between individuals',
+    },
+    {
+      id: 'corp-owner',
+      name: 'Corporation',
+      color: '#5c6bc0',
+      description: 'Corporate entity ownership',
+    },
+    {
+      id: 'co-owned',
+      name: 'Co-Owned',
+      color: '#9e9e9e',
+      description: 'Co-owned by multiple parties',
+    },
+    {
       id: 'llc',
       name: 'LLC',
       color: '#ffb300',
       description: 'Limited Liability Company',
     },
     {
-      id: 'corporation',
-      name: 'Corporation',
+      id: 'non-citizen-corp',
+      name: 'Non-Citizen Corp',
       color: '#5c6bc0',
-      description: 'Corporate entity ownership',
-    },
-    {
-      id: 'government',
-      name: 'Government',
-      color: '#1a75ff',
-      description: 'Government agency owned',
-    },
-    {
-      id: 'military',
-      name: 'Military',
-      color: '#546e7a',
-      description: 'Military aircraft',
+      description: 'Non-citizen corporation ownership',
     },
     {
       id: 'airline',
@@ -43,22 +49,76 @@ const OwnershipColorKey = () => {
       description: 'Commercial airline',
     },
     {
-      id: 'partnership',
-      name: 'Partnership',
-      color: '#8e24aa',
-      description: 'Jointly owned by multiple entities',
+      id: 'freight',
+      name: 'Freight',
+      color: '#f57f17',
+      description: 'Freight transportation company',
     },
     {
-      id: 'nonprofit',
-      name: 'Non-Profit',
-      color: '#00897b',
-      description: 'Non-profit organization owned',
+      id: 'medical',
+      name: 'Medical',
+      color: '#b71c1c',
+      description: 'Medical service provider',
+    },
+    {
+      id: 'media',
+      name: 'Media',
+      color: '#9e9e9e',
+      description: 'Media organization',
+    },
+    {
+      id: 'historical',
+      name: 'Historical',
+      color: '#9e9e9e',
+      description: 'Historical organization or museum',
+    },
+    {
+      id: 'flying-club',
+      name: 'Flying Club',
+      color: '#9e9e9e',
+      description: 'Recreational flying club',
+    },
+    {
+      id: 'emergency',
+      name: 'Emergency',
+      color: '#c62828',
+      description: 'Emergency services',
+    },
+    {
+      id: 'local-govt',
+      name: 'Local Government',
+      color: '#0288d1',
+      description: 'Local government agency',
     },
     {
       id: 'education',
-      name: 'Educational',
+      name: 'Education',
       color: '#039be5',
-      description: 'Educational institution owned',
+      description: 'Educational institution',
+    },
+    {
+      id: 'federal-govt',
+      name: 'Federal Government',
+      color: '#1a75ff',
+      description: 'Federal government agency',
+    },
+    {
+      id: 'flight-school',
+      name: 'Flight School',
+      color: '#00897b',
+      description: 'Pilot training institution',
+    },
+    {
+      id: 'leasing-corp',
+      name: 'Leasing Corporation',
+      color: '#5c6bc0',
+      description: 'Aircraft leasing company',
+    },
+    {
+      id: 'military',
+      name: 'Military',
+      color: '#546e7a',
+      description: 'Military aircraft',
     },
     {
       id: 'unknown',
@@ -77,7 +137,7 @@ const OwnershipColorKey = () => {
       className="ownership-key-container"
       style={{
         position: 'absolute',
-        bottom: '20px',
+        bottom: '100px',
         right: '20px',
         backgroundColor: 'white',
         border: '1px solid #ddd',
@@ -85,7 +145,8 @@ const OwnershipColorKey = () => {
         boxShadow: '0 2px 6px rgba(0, 0, 0, 0.15)',
         zIndex: 1000,
         maxWidth: '250px',
-        overflow: 'hidden',
+        height: isVisible ? 'auto' : '36px',
+        overflow: isVisible ? 'visible' : 'hidden',
         transition: 'all 0.3s ease',
       }}
     >
@@ -94,7 +155,7 @@ const OwnershipColorKey = () => {
         style={{
           padding: '8px 12px',
           backgroundColor: '#f5f5f5',
-          borderBottom: '1px solid #ddd',
+          borderBottom: isVisible ? '1px solid #ddd' : 'none',
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
@@ -113,7 +174,7 @@ const OwnershipColorKey = () => {
           className="key-content"
           style={{
             padding: '8px 0',
-            maxHeight: '300px',
+            maxHeight: '400px', // Increased height
             overflowY: 'auto',
           }}
         >

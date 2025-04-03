@@ -170,12 +170,14 @@ const AircraftTooltipContent: React.FC<AircraftTooltipContentProps> = ({
     <div className={`aircraft-tooltip-wrapper ${ownerTypeClass}`}>
       <div className={`aircraft-tooltip-header ${aircraftType}-type`}>
         {/* Show aircraft name if available, otherwise registration */}
-        <div className="aircraft-callsign">
+        <div className="aircraft-callsign text-center font-bold">
           {aircraft.NAME ? aircraft.NAME : registration}
         </div>
         {/* Show registration separately if NAME is present */}
         {aircraft.NAME && (
-          <div className="aircraft-registration">{registration}</div>
+          <div className="aircraft-registration text-center">
+            {registration}
+          </div>
         )}
       </div>
       <div className="aircraft-tooltip-content">

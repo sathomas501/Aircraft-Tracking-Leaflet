@@ -7,7 +7,8 @@ import { useEnhancedUI } from '../context/EnhancedUIContext';
 import { createAircraftIcon } from './AircraftIcon/AircraftIcon';
 import { useAircraftTooltip } from '../context/AircraftTooltipContext';
 import AircraftTooltipComponent from './components/AircraftTooltipComponent';
-import AircraftPopupComponent from './components/AircraftPopupComponent';
+import AircraftInfoPanel from './components/AircraftInfoPanel';
+import { getOwnerTypeClass } from './AircraftIcon/AircraftIcon';
 
 interface SimplifiedAircraftMarkerProps {
   aircraft: ExtendedAircraft;
@@ -105,7 +106,7 @@ const SimplifiedAircraftMarker: React.FC<SimplifiedAircraftMarkerProps> = ({
       >
         {/* Each marker has its own tooltip and popup component */}
         <AircraftTooltipComponent aircraft={aircraft} isStale={isStale} />
-        <AircraftPopupComponent aircraft={aircraft} />
+        <AircraftInfoPanel aircraft={aircraft} />
       </Marker>
     </>
   );

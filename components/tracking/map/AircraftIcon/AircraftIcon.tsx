@@ -238,12 +238,16 @@ export const createAircraftIcon = (
   const ownerTypeClass = getOwnerTypeClass(aircraft);
   const statusClass = aircraft.on_ground ? 'grounded' : 'flying';
 
+  // Get owner type color for border
+  const ownerBorderColor = getOwnerBorderColor(aircraft.OWNER_TYPE || '');
+
   // Create a completely non-interactive div icon
   const icon = L.divIcon({
     // Use a custom class that is NOT leaflet-interactive
     className: `custom-aircraft-marker ${isSelected ? 'selected' : ''} ${statusClass} ${aircraftType}-type ${ownerTypeClass}`,
     html: `
       <div class="aircraft-marker" style="
+        position: relative;
         width: ${size}px; 
         height: ${size}px; 
         ${isSelected ? 'filter: drop-shadow(0 0 4px #4a80f5);' : ''}
@@ -251,6 +255,17 @@ export const createAircraftIcon = (
         pointer-events: none !important;
         z-index: ${isSelected ? 1010 : 1000};
       ">
+        <!-- Owner type border element -->
+        <div class="owner-type-border" style="
+          position: absolute;
+          left: -2px;
+          top: 0;
+          bottom: 0;
+          width: 3px;
+          background-color: ${ownerBorderColor};
+          z-index: 1;
+          border-radius: 1.5px;
+        "></div>
         <img 
           src="${iconUrl}" 
           style="
@@ -259,6 +274,8 @@ export const createAircraftIcon = (
             transform: rotate(${aircraft.heading || 0}deg);
             transition: transform 0.3s ease;
             pointer-events: none !important;
+            position: relative;
+            z-index: 2;
           "
           alt="Aircraft" 
           draggable="false"
@@ -339,14 +356,52 @@ export const getOwnerTypeLabel = (ownerType: string): string => {
   const ownerTypes: Record<string, string> = {
     '1': 'Individual',
     '2': 'Partnership',
-    '3': 'Corporation',
-    '4': 'Co-Owned',
-    '5': 'Government',
+    '3': 'Corp-owner',
+    '4': 'Co-owned',
     '7': 'LLC',
-    '8': 'Non-Citizen Corporation',
-    '9': 'Non-Citizen Co-Owned',
+    '8': 'non-citizen-corp-owned',
+    '9': 'Airline',
+    '10': 'Freight',
+    '11': 'Medical',
+    '12': 'Media',
+    '13': 'Historical',
+    '14': 'Flying Club',
+    '15': 'Emergency',
+    '16': 'Local Govt',
+    '17': 'Education',
+    '18': 'Federal Govt',
+    '19': 'Flight School',
+    '20': 'Leasing Corp',
   };
   return ownerTypes[ownerType] || `Type ${ownerType}`;
+};
+
+// Add this function to AircraftIcon.tsx
+export const getOwnerBorderColor = (ownerType: string): string => {
+  // Map owner types to colors - these should match your CSS colors
+  const ownerColorMap: Record<string, string> = {
+    '1': '#43a047', // Individual - green
+    '2': '#8e24aa', // Partnership - purple
+    '3': '#5c6bc0', // Corp-owner - indigo
+    '4': '#9e9e9e', // Co-owned - gray
+    '7': '#ffb300', // LLC - amber
+    '8': '#5c6bc0', // non-citizen-corp - indigo
+    '9': '#e53935', // Airline - red
+    '10': '#f57f17', // Freight - deep orange
+    '11': '#b71c1c', // Medical - dark red
+    '12': '#9e9e9e', // Media - gray
+    '13': '#9e9e9e', // Historical - gray
+    '14': '#9e9e9e', // Flying Club - gray
+    '15': '#c62828', // Emergency - red
+    '16': '#0288d1', // Local Govt - blue
+    '17': '#039be5', // Education - light blue
+    '18': '#1a75ff', // Federal Govt - blue
+    '19': '#00897b', // Flight School - teal
+    '20': '#5c6bc0', // Leasing Corp - indigo
+  };
+
+  // Default color for unknown types
+  return ownerColorMap[ownerType] || '#9e9e9e'; // Default to gray
 };
 
 // Export utility functions

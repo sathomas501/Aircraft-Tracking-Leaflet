@@ -178,12 +178,27 @@ export default async function handler(
     const data = await response.json();
 
     // Extract and format aircraft states
+    // Extract and format aircraft states
     let states = [];
     if (data?.states && Array.isArray(data.states)) {
+      // Create a set of requested ICAO24 codes for faster lookup if this was an ICAO request
+      let requestedIcaos: Set<string> | null = null;
+      if (requestType === 'icao') {
+        requestedIcaos = new Set(
+          (ICAO24s as string[]).map((code) => code.toLowerCase())
+        );
+      }
+
       states = data.states
         .filter(
           (state: any[]) =>
-            Array.isArray(state) && state.length >= 8 && state[5] && state[6]
+            Array.isArray(state) &&
+            state.length >= 8 &&
+            state[5] &&
+            state[6] &&
+            // Only include aircraft that match our requested ICAO24 codes
+            (requestType === 'geofence' ||
+              (state[0] && requestedIcaos?.has(state[0].toLowerCase())))
         )
         .map((state: any[]) => {
           // OpenSky API returns an array with specific indexes

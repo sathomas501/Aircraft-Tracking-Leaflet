@@ -81,6 +81,7 @@ const DraggablePanel: React.FC<DraggablePanelProps> = ({
       (e.target as HTMLElement).closest('.drag-handle')
     ) {
       e.preventDefault();
+      e.stopPropagation(); // Add this line to prevent map dragging
       setIsDragging(true);
       const rect = containerRef.current?.getBoundingClientRect();
       if (rect) {
