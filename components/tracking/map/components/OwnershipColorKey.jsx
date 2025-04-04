@@ -145,8 +145,8 @@ const OwnershipColorKey = () => {
         boxShadow: '0 2px 6px rgba(0, 0, 0, 0.15)',
         zIndex: 1000,
         maxWidth: '250px',
+        overflow: 'hidden',
         height: isVisible ? 'auto' : '36px',
-        overflow: isVisible ? 'visible' : 'hidden',
         transition: 'all 0.3s ease',
       }}
     >
@@ -154,19 +154,39 @@ const OwnershipColorKey = () => {
         className="key-header"
         style={{
           padding: '8px 12px',
-          backgroundColor: '#f5f5f5',
-          borderBottom: isVisible ? '1px solid #ddd' : 'none',
+          backgroundColor: '#4f46e5', // Indigo-600 color to match the other header
+          borderBottom: isVisible ? '1px solid #4338ca' : 'none', // Darker indigo for border
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
           cursor: 'pointer',
+          color: 'white', // White text
         }}
         onClick={toggleVisibility}
       >
         <h3 style={{ margin: 0, fontSize: '14px', fontWeight: '600' }}>
           Aircraft Ownership Types
         </h3>
-        <span style={{ fontSize: '18px' }}>{isVisible ? '−' : '+'}</span>
+        <button
+          onClick={(e) => {
+            e.stopPropagation(); // Prevent duplicate toggles
+            toggleVisibility();
+          }}
+          style={{
+            background: 'none',
+            border: 'none',
+            fontSize: '18px',
+            cursor: 'pointer',
+            padding: '0 4px',
+            color: 'white', // White text for the button
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+          title={isVisible ? 'Minimize' : 'Expand'}
+        >
+          {isVisible ? '▼' : '▲'}
+        </button>
       </div>
 
       {isVisible && (
@@ -174,9 +194,10 @@ const OwnershipColorKey = () => {
           className="key-content"
           style={{
             padding: '8px 0',
-            maxHeight: '400px', // Increased height
+            maxHeight: '400px',
             overflowY: 'auto',
           }}
+          onWheel={(e) => e.stopPropagation()} // Prevents scroll events from reaching the map
         >
           {ownerTypes.map((type) => (
             <div
