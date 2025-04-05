@@ -43,6 +43,7 @@ export const getAircraftIconUrl = (
     on_ground?: boolean;
     OWNER_TYPE?: string;
     AIRCRAFT_TYPE?: string;
+    type_aircraft?: string; // Add the FAA type_aircraft field
   }
 ): string => {
   // Check if it's a government aircraft
@@ -54,22 +55,50 @@ export const getAircraftIconUrl = (
   // Determine the base aircraft type
   const aircraftType = determineAircraftType(aircraft);
 
+  // Log the detected aircraft type and FAA code to debug
+  console.log('Aircraft Details:', {
+    icao: aircraft.ICAO24,
+    model: aircraft.MODEL,
+    aircraftType: aircraft.AIRCRAFT_TYPE,
+    faaTypeCode: aircraft.type_aircraft,
+    detectedType: aircraftType,
+    isSikorsky:
+      (aircraft.MODEL || '').toLowerCase().includes('s-76') ||
+      (aircraft.AIRCRAFT_TYPE || '').toLowerCase().includes('sikorsky'),
+  });
+
   // Icon mapping object with more specific icons
   const iconMap: Record<string, Record<string, string>> = {
     government: {
       helicopter: '/icons/governmentRotorIconImg.png',
+      glider: '/icons/governmentJetIconImg.png', // Fall back to jet for government glider
+      balloon: '/icons/governmentJetIconImg.png', // Fall back to jet for government balloon
+      blimp: '/icons/governmentJetIconImg.png', // Fall back to jet for government blimp
+      singleEngine: '/icons/governmentJetIconImg.png',
+      twinEngine: '/icons/governmentJetIconImg.png',
+      weightshift: '/icons/governmentJetIconImg.png',
+      parachute: '/icons/governmentJetIconImg.png',
+      gyroplane: '/icons/governmentRotorIconImg.png', // Use rotor for gyroplane
+      hybrid: '/icons/governmentJetIconImg.png',
+      other: '/icons/governmentJetIconImg.png',
       jet: '/icons/governmentJetIconImg.png',
-      turboprop: '/icons/governmentJetIconImg.png', // Fall back to jet for government turboprop
-      piston: '/icons/governmentJetIconImg.png', // Fall back to jet for government piston
+      turboprop: '/icons/governmentJetIconImg.png',
       default: '/icons/governmentJetIconImg.png',
     },
     civilian: {
-      balloon: '/icons/aircraft_balloon.png',
       helicopter: '/icons/rotorIconImg.png',
-      jet: '/icons/jetIconImg.png',
-      turboprop: '/icons/proplIconImg.png',
+      glider: '/icons/defaultIconImg.png',
+      balloon: '/icons/aircraft_balloon.png',
+      blimp: '/icons/aircraft_balloon.png', // Use balloon for blimp
       singleEngine: '/icons/defaultIconImg.png',
       twinEngine: '/icons/defaultIconImg.png',
+      weightshift: '/icons/defaultIconImg.png',
+      parachute: '/icons/defaultIconImg.png',
+      gyroplane: '/icons/rotorIconImg.png', // Use rotor for gyroplane
+      hybrid: '/icons/defaultIconImg.png',
+      other: '/icons/defaultIconImg.png',
+      jet: '/icons/jetIconImg.png',
+      turboprop: '/icons/proplIconImg.png',
       default: '/icons/defaultIconImg.png',
     },
     grounded: {
@@ -88,7 +117,25 @@ export const getAircraftIconUrl = (
     return iconMap.grounded.default;
   }
 
+  // Special case for all Sikorsky S-76 variants
+  if (
+    (aircraft.MODEL || '').includes('S-76') ||
+    (aircraft.MODEL || '').includes('S76') ||
+    (aircraft.AIRCRAFT_TYPE || '').includes('SIKORSKY S-76') ||
+    (aircraft.AIRCRAFT_TYPE || '').includes('SIKORSKY S76')
+  ) {
+    console.log(
+      'SPECIAL OVERRIDE: Forcing helicopter icon for Sikorsky S-76 variant:',
+      aircraft.MODEL
+    );
+    return iconMap[category]['helicopter'];
+  }
+
   // Return the appropriate icon URL (with fallback to default)
+  if (aircraftType === 'helicopter' || aircraftType === 'gyroplane') {
+    return iconMap[category]['helicopter'];
+  }
+
   return iconMap[category][aircraftType] || iconMap[category].default;
 };
 

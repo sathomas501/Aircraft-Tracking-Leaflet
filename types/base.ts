@@ -160,13 +160,6 @@ export interface AircraftMarker extends AircraftPosition {
 }
 
 /**
- * Historical position trails for aircraft
- */
-export interface Trails {
-  [ICAO24: string]: Position[];
-}
-
-/**
  * Props for the SimpleMap component
  */
 export interface SimpleMapProps {

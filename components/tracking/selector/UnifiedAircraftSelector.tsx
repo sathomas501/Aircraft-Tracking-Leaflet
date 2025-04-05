@@ -9,6 +9,8 @@ import {
   getAircraftNearZipCode,
   getAircraftNearLocation,
   calculateDistance,
+  searchLocationWithMapbox,
+  getAircraftNearSearchedLocation,
 } from '../../../lib/services/geofencing';
 import { enrichGeofenceAircraft } from '../../../lib/utils/geofenceEnricher';
 import { useGeolocation } from '../hooks/useGeolocation';
@@ -245,88 +247,58 @@ const UnifiedAircraftSelector: React.FC<UnifiedAircraftSelectorProps> = ({
     setLocalLoading(true);
 
     try {
-      // Check if input might be a ZIP code (5 digits)
-      const zipRegex = /^\s*\d{5}\s*$/;
-      const isZipCode = zipRegex.test(geofenceLocation);
+      // First try the new comprehensive search function
+      console.log(
+        `Searching for aircraft near location: "${geofenceLocation}"`
+      );
 
-      // Check if input is coordinates (simple regex check)
-      const coordRegex =
-        /^[-+]?([1-8]?\d(\.\d+)?|90(\.0+)?),\s*[-+]?(180(\.0+)?|((1[0-7]\d)|([1-9]?\d))(\.\d+)?)$/;
-      const isCoordinates = coordRegex.test(geofenceLocation);
+      // This will handle ZIP codes, place names, addresses, POIs, etc.
+      const fetchedAircraft = await getAircraftNearSearchedLocation(
+        geofenceLocation,
+        geofenceRadius
+      );
 
-      let fetchedAircraft: ExtendedAircraft[] = [];
+      // Get location details for the map
+      const locations = await searchLocationWithMapbox(geofenceLocation, 1);
       let coordinates: { lat: number; lng: number } | null = null;
 
-      if (isZipCode) {
-        // If it's a ZIP code, use the ZIP-specific function
-        console.log(
-          `Searching for aircraft near ZIP code: ${geofenceLocation}`
-        );
-        fetchedAircraft = await getAircraftNearZipCode(
-          geofenceLocation,
-          geofenceRadius
-        );
+      if (locations.length > 0) {
+        coordinates = {
+          lat: locations[0].lat,
+          lng: locations[0].lng,
+        };
+        // Save the formatted location name for display
+        setGeofenceLocation(locations[0].name);
+      } else if (
+        fetchedAircraft.length > 0 &&
+        fetchedAircraft[0].latitude &&
+        fetchedAircraft[0].longitude
+      ) {
+        // Fallback - if we got aircraft but no location info, use the first aircraft's position
+        coordinates = {
+          lat: fetchedAircraft[0].latitude,
+          lng: fetchedAircraft[0].longitude,
+        };
+      }
 
-        // Get coordinates for the map
-        coordinates = await zipCodeToCoordinates(geofenceLocation);
-      } else if (isCoordinates) {
-        // Parse coordinates from input
-        const [lat, lng] = geofenceLocation
-          .split(',')
-          .map((coord) => parseFloat(coord.trim()));
-        console.log(`Searching for aircraft near coordinates: ${lat}, ${lng}`);
-
-        fetchedAircraft = await getAircraftNearLocation(
-          lat,
-          lng,
-          geofenceRadius
-        );
-        coordinates = { lat, lng };
-      } else {
-        // Try to handle as place name by getting coordinates first
+      // If we still don't have coordinates but have a numeric format, try as a ZIP code
+      if (!coordinates && /^\d{5}$/.test(geofenceLocation.trim())) {
         try {
-          // Call geocoding API through proxy
-          const response = await fetch(
-            `/api/proxy/geocode?place=${encodeURIComponent(geofenceLocation)}`
-          );
-
-          if (!response.ok) {
-            throw new Error('Failed to geocode location');
-          }
-
-          const geocodeData = await response.json();
-
-          if (
-            geocodeData.result?.addressMatches &&
-            geocodeData.result.addressMatches.length > 0 &&
-            geocodeData.result.addressMatches[0].coordinates
-          ) {
-            const coords = geocodeData.result.addressMatches[0].coordinates;
-            coordinates = {
-              lat: coords.y,
-              lng: coords.x,
-            };
-
-            console.log(
-              `Found coordinates for "${geofenceLocation}": ${coordinates.lat}, ${coordinates.lng}`
-            );
-            fetchedAircraft = await getAircraftNearLocation(
-              coordinates.lat,
-              coordinates.lng,
-              geofenceRadius
-            );
-          } else {
-            throw new Error('Location not found');
-          }
-        } catch (geocodeError) {
-          console.error('Geocoding error:', geocodeError);
-          throw new Error(
-            `Could not find location "${geofenceLocation}". Try using a ZIP code or coordinates.`
-          );
+          coordinates = await zipCodeToCoordinates(geofenceLocation);
+        } catch (zipError) {
+          console.error('Error getting coordinates from ZIP code', zipError);
         }
       }
 
-      // Update state with the results
+      if (fetchedAircraft.length === 0) {
+        alert(
+          `No aircraft found near ${geofenceLocation}. Try increasing the radius or searching in a different area.`
+        );
+        setLocalLoading(false);
+        return;
+      }
+
+      // Update state with the coordinates
       if (coordinates) {
         setGeofenceCoordinates(coordinates);
       } else {
@@ -337,22 +309,18 @@ const UnifiedAircraftSelector: React.FC<UnifiedAircraftSelectorProps> = ({
         `Found ${fetchedAircraft.length} aircraft in the area, preparing for display...`
       );
 
-      if (fetchedAircraft.length === 0) {
-        alert(
-          `No aircraft found near ${geofenceLocation}. Try increasing the radius or searching in a different area.`
-        );
-        setLocalLoading(false);
-        return;
-      }
+      // Process the aircraft data
+      // Step 1: Ensure the data is normalized
+      const adaptedAircraft =
+        fetchedAircraft[0].MANUFACTURER !== undefined
+          ? fetchedAircraft // Already in the right format
+          : adaptGeofenceAircraft(fetchedAircraft); // Needs adaptation
 
-      // Step 1: First adapt the raw geofence data to normalized format
-      const adaptedAircraft = adaptGeofenceAircraft(fetchedAircraft);
-
-      // Step 2: Now enrich the adapted aircraft with data from the tracking API
+      // Step 2: Enrich with static data if needed
       console.log('Enriching geofence aircraft with static data...');
       const enrichedAircraft = await enrichGeofenceAircraft(adaptedAircraft);
 
-      // Log the first aircraft after enrichment for debugging
+      // Debug the first aircraft after enrichment
       if (enrichedAircraft.length > 0) {
         console.log('Enriched aircraft sample:', {
           icao24: enrichedAircraft[0].ICAO24,
@@ -364,17 +332,16 @@ const UnifiedAircraftSelector: React.FC<UnifiedAircraftSelectorProps> = ({
         });
       }
 
-      // Save to local state for display in the UI
+      // Save to local state
       setGeofenceAircraft(enrichedAircraft);
 
-      // Important: Clear any existing aircraft data first
+      // Clear any existing aircraft data
       if (clearGeofenceData) {
         clearGeofenceData();
         console.log('Cleared existing aircraft data');
       }
 
-      // Use the updateGeofenceAircraft function from context
-      // Delay slightly to ensure UI updates properly
+      // Update the map with new aircraft
       setTimeout(() => {
         updateGeofenceAircraft(enrichedAircraft);
         console.log(
@@ -407,7 +374,7 @@ const UnifiedAircraftSelector: React.FC<UnifiedAircraftSelectorProps> = ({
               `Map centered on area: ${coordinates.lat}, ${coordinates.lng} with radius ${geofenceRadius}km`
             );
 
-            // Force a refresh of the map tiles (sometimes helps with marker rendering)
+            // Force a refresh of the map tiles
             mapInstance.invalidateSize();
           }, 200);
         }
@@ -971,7 +938,7 @@ const UnifiedAircraftSelector: React.FC<UnifiedAircraftSelectorProps> = ({
                     <input
                       type="text"
                       className="flex-1 px-3 py-2 border border-gray-300 rounded-md"
-                      placeholder="ZIP code, city, or coordinates..."
+                      placeholder="ZIP code or coordinates..."
                       value={geofenceLocation}
                       onChange={(e) => setGeofenceLocation(e.target.value)}
                       onKeyDown={(e) => {

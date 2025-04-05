@@ -46,10 +46,23 @@ const SimplifiedAircraftMarker: React.FC<SimplifiedAircraftMarkerProps> = ({
   }
 
   // Create position array safely with validations
-  const position: [number, number] = [
-    typeof aircraft.latitude === 'number' ? aircraft.latitude : 0,
-    typeof aircraft.longitude === 'number' ? aircraft.longitude : 0,
-  ];
+  // Get position from either property naming convention
+  const lat =
+    typeof aircraft.latitude === 'number'
+      ? aircraft.latitude
+      : typeof (aircraft as any).lat === 'number'
+        ? (aircraft as any).lat
+        : 0;
+
+  const lng =
+    typeof aircraft.longitude === 'number'
+      ? aircraft.longitude
+      : typeof (aircraft as any).lng === 'number'
+        ? (aircraft as any).lng
+        : 0;
+
+  // Create position array
+  const position: [number, number] = [lat, lng];
 
   // Create icon for the marker
   const aircraftIcon = useMemo(() => {
