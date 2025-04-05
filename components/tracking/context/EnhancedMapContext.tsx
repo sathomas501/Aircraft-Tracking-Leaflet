@@ -19,16 +19,6 @@ import {
   clearAircraftData,
 } from '../persistence/AircraftDataPersistence';
 
-// Define trail position interface
-interface AircraftPosition {
-  latitude: number;
-  longitude: number;
-  altitude: number | null;
-  timestamp: number;
-  debugTrailData: () => void;
-  // Debug action
-}
-
 // Define context interface
 interface EnhancedMapContextType {
   // Map state
@@ -59,11 +49,6 @@ interface EnhancedMapContextType {
   trackingStatus: string;
   lastRefreshed: string | null;
 
-  // Trail state
-  trailsEnabled: boolean;
-  maxTrailLength: number;
-  aircraftTrails: Map<string, AircraftPosition[]>;
-
   // Actions
   selectManufacturer: (MANUFACTURER: string | null) => Promise<void>;
   selectModel: (MODEL: string | null) => void;
@@ -75,12 +60,12 @@ interface EnhancedMapContextType {
   // Add new function for updating aircraft from geofence
   updateGeofenceAircraft: (geofenceAircraft: ExtendedAircraft[]) => void;
 
-  // Trail actions
-  toggleTrails: () => void;
-  setMaxTrailLength: (length: number) => void;
-
-  // Debug function
-  debugTrailData: () => void;
+  filterMode: 'manufacturer' | 'geofence' | 'both';
+  setFilterMode: (mode: 'manufacturer' | 'geofence' | 'both') => void;
+  blockManufacturerApiCalls: boolean;
+  setBlockManufacturerApiCalls: (block: boolean) => void;
+  isManufacturerApiBlocked: boolean;
+  setIsManufacturerApiBlocked: (blocked: boolean) => void;
 }
 
 // Create context with default values
@@ -108,11 +93,6 @@ const EnhancedMapContext = createContext<EnhancedMapContextType>({
   trackingStatus: '',
   lastRefreshed: null,
 
-  // Trail default values
-  trailsEnabled: false,
-  maxTrailLength: 10,
-  aircraftTrails: new Map(),
-
   selectManufacturer: async () => {},
   selectModel: () => {},
   reset: async () => {},
@@ -123,12 +103,12 @@ const EnhancedMapContext = createContext<EnhancedMapContextType>({
   // Add default for new function
   updateGeofenceAircraft: () => {},
 
-  // Trail actions
-  toggleTrails: () => {},
-  setMaxTrailLength: () => {},
-
-  // Debug function
-  debugTrailData: () => {},
+  filterMode: 'manufacturer',
+  setFilterMode: () => {},
+  blockManufacturerApiCalls: false,
+  setBlockManufacturerApiCalls: () => {},
+  isManufacturerApiBlocked: false,
+  setIsManufacturerApiBlocked: () => {},
 });
 
 // Props for the context provider
@@ -180,16 +160,17 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
   const [lastFullRefreshTime, setLastFullRefreshTime] = useState<number | null>(
     null
   );
+  const [isManufacturerApiBlocked, setIsManufacturerApiBlocked] =
+    useState<boolean>(false);
+
+  const [filterMode, setFilterMode] = useState<
+    'manufacturer' | 'geofence' | 'both'
+  >('manufacturer');
+  const [blockManufacturerApiCalls, setBlockManufacturerApiCalls] =
+    useState<boolean>(false);
 
   // Flag to track if we're in geofence mode
   const [isGeofenceMode, setIsGeofenceMode] = useState<boolean>(false);
-
-  // Trail state
-  const [trailsEnabled, setTrailsEnabled] = useState<boolean>(false);
-  const [maxTrailLength, setMaxTrailLength] = useState<number>(10);
-  const [aircraftTrails, setAircraftTrails] = useState<
-    Map<string, AircraftPosition[]>
-  >(new Map());
 
   // Refs for tracking subscriptions
   const unsubscribeAircraftRef = useRef<(() => void) | null>(null);
@@ -224,11 +205,6 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
       if (!isGeofenceMode) {
         updateAircraftDisplay();
       }
-
-      // Update trail data if present
-      if (data.trails) {
-        setAircraftTrails(data.trails);
-      }
     };
 
     // Subscribe to aircraft updates
@@ -245,10 +221,6 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
 
     // IMPORTANT: Clear any existing tracking when component mounts
     openSkyTrackingService.stopTracking();
-
-    // Initialize trail settings from service
-    setTrailsEnabled(openSkyTrackingService.areTrailsEnabled());
-    setMaxTrailLength(openSkyTrackingService.getMaxTrailLength());
 
     // Cleanup on unmount
     return () => {
@@ -411,16 +383,29 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
     setSelectedModel(null);
     setIsLoading(true);
     setLastRefreshed(null);
+    setSelectedManufacturer(MANUFACTURER);
+    setSelectedModel(null);
+
+    // If we're blocking API calls, exit early
+    if (isManufacturerApiBlocked) {
+      console.log(
+        `[EnhancedMapContext] API calls blocked for manufacturer: ${MANUFACTURER}`
+      );
+      return; // Exit early without making any API calls
+    }
+
+    // Exit geofence mode when selecting a manufacturer (only if not blocked)
+    setIsGeofenceMode(false);
+    setIsLoading(true);
+    setLastRefreshed(null);
 
     try {
-      // Track the new MANUFACTURER, ensuring it's always a string
+      // Only make API call if not blocked
       await openSkyTrackingService.trackManufacturer(MANUFACTURER ?? '');
-
-      // Update the lastRefreshed timestamp after successful tracking
       setLastRefreshed(new Date().toLocaleTimeString());
     } catch (error) {
       onError(
-        `Error tracking MANUFACTURER: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Error tracking manufacturer: ${error instanceof Error ? error.message : 'Unknown error'}`
       );
     } finally {
       setIsLoading(false);
@@ -570,39 +555,6 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
     }
   };
 
-  const debugTrailData = useCallback(() => {
-    console.log('[MapContext] DEBUG - Current trail state:');
-    console.log(`Trails enabled: ${trailsEnabled}`);
-    console.log(`Max trail length: ${maxTrailLength}`);
-    console.log(`Aircraft trails map size: ${aircraftTrails.size}`);
-
-    if (aircraftTrails.size > 0) {
-      console.log('Sample trail data:');
-      const firstIcao = Array.from(aircraftTrails.keys())[0];
-      const firstTrail = aircraftTrails.get(firstIcao);
-      console.log(`Trail for ${firstIcao}: ${firstTrail?.length} positions`);
-      console.log(firstTrail);
-    }
-
-    // Attempt to regenerate trails
-    if (trailsEnabled) {
-      openSkyTrackingService.generateMockTrails();
-    }
-  }, [trailsEnabled, maxTrailLength, aircraftTrails]);
-
-  // Toggle trails on/off
-  const toggleTrails = useCallback(() => {
-    const newTrailsEnabled = !trailsEnabled;
-    setTrailsEnabled(newTrailsEnabled);
-    openSkyTrackingService.setTrailsEnabled(newTrailsEnabled);
-  }, [trailsEnabled]);
-
-  // Set maximum trail length
-  const handleSetMaxTrailLength = useCallback((length: number) => {
-    setMaxTrailLength(length);
-    openSkyTrackingService.setMaxTrailLength(length);
-  }, []);
-
   const clearGeofenceData = useCallback(() => {
     // Reset geofence mode flag
     setIsGeofenceMode(false);
@@ -647,11 +599,6 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
     trackingStatus,
     lastRefreshed,
 
-    // Trail state
-    trailsEnabled,
-    maxTrailLength,
-    aircraftTrails,
-
     selectManufacturer,
     selectModel,
     reset,
@@ -661,10 +608,12 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
     clearGeofenceData,
     updateGeofenceAircraft,
 
-    // Trail actions
-    toggleTrails,
-    setMaxTrailLength: handleSetMaxTrailLength,
-    debugTrailData,
+    filterMode,
+    setFilterMode,
+    blockManufacturerApiCalls,
+    setBlockManufacturerApiCalls,
+    isManufacturerApiBlocked,
+    setIsManufacturerApiBlocked,
   };
 
   return (

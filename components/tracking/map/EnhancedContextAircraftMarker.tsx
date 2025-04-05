@@ -26,8 +26,6 @@ const EnhancedContextAircraftMarker: React.FC<
     selectedAircraft,
     selectAircraft,
     zoomLevel,
-    trailsEnabled,
-    aircraftTrails,
     cachedAircraftData, // Get cached data from context
   } = useEnhancedMapContext();
 
@@ -67,13 +65,6 @@ const EnhancedContextAircraftMarker: React.FC<
     // No cached data available, use aircraft as is
     return aircraft;
   }, [aircraft, cachedAircraftData, zoomLevel]);
-
-  // Get the trail for this aircraft
-  const trail =
-    trailsEnabled && aircraftTrails
-      ? aircraftTrails.get(aircraft.ICAO24) ||
-        aircraftTrails.get(aircraft.ICAO24?.toLowerCase())
-      : undefined;
 
   // Get owner type class for the aircraft
   const ownerClass = getOwnerTypeClass(enhancedAircraft);

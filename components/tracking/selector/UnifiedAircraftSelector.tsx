@@ -14,6 +14,7 @@ import {
 } from '../../../lib/services/geofencing';
 import { enrichGeofenceAircraft } from '../../../lib/utils/geofenceEnricher';
 import { useGeolocation } from '../hooks/useGeolocation';
+import openSkyTrackingService from '@/lib/services/openSkyTrackingService';
 
 interface UnifiedAircraftSelectorProps {
   manufacturers: SelectOption[];
@@ -39,6 +40,10 @@ const UnifiedAircraftSelector: React.FC<UnifiedAircraftSelectorProps> = ({
     updateAircraftData,
     clearGeofenceData,
     updateGeofenceAircraft,
+    blockManufacturerApiCalls,
+    setBlockManufacturerApiCalls,
+    isManufacturerApiBlocked,
+    setIsManufacturerApiBlocked,
   } = useEnhancedMapContext();
 
   // Local state for geofence loading
@@ -69,6 +74,8 @@ const UnifiedAircraftSelector: React.FC<UnifiedAircraftSelectorProps> = ({
     []
   );
   const [isGeofenceActive, setIsGeofenceActive] = useState(false);
+
+  const [combinedModeReady, setCombinedModeReady] = useState<boolean>(false);
 
   // Draggable state
   const [position, setPosition] = useState({ x: 20, y: 20 });
@@ -239,15 +246,22 @@ const UnifiedAircraftSelector: React.FC<UnifiedAircraftSelectorProps> = ({
     }
   };
 
-  // Only showing the modified processGeofenceSearch function
+  /**
+   * Modified geofence search processor
+   * Handles the case where we're in combined mode
+   */
   const processGeofenceSearch = async () => {
     if (!geofenceLocation) return;
+
+    // Block API calls while doing geofence search in combined mode
+    if (filterMode === 'both') {
+      openSkyTrackingService.setBlockAllApiCalls(true);
+    }
 
     // Set loading state
     setLocalLoading(true);
 
     try {
-      // First try the new comprehensive search function
       console.log(
         `Searching for aircraft near location: "${geofenceLocation}"`
       );
@@ -258,7 +272,7 @@ const UnifiedAircraftSelector: React.FC<UnifiedAircraftSelectorProps> = ({
         geofenceRadius
       );
 
-      // Get location details for the map
+      // Get coordinates for the map
       const locations = await searchLocationWithMapbox(geofenceLocation, 1);
       let coordinates: { lat: number; lng: number } | null = null;
 
@@ -267,21 +281,21 @@ const UnifiedAircraftSelector: React.FC<UnifiedAircraftSelectorProps> = ({
           lat: locations[0].lat,
           lng: locations[0].lng,
         };
-        // Save the formatted location name for display
+        // Save the formatted location name
         setGeofenceLocation(locations[0].name);
       } else if (
         fetchedAircraft.length > 0 &&
         fetchedAircraft[0].latitude &&
         fetchedAircraft[0].longitude
       ) {
-        // Fallback - if we got aircraft but no location info, use the first aircraft's position
+        // Fallback to first aircraft position
         coordinates = {
           lat: fetchedAircraft[0].latitude,
           lng: fetchedAircraft[0].longitude,
         };
       }
 
-      // If we still don't have coordinates but have a numeric format, try as a ZIP code
+      // Fallback for ZIP codes
       if (!coordinates && /^\d{5}$/.test(geofenceLocation.trim())) {
         try {
           coordinates = await zipCodeToCoordinates(geofenceLocation);
@@ -309,50 +323,48 @@ const UnifiedAircraftSelector: React.FC<UnifiedAircraftSelectorProps> = ({
         `Found ${fetchedAircraft.length} aircraft in the area, preparing for display...`
       );
 
-      // Process the aircraft data
-      // Step 1: Ensure the data is normalized
+      // Ensure the data is in the right format
       const adaptedAircraft =
         fetchedAircraft[0].MANUFACTURER !== undefined
           ? fetchedAircraft // Already in the right format
           : adaptGeofenceAircraft(fetchedAircraft); // Needs adaptation
 
-      // Step 2: Enrich with static data if needed
+      // Enrich with static data
       console.log('Enriching geofence aircraft with static data...');
       const enrichedAircraft = await enrichGeofenceAircraft(adaptedAircraft);
 
-      // Debug the first aircraft after enrichment
+      // Debug the first aircraft
       if (enrichedAircraft.length > 0) {
         console.log('Enriched aircraft sample:', {
           icao24: enrichedAircraft[0].ICAO24,
           manufacturer: enrichedAircraft[0].MANUFACTURER,
           model: enrichedAircraft[0].MODEL,
-          type: enrichedAircraft[0].type,
-          isGovernment: enrichedAircraft[0].isGovernment,
-          hasStaticData: enrichedAircraft[0].MANUFACTURER !== 'Unknown',
         });
       }
 
-      // Save to local state
+      // Save the FULL set to local state
       setGeofenceAircraft(enrichedAircraft);
+      setIsGeofenceActive(true);
 
-      // Clear any existing aircraft data
+      // Clear existing aircraft data
       if (clearGeofenceData) {
         clearGeofenceData();
-        console.log('Cleared existing aircraft data');
       }
 
-      // Update the map with new aircraft
-      setTimeout(() => {
+      // If we're in combined mode and have a manufacturer, apply the combined filter
+      if (filterMode === 'both' && selectedManufacturer) {
+        // Make sure API calls remain blocked
+        openSkyTrackingService.setBlockAllApiCalls(true);
+        setTimeout(() => {
+          applyCombinedFilters();
+        }, 100);
+      } else {
+        // Just show all aircraft in the geofence
         updateGeofenceAircraft(enrichedAircraft);
-        console.log(
-          `Sent ${enrichedAircraft.length} enriched aircraft to map for display`
-        );
-        setIsGeofenceActive(true);
 
         // Center the map
         if (mapInstance && coordinates) {
-          // Calculate map bounds based on radius
-          const radiusInDegrees = geofenceRadius / 111; // Rough conversion from km to degrees
+          const radiusInDegrees = geofenceRadius / 111;
           const bounds = [
             [
               coordinates.lat - radiusInDegrees,
@@ -364,24 +376,15 @@ const UnifiedAircraftSelector: React.FC<UnifiedAircraftSelectorProps> = ({
             ],
           ];
 
-          // First set the view to ensure the map is looking at the right area
           mapInstance.setView([coordinates.lat, coordinates.lng], 9);
-
-          // Then fit bounds after a short delay to ensure the map is ready
           setTimeout(() => {
             mapInstance.fitBounds(bounds as any);
-            console.log(
-              `Map centered on area: ${coordinates.lat}, ${coordinates.lng} with radius ${geofenceRadius}km`
-            );
-
-            // Force a refresh of the map tiles
             mapInstance.invalidateSize();
           }, 200);
         }
-      }, 100);
+      }
     } catch (error) {
       console.error('Error in geofence search:', error);
-      // Show error to the user
       alert(
         `Error: ${error instanceof Error ? error.message : 'Unknown error occurred'}`
       );
@@ -411,6 +414,8 @@ const UnifiedAircraftSelector: React.FC<UnifiedAircraftSelectorProps> = ({
 
   // Clear all filters
   const clearAllFilters = () => {
+    // Unblock API calls
+    openSkyTrackingService.setBlockAllApiCalls(false);
     // Clear manufacturer selection
     selectManufacturer(null);
     selectModel(null);
@@ -426,26 +431,135 @@ const UnifiedAircraftSelector: React.FC<UnifiedAircraftSelectorProps> = ({
     setFilterMode('manufacturer');
   };
 
-  // Toggle filter mode
+  /**
+   * Apply the combined filter for both manufacturer and geofence
+   *
+   * @param manufacturerValue The selected manufacturer
+   * @param modelValue The selected model (optional)
+   * @param geofenceAircraftList The geofence aircraft list
+   */
+  /**
+   * Apply the combined filter for both manufacturer and geofence
+   * This implements a more efficient filtering approach by caching the full geofence results
+   * and only applying manufacturer filtering in the UI
+   */
+  const applyCombinedFilters = () => {
+    if (
+      !selectedManufacturer ||
+      !isGeofenceActive ||
+      geofenceAircraft.length === 0
+    ) {
+      return;
+    }
+
+    setLocalLoading(true);
+
+    try {
+      console.log(
+        `Filtering ${geofenceAircraft.length} aircraft by ${selectedManufacturer}`
+      );
+
+      // Filter the aircraft by manufacturer
+      let filteredAircraft = geofenceAircraft.filter(
+        (aircraft) =>
+          aircraft.MANUFACTURER?.toLowerCase() ===
+          selectedManufacturer.toLowerCase()
+      );
+
+      // Further filter by model if selected
+      if (selectedModel) {
+        filteredAircraft = filteredAircraft.filter(
+          (aircraft) =>
+            aircraft.MODEL?.toLowerCase() === selectedModel.toLowerCase()
+        );
+      }
+
+      console.log(`Found ${filteredAircraft.length} matching aircraft`);
+
+      if (filteredAircraft.length === 0) {
+        alert(`No ${selectedManufacturer} aircraft found in this area.`);
+        return;
+      }
+
+      // Clear display data
+      clearGeofenceData?.();
+
+      // Update the display
+      updateGeofenceAircraft(filteredAircraft);
+    } catch (error) {
+      console.error('Error filtering aircraft:', error);
+    } finally {
+      setLocalLoading(false);
+    }
+  };
+
+  /**tsc
+   * Enhanced toggleFilterMode function
+   * Ensures no searches start until both selection criteria are met
+   */
   const toggleFilterMode = (mode: 'manufacturer' | 'geofence' | 'both') => {
     setFilterMode(mode);
 
     // Apply appropriate filters based on new mode
     if (mode === 'manufacturer') {
+      // Allow API calls in manufacturer mode
+      openSkyTrackingService.setBlockAllApiCalls(false);
+
       if (isGeofenceActive) {
-        setGeofenceAircraft([]);
-        setIsGeofenceActive(false);
+        // Clear geofence data but keep the settings
         clearGeofenceData?.();
+        console.log(
+          'Cleared geofence data, switching to manufacturer-only mode'
+        );
+
+        // If we have manufacturer data, make sure it's displayed
+        if (selectedManufacturer) {
+          // The existing context functions will handle this display
+          console.log(`Displaying all ${selectedManufacturer} aircraft`);
+        }
       }
     } else if (mode === 'geofence') {
+      // Block API calls in geofence mode
+      openSkyTrackingService.setBlockAllApiCalls(true);
+
+      // Clear manufacturer selection from the UI but keep track of what was selected
+      const prevManufacturer = selectedManufacturer;
+      const prevModel = selectedModel;
+
+      // Clear the manufacturer filter in the UI
       selectManufacturer(null);
       selectModel(null);
 
+      // If geofence is active, restore the full geofence data
       if (geofenceCoordinates && geofenceAircraft.length > 0) {
-        updateAircraftData(geofenceAircraft);
+        console.log('Restoring full geofence data');
+        updateGeofenceAircraft(geofenceAircraft);
+      }
+    } else if (mode === 'both') {
+      // Both mode - BLOCK API CALLS
+      openSkyTrackingService.setBlockAllApiCalls(true);
+
+      if (
+        selectedManufacturer &&
+        isGeofenceActive &&
+        geofenceAircraft.length > 0
+      ) {
+        console.log('Both filters active, applying combined filter');
+        applyCombinedFilters();
+      } else {
+        console.log('Need both manufacturer and geofence to use combined mode');
+        // If one is missing, we can prompt the user
+        if (!selectedManufacturer && isGeofenceActive) {
+          alert('Please select a manufacturer to use combined filter mode');
+        } else if (selectedManufacturer && !isGeofenceActive) {
+          alert('Please set a location to use combined filter mode');
+        } else {
+          alert(
+            'Please select both a manufacturer and location to use combined filter mode'
+          );
+        }
       }
     }
-    // Both mode keeps current selections
   };
 
   // Function to toggle minimized state
@@ -468,106 +582,81 @@ const UnifiedAircraftSelector: React.FC<UnifiedAircraftSelectorProps> = ({
     {}
   );
 
-  // Handle selecting a manufacturer
+  /**
+   * Modified manufacturer selection handler
+   * Prevents API calls in combined mode
+   */
   const selectManufacturerAndClose = (value: string) => {
-    selectManufacturer(value === '' ? null : value);
+    // Close UI elements
     setIsManufacturerMenuOpen(false);
     setManufacturerSearchTerm('');
 
-    // If we're in geofence mode, switch to manufacturer or both
-    if (filterMode === 'geofence') {
-      setFilterMode(isGeofenceActive ? 'both' : 'manufacturer');
+    // If clearing the selection
+    if (value === '') {
+      selectManufacturer(null);
+      return;
+    }
+
+    // Set the manufacturer selection
+    selectManufacturer(value);
+
+    // Handle different filter modes
+    if (filterMode === 'both') {
+      // Keep API calls blocked in combined mode
+      openSkyTrackingService.setBlockAllApiCalls(true);
+
+      // If we have geofence data, apply the combined filter
+      if (isGeofenceActive && geofenceAircraft.length > 0) {
+        setTimeout(() => {
+          applyCombinedFilters();
+        }, 100);
+      }
+    } else if (filterMode === 'geofence' && value !== '') {
+      // Switching from geofence to combined mode
+      setFilterMode('both');
+      openSkyTrackingService.setBlockAllApiCalls(true);
+
+      if (isGeofenceActive && geofenceAircraft.length > 0) {
+        setTimeout(() => {
+          applyCombinedFilters();
+        }, 100);
+      }
+    } else {
+      // Pure manufacturer mode - allow API calls
+      openSkyTrackingService.setBlockAllApiCalls(false);
     }
   };
 
-  // Handle selecting a model
+  /**
+   * Handle model selection and filtering
+   */
   const handleModelSelect = (value: string) => {
     selectModel(value === '' ? null : value);
     setIsModelMenuOpen(false);
+
+    // If in combined mode, reapply the filter
+    if (filterMode === 'both' && isGeofenceActive && selectedManufacturer) {
+      setTimeout(() => {
+        applyCombinedFilters();
+      }, 100);
+    }
   };
 
-  // Add this handler function for the refresh button that works with both search types
+  /**
+   * Enhanced handleManualRefresh function
+   * Optimized to avoid unnecessary API calls
+   */
   const handleManualRefresh = async () => {
-    // Don't allow refreshing if we're already refreshing
-    if (isRefreshing) {
-      return;
-    }
+    if (isRefreshing) return;
 
     setIsRefreshing(true);
 
     try {
-      // Check which mode we're in and refresh accordingly
-      if (
-        filterMode === 'manufacturer' ||
-        (filterMode === 'both' && selectedManufacturer)
-      ) {
-        // Manufacturer search refresh
-        console.log('Refreshing manufacturer aircraft data...');
+      if (filterMode === 'both' && isGeofenceActive && selectedManufacturer) {
+        // In combined mode, only refresh the geofence, then filter
+        console.log('Refreshing geofence data in combined mode');
 
-        if (!selectedManufacturer) {
-          console.log('No manufacturer selected, skipping refresh');
-          return;
-        }
-
-        // Use the context's refreshPositions function for manufacturer refresh
-        await refreshPositions();
-        console.log('Manufacturer aircraft data refreshed');
-      } else if (
-        filterMode === 'geofence' ||
-        (filterMode === 'both' && isGeofenceActive)
-      ) {
-        // Geofence search refresh
-        console.log('Refreshing geofence aircraft data...');
-
-        if (!geofenceCoordinates || !isGeofenceActive) {
-          console.log('No active geofence, skipping refresh');
-          return;
-        }
-
-        // Get fresh aircraft data using current coordinates
-        const refreshedAircraft = await getAircraftNearLocation(
-          geofenceCoordinates.lat,
-          geofenceCoordinates.lng,
-          geofenceRadius
-        );
-
-        console.log(
-          `Refreshed data: Found ${refreshedAircraft.length} aircraft in the area`
-        );
-
-        // Process the new data
-        if (refreshedAircraft.length > 0) {
-          // Step 1: Adapt the new geofence data
-          const adaptedAircraft = adaptGeofenceAircraft(refreshedAircraft);
-
-          // Step 2: Enrich with static data
-          const enrichedAircraft =
-            await enrichGeofenceAircraft(adaptedAircraft);
-
-          // Update local state
-          setGeofenceAircraft(enrichedAircraft);
-
-          // Update the map
-          updateGeofenceAircraft(enrichedAircraft);
-
-          console.log(
-            `Successfully refreshed ${enrichedAircraft.length} aircraft`
-          );
-        } else {
-          console.log('No aircraft found in refresh');
-        }
-      } else if (filterMode === 'both') {
-        // Combined mode - do both refreshes
-        console.log('Refreshing both manufacturer and geofence data...');
-
-        // First refresh manufacturer data if available
-        if (selectedManufacturer) {
-          await refreshPositions();
-          console.log('Manufacturer aircraft data refreshed');
-        }
-
-        // Then refresh geofence data if available
-        if (geofenceCoordinates && isGeofenceActive) {
+        if (geofenceCoordinates) {
           const refreshedAircraft = await getAircraftNearLocation(
             geofenceCoordinates.lat,
             geofenceCoordinates.lng,
@@ -578,15 +667,48 @@ const UnifiedAircraftSelector: React.FC<UnifiedAircraftSelectorProps> = ({
             const adaptedAircraft = adaptGeofenceAircraft(refreshedAircraft);
             const enrichedAircraft =
               await enrichGeofenceAircraft(adaptedAircraft);
+
+            // Store the full set
             setGeofenceAircraft(enrichedAircraft);
-            updateGeofenceAircraft(enrichedAircraft);
+
+            // Apply the filtering
+            setTimeout(() => {
+              applyCombinedFilters();
+            }, 100);
+
             console.log(
               `Successfully refreshed ${enrichedAircraft.length} geofence aircraft`
             );
           }
         }
-      } else {
-        console.log('No active search to refresh');
+      } else if (filterMode === 'geofence' && isGeofenceActive) {
+        // Pure geofence refresh
+        console.log('Refreshing geofence only');
+
+        if (geofenceCoordinates) {
+          const refreshedAircraft = await getAircraftNearLocation(
+            geofenceCoordinates.lat,
+            geofenceCoordinates.lng,
+            geofenceRadius
+          );
+
+          if (refreshedAircraft.length > 0) {
+            const adaptedAircraft = adaptGeofenceAircraft(refreshedAircraft);
+            const enrichedAircraft =
+              await enrichGeofenceAircraft(adaptedAircraft);
+
+            setGeofenceAircraft(enrichedAircraft);
+            updateGeofenceAircraft(enrichedAircraft);
+
+            console.log(
+              `Successfully refreshed ${enrichedAircraft.length} geofence aircraft`
+            );
+          }
+        }
+      } else if (filterMode === 'manufacturer' && selectedManufacturer) {
+        // Manufacturer-only refresh
+        console.log('Refreshing manufacturer aircraft data...');
+        await refreshPositions();
       }
     } catch (error) {
       console.error('Error refreshing aircraft data:', error);
@@ -1195,6 +1317,19 @@ const UnifiedAircraftSelector: React.FC<UnifiedAircraftSelectorProps> = ({
                     Loading aircraft data...
                   </div>
                 )}
+              </div>
+            </div>
+
+            <div className="p-2 text-xs text-gray-500">
+              <div>Mode: {filterMode}</div>
+              <div>Manufacturer: {selectedManufacturer || 'None'}</div>
+              <div>Geofence: {isGeofenceActive ? 'Active' : 'Inactive'}</div>
+              <div>Combined ready: {combinedModeReady ? 'Yes' : 'No'}</div>
+              <div>
+                Aircraft count:{' '}
+                {filterMode === 'geofence' || filterMode === 'both'
+                  ? geofenceAircraft.length
+                  : totalActive}
               </div>
             </div>
 
