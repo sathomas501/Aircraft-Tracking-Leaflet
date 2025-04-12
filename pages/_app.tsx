@@ -4,8 +4,22 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '@/styles/globals.css';
 import 'leaflet/dist/leaflet.css';
 import '@/styles/leaflet.css';
+import '@/styles/aircraftMapElements.css';
 import 'react-toastify/dist/ReactToastify.css';
-import { ToastContainer } from 'react-toastify';
+import { ToastContainer, toast } from 'react-toastify';
+import { Toaster } from 'react-hot-toast';
+import { EnhancedUIProvider } from '@/components/tracking/context/EnhancedUIContext';
+import { EnhancedMapProvider } from '@/components/tracking/context/EnhancedMapContext';
+import { DataPersistenceProvider } from '../components/tracking/persistence/DataPersistenceManager';
+
+function MyApp({ Component, pageProps }: AppProps) {
+  return (
+    <>
+      <Component {...pageProps} />
+      <Toaster position="top-right" />
+    </>
+  );
+}
 
 // Create a QueryClient instance
 const queryClient = new QueryClient({
@@ -21,18 +35,27 @@ const queryClient = new QueryClient({
 export default function App({ Component, pageProps }: AppProps) {
   return (
     <QueryClientProvider client={queryClient}>
-      <ToastContainer 
-        position="top-right" 
-        autoClose={5000} 
-        hideProgressBar={false} 
-        newestOnTop={true} 
-        closeOnClick 
-        rtl={false} 
-        pauseOnFocusLoss 
-        draggable 
-        pauseOnHover 
-      />
-      <Component {...pageProps} />
+      <EnhancedUIProvider>
+        <EnhancedMapProvider
+          manufacturers={[]} // Provide your manufacturers or get them dynamically
+          onError={(msg) => toast.error(msg)}
+        >
+          <DataPersistenceProvider>
+            <ToastContainer
+              position="top-right"
+              autoClose={5000}
+              hideProgressBar={false}
+              newestOnTop={true}
+              closeOnClick
+              rtl={false}
+              pauseOnFocusLoss
+              draggable
+              pauseOnHover
+            />
+            <Component {...pageProps} />
+          </DataPersistenceProvider>
+        </EnhancedMapProvider>
+      </EnhancedUIProvider>
     </QueryClientProvider>
   );
 }

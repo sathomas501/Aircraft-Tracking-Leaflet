@@ -1,0 +1,71 @@
+/* Enhanced dropdown styles for aircraft selector component */
+
+/* Ensure container doesn't clip the dropdown when open */
+.dropdown-open {
+  overflow: visible !important;
+}
+
+/* Make sure the dropdown appears above other elements */
+.dropdown-open .dropdown-menu {
+  z-index: 1050;
+  position: absolute;
+  width: 100%;
+}
+
+/* Responsive height adjustment for smaller screens */
+@media (max-height: 768px) {
+  .dropdown-menu.position-adaptive {
+    max-height: 40vh;
+  }
+}
+
+/* Add styles for proper scrolling */
+.dropdown-menu {
+  scrollbar-width: thin;
+  scrollbar-color: #9ca3af #f3f4f6;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* Scrollbar styling */
+.dropdown-menu::-webkit-scrollbar {
+  width: 6px;
+}
+
+.dropdown-menu::-webkit-scrollbar-track {
+  background: #f3f4f6;
+}
+
+.dropdown-menu::-webkit-scrollbar-thumb {
+  background-color: #9ca3af;
+  border-radius: 6px;
+}
+
+/* Handle dropdown positioning relative to viewport */
+.dropdown-menu.bottom-align {
+  max-height: calc(100vh - 100% - 20px);
+  bottom: calc(100% + 5px);
+  top: auto;
+}
+
+/* Ensure the dropdown menu is always visible */
+.dropdown-menu {
+  transition: all 0.15s ease-in-out;
+  visibility: visible !important;
+  box-shadow:
+    0 4px 6px -1px rgba(0, 0, 0, 0.1),
+    0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+
+/* Sticky positioning for category headers */
+.dropdown-menu .sticky-header {
+  position: sticky;
+  top: 0;
+  background-color: white;
+  z-index: 1;
+}
+
+/* Hover effects for dropdown items */
+.dropdown-menu .dropdown-item:hover {
+  background-color: #eef2ff;
+}

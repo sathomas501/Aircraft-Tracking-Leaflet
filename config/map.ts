@@ -1,6 +1,4 @@
-//config/map.ts
 import type { LatLngBoundsExpression } from 'leaflet';
-import L from 'leaflet';
 
 export const MAP_CONFIG = {
   CENTER: [39.8283, -98.5795] as [number, number],
@@ -22,7 +20,7 @@ export const MAP_CONFIG = {
       MAX: 18,
       DEFAULT: 4,
       AIRCRAFT_FOCUS: 12,
-      POSITION: 'topright', // Move Zoom Control to the Top-Right
+      POSITION: 'topright',
     },
     BOUNDS: {
       MAX_LAT: 85,
@@ -51,7 +49,7 @@ export const MAP_CONFIG = {
     DEFAULT: [20, 20] as [number, number],
     SIDEBAR_OPEN: [300, 20] as [number, number],
   },
-  CRS: L.CRS.EPSG3857,
+  CRS: null, // <- Temporarily null until you request it on client side
   CLUSTER: {
     MAX_CLUSTER_RADIUS: 80,
     SPIDERFY_ON_MAX_ZOOM: true,
@@ -69,3 +67,12 @@ export const MAP_CONFIG = {
 export const CONTINENTAL_US_BOUNDS: LatLngBoundsExpression =
   MAP_CONFIG.US_BOUNDS;
 export const TILE_LAYER = MAP_CONFIG.CONTROLS.TILE_LAYER;
+
+// ✨ Client-side utility to get CRS when needed
+export const getLeafletCRS = () => {
+  if (typeof window !== 'undefined') {
+    const L = require('leaflet');
+    return L.CRS.EPSG3857;
+  }
+  return null;
+};

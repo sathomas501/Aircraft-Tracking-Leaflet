@@ -1,5 +1,5 @@
 // types/aircraft-models.ts
-import { Aircraft, Model } from '@/types/base';
+import { Aircraft, Model, ExtendedAircraft } from '@/types/base';
 
 export interface BaseModel {
   model: string;
@@ -76,5 +76,16 @@ export function toActiveModel(
     label: model.label || `${model.model || 'Unknown'} (0 active)`,
     activeCount: model.activeCount || 0,
     totalCount: model.totalCount || 0,
+  };
+}
+
+export function transformToExtendedAircraft(
+  aircraft: Aircraft
+): ExtendedAircraft {
+  return {
+    ...aircraft,
+    type: aircraft.TYPE_AIRCRAFT || 'Unknown', // Map it properly
+    isGovernment:
+      aircraft.operator?.toLowerCase().includes('government') ?? false,
   };
 }

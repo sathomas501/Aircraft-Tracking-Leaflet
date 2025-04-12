@@ -8,12 +8,13 @@ interface Props {
 
 interface State {
   hasError: boolean;
-  error?: Error;
+  error: Error | null;
 }
 
-export class ErrorBoundary extends Component<Props, State> {
+class ErrorBoundary extends Component<Props, State> {
   public state: State = {
-    hasError: false
+    hasError: false,
+    error: null,
   };
 
   public static getDerivedStateFromError(error: Error): State {
@@ -26,22 +27,24 @@ export class ErrorBoundary extends Component<Props, State> {
 
   public render() {
     if (this.state.hasError) {
-      return this.props.fallback || (
-        <div className="flex items-center justify-center min-h-screen bg-red-50">
-          <div className="p-4 bg-white rounded-lg shadow-lg">
-            <h2 className="text-xl font-semibold text-red-600 mb-2">
-              Something went wrong
-            </h2>
-            <p className="text-gray-600">
-              {this.state.error?.message || 'Failed to load map component'}
-            </p>
-            <button
-              onClick={() => window.location.reload()}
-              className="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
-            >
-              Reload Page
-            </button>
-          </div>
+      if (this.props.fallback) {
+        return this.props.fallback;
+      }
+
+      return (
+        <div className="p-4 bg-red-50 border border-red-200 rounded">
+          <h2 className="text-lg font-semibold text-red-700">
+            Something went wrong
+          </h2>
+          <p className="text-red-600 mt-2">
+            {this.state.error?.message || 'Unknown error'}
+          </p>
+          <button
+            className="mt-3 px-4 py-2 bg-red-100 text-red-800 rounded hover:bg-red-200"
+            onClick={() => this.setState({ hasError: false, error: null })}
+          >
+            Try Again
+          </button>
         </div>
       );
     }
@@ -49,3 +52,5 @@ export class ErrorBoundary extends Component<Props, State> {
     return this.props.children;
   }
 }
+
+export default ErrorBoundary;

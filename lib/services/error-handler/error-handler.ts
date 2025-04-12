@@ -2,7 +2,6 @@
 
 import React from 'react';
 import { NextApiResponse } from 'next';
-import { PollingRateLimiter } from '../rate-limiter';
 
 // --- OpenSky Specific Errors ---
 export class OpenSkyError extends Error {
@@ -153,7 +152,6 @@ export enum OpenSkyErrorCode {
 
 export class ErrorHandler {
   private static instance: ErrorHandler;
-  private rateLimiter?: PollingRateLimiter;
   private readonly MAX_RETRY_COUNT = 5;
   private state: ErrorState = {
     errors: new Map(),
@@ -180,27 +178,6 @@ export class ErrorHandler {
       ErrorHandler.instance = new ErrorHandler();
     }
     return ErrorHandler.instance;
-  }
-
-  public setRateLimiter(limiter: PollingRateLimiter) {
-    this.rateLimiter = limiter;
-  }
-  handleOpenSkyError(
-    error: ErrorDetails | Error,
-    rateLimiter?: PollingRateLimiter
-  ) {
-    const errorDetails: ErrorDetails =
-      error instanceof Error
-        ? {
-            type: ErrorType.OPENSKY_SERVICE,
-            message: error.message,
-            timestamp: Date.now(),
-            retryCount: 0,
-            resolved: false,
-          }
-        : error;
-
-    this.handleError(errorDetails);
   }
 
   public handleError(

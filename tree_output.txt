@@ -1,6 +1,5 @@
 📂 
 ├── 📄 .env
-├── 📄 .gitattributes
 ├── 📄 .gitignore
 ├── 📄 README.Docker.md
 ├── 📂 components
@@ -9,41 +8,6 @@
 │   │   ├── 📄 Header.tsx
 │   │   ├── 📄 Layout.tsx
 │   │   └── 📄 index.tsx
-│   ├── 📂 aircraft
-│   │   ├── 📂 customHooks
-│   │   │   ├── 📄 useAircraftSelector.ts
-│   │   │   ├── 📄 useFetchManufactures.ts
-│   │   │   ├── 📄 useFetchModels.ts
-│   │   │   ├── 📄 useOpenSkyData.ts
-│   │   │   └── 📄 useRequestDeduplication.ts
-│   │   └── 📂 tracking
-│   │       ├── 📂 Map
-│   │       │   ├── 📄 DynamicMap.tsx
-│   │       │   ├── 📄 MapComponent.tsx
-│   │       │   ├── 📂 components
-│   │       │   │   ├── 📂 AircraftIcon
-│   │       │   │   │   ├── 📄 AircraftIcon.tsx
-│   │       │   │   │   ├── 📄 AircraftTrail.tsx
-│   │       │   │   │   └── 📄 constants.ts
-│   │       │   │   ├── 📄 AircraftMarker.module.css
-│   │       │   │   ├── 📄 AircraftMarker.tsx
-│   │       │   │   ├── 📄 FitToBounds.tsx
-│   │       │   │   └── 📄 MapControls.tsx
-│   │       │   ├── 📄 index.ts
-│   │       │   └── 📄 types.ts
-│   │       ├── 📂 mapWrapper
-│   │       │   ├── 📄 MapWrapper.tsx
-│   │       │   └── 📄 index.ts
-│   │       └── 📂 selector
-│   │           ├── 📄 AircraftStats.tsx
-│   │           ├── 📄 ManufacturerSelector.tsx
-│   │           ├── 📄 MinimizeToggle.tsx
-│   │           ├── 📄 ModelSelector.tsx
-│   │           ├── 📄 UnifiedSelector.tsx
-│   │           ├── 📄 nNumberSelector.tsx
-│   │           ├── 📂 services
-│   │           │   └── 📄 aircraftService.ts
-│   │           └── 📄 types.ts
 │   ├── 📂 shared
 │   │   ├── 📄 ErrorBoundary.tsx
 │   │   ├── 📂 LoadingSpinner
@@ -51,15 +15,56 @@
 │   │   │   ├── 📄 constants.ts
 │   │   │   ├── 📄 index.ts
 │   │   │   └── 📄 types.ts
+│   │   ├── 📂 New folder
 │   │   └── 📄 index.ts
+│   ├── 📂 tracking
+│   │   ├── 📂 context
+│   │   │   ├── 📄 DataPersistenceManager.tsx
+│   │   │   ├── 📄 EnhancedMapContext.tsx
+│   │   │   ├── 📄 EnhancedUIContext.tsx
+│   │   │   └── 📄 useMapControl.ts
+│   │   ├── 📂 map
+│   │   │   ├── 📂 AircraftIcon
+│   │   │   │   ├── 📄 AircraftIcon.tsx
+│   │   │   │   └── 📄 constants.ts
+│   │   │   ├── 📄 AircraftTrackingMap.tsx
+│   │   │   ├── 📄 DataPersistenceDebug.tsx
+│   │   │   ├── 📄 EnhancedContextAircraftMarker.tsx
+│   │   │   ├── 📄 EnhancedReactBaseMap.tsx
+│   │   │   ├── 📄 MapControllerWithOptions
+│   │   │   ├── 📄 MapControllerWithOptions.tsx
+│   │   │   ├── 📄 MapWithDataPersistence.tsx
+│   │   │   ├── 📄 UnifiedAircraftMarker.tsx
+│   │   │   └── 📂 components
+│   │   │       ├── 📄 AircraftStatsModal.tsx
+│   │   │       ├── 📄 AircraftTooltip.tsx
+│   │   │       ├── 📄 AircraftTrail.tsx
+│   │   │       ├── 📄 AircraftTrailSystem.tsx
+│   │   │       ├── 📄 EnhancedContextAircraftInfoPanel.tsx
+│   │   │       ├── 📄 EnhancedTrailSystem.tsx
+│   │   │       ├── 📄 LeafletTouchFix.tsx
+│   │   │       ├── 📄 TrailControls.tsx
+│   │   │       ├── 📄 TrailSettingModal.tsx
+│   │   │       ├── 📄 TrailToggle.tsx
+│   │   │       └── 📄 UnifiedAircraftInfoPanel.tsx
+│   │   ├── 📂 selector
+│   │   │   └── 📄 EnhancedUnifiedSelector.tsx
+│   │   └── 📂 utils
+│   │       ├── 📄 performanceUtils.ts
+│   │       └── 📄 workerUtils.ts
+│   ├── 📄 types.ts
 │   └── 📂 ui
 │       ├── 📂 Card
 │       │   ├── 📄 Card.tsx
 │       │   └── 📄 index.tsx
-│       └── 📂 Select
-│           ├── 📄 PaginatedSelect.tsx
-│           ├── 📄 Select.tsx
-│           └── 📄 index.ts
+│       ├── 📄 DraggablePanel.tsx
+│       ├── 📄 EnhancedToolTip.tsx
+│       ├── 📂 Select
+│       │   ├── 📄 PaginatedSelect.tsx
+│       │   ├── 📄 Select.tsx
+│       │   └── 📄 index.ts
+│       ├── 📂 aircraft
+│       └── 📂 map
 ├── 📄 compose.yaml
 ├── 📂 config
 │   ├── 📄 api.ts
@@ -67,77 +72,32 @@
 │   ├── 📄 map.ts
 │   ├── 📄 opensky.ts
 │   ├── 📄 rate-limits.ts
-│   ├── 📄 retry.ts
-│   └── 📄 websocket.ts
-├── 📂 constants
-│   ├── 📄 Untitled-1.ts
-│   ├── 📄 aircraft.ts
-│   ├── 📄 monitoring.ts
-│   ├── 📄 opensky.ts
-│   ├── 📄 parsers.ts
-│   └── 📄 ui.ts
-├── 📂 database
-├── 📄 db_cleanup.py
+│   └── 📄 retry.ts
 ├── 📄 eslintrc.json
 ├── 📄 graph.svg
 ├── 📂 lib
-│   ├── 📂 api
-│   │   └── 📄 trackingApiClient.ts
 │   ├── 📂 db
-│   │   ├── 📄 constants.ts
-│   │   ├── 📂 managers
-│   │   │   ├── 📄 baseDatabaseManager.ts
-│   │   │   ├── 📄 staticDatabaseManager.ts
-│   │   │   ├── 📄 trackingAPIManager.ts
-│   │   │   └── 📄 trackingDatabaseManager.ts
-│   │   ├── 📄 queries.ts
-│   │   ├── 📄 schema.ts
-│   │   ├── 📄 static
+│   │   ├── 📄 DatabaseManager.ts
 │   │   ├── 📄 static.db
 │   │   ├── 📄 static.db-shm
 │   │   ├── 📄 static.db-wal
-│   │   ├── 📄 tracking
-│   │   ├── 📄 tracking.db
-│   │   ├── 📄 tracking.db-shm
-│   │   └── 📄 tracking.db-wal
-│   ├── 📂 middleware
-│   │   ├── 📄 BodyParser.ts
-│   │   └── 📄 error-handler.ts
-│   ├── 📂 services
-│   │   ├── 📄 CleanupService.ts
-│   │   ├── 📄 auth-test.ts
-│   │   ├── 📂 error-handler
-│   │   │   ├── 📄 api-error.ts
-│   │   │   ├── 📄 error-handler.ts
-│   │   │   ├── 📄 hook.ts
-│   │   │   ├── 📄 index.ts
-│   │   │   ├── 📄 middleware.ts
-│   │   │   ├── 📄 types.ts
-│   │   │   └── 📄 utils.ts
-│   │   ├── 📄 extrapolation.ts
-│   │   ├── 📄 icao-batch-service.ts
-│   │   ├── 📄 icao24Cache.ts
-│   │   ├── 📂 managers
-│   │   │   ├── 📄 aircraft-cache.ts
-│   │   │   ├── 📄 cache-manager.ts
-│   │   │   ├── 📄 cache-preloader.ts
-│   │   │   ├── 📄 dataLifecycleManager.ts
-│   │   │   ├── 📄 enhanced-cache.ts
-│   │   │   ├── 📄 initializeAircraftCache.ts
-│   │   │   └── 📄 unified-cache-system.ts
-│   │   ├── 📄 openSkySyncService.ts
-│   │   ├── 📄 opensky-auth.ts
-│   │   ├── 📄 polling-service.ts
-│   │   ├── 📄 rate-limiter.ts
-│   │   ├── 📄 regionFilterService.ts
-│   │   ├── 📂 tracking-services
-│   │   │   ├── 📄 aircraft-position-service.ts
-│   │   │   ├── 📄 aircraft-tracking-service.ts
-│   │   │   ├── 📄 base-tracking-service.ts
-│   │   │   ├── 📄 client-tracking-service.ts
-│   │   │   └── 📄 manufacturer-tracking-service.ts
-│   │   └── 📄 types.ts
-│   └── 📄 shutdown.ts
+│   │   └── 📄 tree_output.txt
+│   └── 📂 services
+│       ├── 📄 AircraftDataPersistance.ts
+│       ├── 📄 IcaoManagementService.ts
+│       ├── 📄 ManufacturersService.ts
+│       ├── 📄 OptimizedTrackingService.ts
+│       ├── 📂 error-handler
+│       │   ├── 📄 api-error.ts
+│       │   ├── 📄 error-handler.ts
+│       │   ├── 📄 hook.ts
+│       │   ├── 📄 index.ts
+│       │   ├── 📄 middleware.ts
+│       │   ├── 📄 types.ts
+│       │   └── 📄 utils.ts
+│       ├── 📄 openSkyTrackingService.ts
+│       ├── 📄 opensky-auth.ts
+│       └── 📄 useAircraftData.tsx
 ├── 📄 middleware.ts
 ├── 📄 next-env.d.ts
 ├── 📄 next.config.js
@@ -147,58 +107,46 @@
 │   ├── 📄 _app.tsx
 │   ├── 📄 _documents.tsx
 │   ├── 📂 api
-│   │   ├── 📂 aircraft
-│   │   │   ├── 📄 icao24s.ts
-│   │   │   ├── 📄 icaofetcher.ts
-│   │   │   ├── 📄 list.ts
-│   │   │   ├── 📄 manufacturers.ts
-│   │   │   ├── 📄 models.ts
-│   │   │   ├── 📄 n-number.ts
-│   │   │   ├── 📄 plane-icon-icon-on-transparent-background-free-png.png
-│   │   │   ├── 📄 static-data.ts
-│   │   │   ├── 📄 track.ts
-│   │   │   └── 📄 tracking.ts
-│   │   ├── 📄 health.ts
 │   │   ├── 📂 proxy
 │   │   │   └── 📄 opensky.ts
 │   │   └── 📂 tracking
-│   │       ├── 📄 db.ts
-│   │       ├── 📄 maintenance.ts
-│   │       ├── 📄 positions.ts
-│   │       ├── 📄 tracked-icaos.ts
-│   │       ├── 📄 tracked.ts
-│   │       └── 📄 upsert.ts
+│   │       ├── 📄 icao24s.ts
+│   │       ├── 📄 live.ts
+│   │       └── 📄 manufacturers.ts
 │   ├── 📄 index.tsx
 │   └── 📄 map.tsx
 ├── 📄 pnpm-lock.yaml
 ├── 📄 postcss.config.js
 ├── 📂 public
 │   ├── 📄 aircraft-spinner.xml
-│   └── 📂 icons
-│       ├── 📄 aircraft_balloon.png
-│       ├── 📄 aircraft_grounded.svg
-│       ├── 📄 defaultIconImg.png
-│       ├── 📄 governmentJetIconImg.png
-│       ├── 📄 governmentRotorIconImg.png
-│       ├── 📄 helicopter.png
-│       ├── 📄 jet.png
-│       ├── 📄 jetIconImg.png
-│       ├── 📄 propIconImg.png
-│       ├── 📄 rotorIconImg.png
-│       └── 📄 sample.png
+│   ├── 📄 dragmearound.js
+│   ├── 📄 favicon.ico
+│   ├── 📂 icons
+│   │   ├── 📄 aircraft_balloon.png
+│   │   ├── 📄 aircraft_grounded.svg
+│   │   ├── 📄 defaultIconImg.png
+│   │   ├── 📄 governmentJetIconImg.png
+│   │   ├── 📄 governmentRotorIconImg.png
+│   │   ├── 📄 helicopter.png
+│   │   ├── 📄 jet.png
+│   │   ├── 📄 jetIconImg.png
+│   │   ├── 📄 propIconImg.png
+│   │   ├── 📄 rotorIconImg.png
+│   │   └── 📄 sample.png
+│   └── 📂 workers
+│       ├── 📄 aircraftWorker.js
+│       └── 📄 aircraftWorker.ts
 ├── 📄 requirements.txt
 ├── 📂 server
 │   └── 📄 init.ts
-├── 📄 static.db
 ├── 📂 styles
 │   ├── 📄 @tailwinds.css
+│   ├── 📄 aircraftMapElements.css
+│   ├── 📄 dropdown-styles.css
 │   ├── 📄 globals.css
 │   ├── 📄 leaflet.css
-│   ├── 📄 selector.css
-│   ├── 📄 selector.module.css
 │   └── 📄 utils.ts
 ├── 📄 tailwind.config.js
-├── 📄 tracking.db
 ├── 📄 tree_output.txt
 ├── 📄 tsconfig.json
 ├── 📄 tsconfig.tsbuildinfo
@@ -212,18 +160,17 @@
 │   ├── 📄 error-handler.ts
 │   ├── 📄 index.ts
 │   ├── 📄 map.ts
-│   ├── 📄 module.d.ts
 │   ├── 📄 modules.ts
 │   ├── 📄 opensky.ts
 │   ├── 📄 regions.ts
+│   ├── 📄 requests.ts
 │   ├── 📄 responses.ts
 │   └── 📄 tracking.ts
 └── 📂 utils
+    ├── 📄 AircraftDataPersistance.ts
     ├── 📄 aircraft-tracking-utils.ts
     ├── 📄 aircraft-transform1.ts
     ├── 📄 batchprocessor.ts
     ├── 📄 cn.ts
     ├── 📄 database-transforms.ts
-    ├── 📄 model-transforms.ts
-    ├── 📄 polling-utils.ts
-    └── 📄 waitForCache.ts
+    └── 📄 model-transforms.ts

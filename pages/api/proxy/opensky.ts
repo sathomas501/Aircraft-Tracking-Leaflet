@@ -1,223 +1,244 @@
 // pages/api/proxy/opensky.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { PollingRateLimiter } from '@/lib/services/rate-limiter';
-import { openSkyAuth } from '@/lib/services/opensky-auth';
-import { ErrorType } from '@/lib/services/error-handler/error-handler';
 import { API_CONFIG } from '@/config/api';
-import {
-  OpenSkyTransforms,
-  parsePositionData,
-} from '@/utils/aircraft-transform1';
-import { OpenSkyStateArray } from '@/types/base';
 
-const rateLimiter = new PollingRateLimiter({
-  requestsPerMinute: 100,
-  requestsPerDay: 50000,
-  maxBatchSize: API_CONFIG.PARAMS.MAX_ICAO_QUERY,
-  minPollingInterval: API_CONFIG.API.MIN_POLLING_INTERVAL,
-  maxPollingInterval: API_CONFIG.API.MAX_POLLING_INTERVAL,
-  maxWaitTime: API_CONFIG.API.TIMEOUT_MS,
-  retryLimit: API_CONFIG.API.DEFAULT_RETRY_LIMIT,
-  requireAuthentication: true,
-  interval: 60000, // Add appropriate interval value
-  retryAfter: 1000, // Add appropriate retryAfter value
-});
+// Constants
+const MAX_ICAOS_PER_REQUEST = 100; // OpenSky limit
+const CACHE_TTL = 60000; // 1 minute cache
+const MAX_REQUESTS_PER_MIN = 15; // Rate limit
+const MAX_REQUESTS_PER_DAY = 1000; // Daily limit
 
-const recentRequests = new Map<string, { timestamp: number; response: any }>();
-const CACHE_TTL = 60000; // 1 minute cache time
+// Rate limiting state
+let requestsThisMinute = 0;
+let requestsToday = 0;
+let lastMinuteReset = Date.now();
+let lastDayReset = Date.now();
+
+// Cache for recent requests
+const responseCache = new Map<string, { timestamp: number; data: any }>();
 
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
-  if (req.method !== 'POST' && req.method !== 'GET') {
+  // Only allow POST requests
+  if (req.method !== 'POST') {
     return res.status(405).json({
       success: false,
-      error: 'Method Not Allowed. Use POST or GET.',
-      errorType: ErrorType.OPENSKY_SERVICE,
+      error: 'Method not allowed',
     });
   }
 
-  // Get ICAO24s from either query params (GET) or body (POST)
-  let icao24List: string[] = [];
+  // Extract ICAO24 codes from request
+  const { icao24s } = req.body;
 
-  const requestKey = JSON.stringify(icao24List.sort());
-  const now = Date.now();
-
-  // Clean expired cache entries
-  for (const [key, entry] of recentRequests.entries()) {
-    if (now - entry.timestamp > CACHE_TTL) {
-      recentRequests.delete(key);
-    }
-  }
-
-  // Check if this is a duplicate request
-  if (recentRequests.has(requestKey)) {
-    console.warn(
-      `[OpenSky Proxy] 🛑 Actual duplicate request detected, using cached response`
-    );
-    return res.status(200).json(recentRequests.get(requestKey)!.response);
-  }
-
-  if (req.method === 'POST') {
-    const { icao24s, action } = req.body;
-    if (!Array.isArray(icao24s)) {
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid ICAO24 list format in request body',
-        errorType: ErrorType.OPENSKY_REQUEST,
-      });
-    }
-    icao24List = icao24s.filter((code) => /^[0-9a-f]{6}$/.test(code));
-  } else {
-    const { icao24 } = req.query;
-    if (!icao24 || typeof icao24 !== 'string') {
-      return res.status(400).json({
-        success: false,
-        error: 'Missing or invalid icao24 parameter',
-        errorType: ErrorType.OPENSKY_REQUEST,
-      });
-    }
-    icao24List = icao24.split(',').filter((code) => /^[0-9a-f]{6}$/.test(code));
-  }
-
-  if (icao24List.length > API_CONFIG.PARAMS.MAX_ICAO_QUERY) {
+  if (!Array.isArray(icao24s) || icao24s.length === 0) {
     return res.status(400).json({
       success: false,
-      error: `Maximum ${API_CONFIG.PARAMS.MAX_ICAO_QUERY} ICAO24 codes per request.`,
-      errorType: ErrorType.OPENSKY_REQUEST,
+      error: 'Invalid or missing icao24s array',
+    });
+  }
+
+  // Validate ICAO codes (6 hex characters)
+  const validIcaos = icao24s
+    .filter((code) => typeof code === 'string')
+    .map((code) => code.trim().toLowerCase())
+    .filter((code) => /^[0-9a-f]{6}$/.test(code));
+
+  // Limit batch size
+  if (validIcaos.length > MAX_ICAOS_PER_REQUEST) {
+    return res.status(400).json({
+      success: false,
+      error: `Maximum ${MAX_ICAOS_PER_REQUEST} ICAO24 codes per request`,
+    });
+  }
+
+  // Check cache for identical request
+  const requestKey = JSON.stringify(validIcaos.sort());
+  const cachedResponse = responseCache.get(requestKey);
+
+  if (cachedResponse && Date.now() - cachedResponse.timestamp < CACHE_TTL) {
+    console.log('[OpenSky Proxy] Returning cached response');
+    return res.status(200).json(cachedResponse.data);
+  }
+
+  // Reset rate limits if needed
+  checkAndResetRateLimits();
+
+  // Check rate limits
+  if (requestsThisMinute >= MAX_REQUESTS_PER_MIN) {
+    console.log('[OpenSky Proxy] Rate limit reached (per minute)');
+    return res.status(429).json({
+      success: false,
+      error: 'Rate limit exceeded',
+      retryAfter: Math.ceil((lastMinuteReset + 60000 - Date.now()) / 1000),
+    });
+  }
+
+  if (requestsToday >= MAX_REQUESTS_PER_DAY) {
+    console.log('[OpenSky Proxy] Rate limit reached (per day)');
+    return res.status(429).json({
+      success: false,
+      error: 'Daily limit exceeded',
+      retryAfter: Math.ceil((lastDayReset + 86400000 - Date.now()) / 1000),
     });
   }
 
   try {
-    if (!(await openSkyAuth.ensureAuthenticated())) {
-      return res.status(401).json({
-        success: false,
-        error: 'Failed to authenticate with OpenSky',
-        errorType: ErrorType.OPENSKY_AUTH,
-      });
-    }
+    // Build OpenSky API URL
+    const OPENSKY_API_URL =
+      process.env.OPENSKY_API_URL || 'https://opensky-network.org/api';
+    const endpoint = `${OPENSKY_API_URL}/states/all`;
 
-    if (rateLimiter.isRateLimited()) {
-      const nextSlot = await rateLimiter.getNextAvailableSlot();
-      return res.status(429).json({
-        success: false,
-        error: 'Rate limit reached',
-        errorType: ErrorType.OPENSKY_RATE_LIMIT,
-        nextAvailable: nextSlot,
-        retryAfter: Math.ceil((nextSlot.getTime() - Date.now()) / 1000),
-      });
-    }
-
-    const openSkyUrl = `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.ALL_STATES}`;
-
-    console.log('[OpenSky Proxy] 🌍 Using OpenSky API URL:', openSkyUrl);
-
-    if (!API_CONFIG.BASE_URL) {
-      console.error(
-        '[OpenSky Proxy] ❌ Missing OPENSKY_API_URL in environment variables'
-      );
-      return res.status(500).json({
-        success: false,
-        error: 'Server misconfiguration: Missing OPENSKY_API_URL',
-        errorType: ErrorType.OPENSKY_SERVICE,
-      });
-    }
-
+    // Build query parameters
     const params = new URLSearchParams({
-      icao24: icao24List.join(','),
+      icao24: validIcaos.join(','),
       extended: '1',
     });
 
     console.log(
-      `[OpenSky Proxy] 🔍 Preparing to send request to OpenSky API:`,
-      {
-        URL,
-        icaoCount: icao24List.length,
-        sample: icao24List.slice(0, 5), // Log only a few ICAOs to avoid clutter
-      }
+      `[OpenSky Proxy] Fetching ${validIcaos.length} aircraft from OpenSky API`
     );
 
-    console.log('[OpenSky Proxy] Making request to OpenSky:', {
-      url: `https://opensky-network.org/api/states/all?icao24=${
-        icao24List.length > 10
-          ? `${icao24List.slice(0, 5).join(',')} ... ${icao24List.slice(-5).join(',')}`
-          : icao24List.join(',')
-      }`,
-      icaoCount: icao24List.length,
-      sample: icao24List.slice(0, 3),
-    });
+    // Update rate limit counters
+    requestsThisMinute++;
+    requestsToday++;
 
-    let responseData: any;
-    await rateLimiter.schedule(async () => {
-      console.log(
-        `[OpenSky Proxy] 🔄 Fetching states for ${icao24List.length} aircraft`
-      );
-      const response = await fetch(`${openSkyUrl}?${params}`, {
-        headers: {
-          ...openSkyAuth.getAuthHeaders(),
-          Accept: API_CONFIG.HEADERS.ACCEPT,
-        },
-      });
+    // Add authentication if provided
+    const authHeaders: HeadersInit = {};
+    if (process.env.OPENSKY_USERNAME && process.env.OPENSKY_PASSWORD) {
+      const authString = Buffer.from(
+        `${process.env.OPENSKY_USERNAME}:${process.env.OPENSKY_PASSWORD}`
+      ).toString('base64');
+      authHeaders['Authorization'] = `Basic ${authString}`;
+    }
 
-      if (!response.ok) {
-        throw new Error(`OpenSky API error: ${response.status}`);
-      }
+    // Make request to OpenSky API with timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(
+      () => controller.abort(),
+      API_CONFIG.TIMEOUT?.DEFAULT || 20000
+    );
 
-      responseData = await response.json();
-      console.log(
-        `[OpenSky Proxy] ✅ Received response with ${responseData.states?.length || 0} states`
-      );
-    });
-
-    rateLimiter.recordSuccess();
-
-    // Filter and transform states
-    const states = (responseData.states || [])
-      .filter(OpenSkyTransforms.validateState)
-      .map((state: OpenSkyStateArray) =>
-        OpenSkyTransforms.toTrackingData(state)
-      );
-
-    // Cache the successful response
-    recentRequests.set(requestKey, {
-      timestamp: now,
-      response: {
-        success: true,
-        data: {
-          states,
-          timestamp: responseData.time || Date.now(),
-          meta: {
-            total: states.length,
-            requestedIcaos: icao24List.length,
-          },
-        },
+    const response = await fetch(`${endpoint}?${params}`, {
+      headers: {
+        ...authHeaders,
+        Accept: 'application/json',
       },
+      signal: controller.signal,
     });
 
-    return res.status(200).json({
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      throw new Error(
+        `OpenSky API error: ${response.status} ${response.statusText}`
+      );
+    }
+
+    // Parse the response
+    const data = await response.json();
+
+    // Extract and format aircraft states
+    let states = [];
+    if (data?.states && Array.isArray(data.states)) {
+      states = data.states
+        .filter(
+          (state: any[]) =>
+            Array.isArray(state) && state.length >= 8 && state[5] && state[6]
+        )
+        .map((state: any[]) => {
+          // OpenSky API returns an array with specific indexes
+          const [
+            icao24,
+            callsign,
+            origin_country,
+            time_position,
+            last_contact,
+            longitude,
+            latitude,
+            altitude,
+            on_ground,
+            velocity,
+            heading,
+            vertical_rate,
+            // ... other fields
+          ] = state;
+
+          return {
+            icao24: icao24?.toLowerCase(),
+            callsign: callsign?.trim(),
+            origin_country,
+            last_contact,
+            longitude,
+            latitude,
+            altitude: altitude || 0,
+            on_ground: !!on_ground,
+            velocity: velocity || 0,
+            heading: heading || 0,
+            vertical_rate: vertical_rate || 0,
+          };
+        });
+    }
+
+    // Prepare response
+    const responseData = {
       success: true,
       data: {
         states,
-        timestamp: responseData.time || Date.now(),
+        timestamp: data.time || Date.now(),
         meta: {
           total: states.length,
-          requestedIcaos: icao24List.length,
+          requested: validIcaos.length,
         },
       },
+    };
+
+    // Cache the response
+    responseCache.set(requestKey, {
+      timestamp: Date.now(),
+      data: responseData,
     });
+
+    console.log(`[OpenSky Proxy] Returning ${states.length} aircraft states`);
+    return res.status(200).json(responseData);
   } catch (error) {
-    rateLimiter.recordFailure();
     console.error('[OpenSky Proxy] Error:', error);
 
-    return res.status(503).json({
-      success: false,
-      error:
-        error instanceof Error
-          ? error.message
-          : 'Failed to fetch data from OpenSky',
-      errorType: ErrorType.OPENSKY_SERVICE,
-      retryAfter: Math.ceil(rateLimiter.getTimeUntilNextSlot() / 1000),
-    });
+    return res
+      .status(
+        error instanceof Error && error.name === 'AbortError'
+          ? 408 // Request Timeout
+          : 503 // Service Unavailable
+      )
+      .json({
+        success: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : 'Failed to fetch data from OpenSky',
+        retryAfter: 60,
+      });
+  }
+}
+
+/**
+ * Check and reset rate limit counters if needed
+ */
+function checkAndResetRateLimits() {
+  const now = Date.now();
+
+  // Reset minute counter after 60 seconds
+  if (now - lastMinuteReset > 60000) {
+    requestsThisMinute = 0;
+    lastMinuteReset = now;
+    console.log('[OpenSky Proxy] Reset minute rate limit counter');
+  }
+
+  // Reset daily counter after 24 hours
+  if (now - lastDayReset > 86400000) {
+    requestsToday = 0;
+    lastDayReset = now;
+    console.log('[OpenSky Proxy] Reset daily rate limit counter');
   }
 }
