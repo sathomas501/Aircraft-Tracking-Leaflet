@@ -1,0 +1,356 @@
+/* === Tailwind Base === */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* == Aircraft Customization ===*/
+@import './aircraftMapElements.css';
+@import './dropdown-styles.css';
+
+/* === Base Layer === */
+@layer base {
+  html,
+  body {
+    @apply antialiased bg-gray-50 text-gray-900;
+  }
+
+  *:focus {
+    @apply outline-none ring-2 ring-blue-500 ring-offset-2;
+  }
+}
+
+/* === Global Animations === */
+@keyframes rotate {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes pulse {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.1);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes dashdraw {
+  0% {
+    stroke-dashoffset: 10;
+  }
+  100% {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+/* === Component Layer === */
+@layer components {
+  /* --- Layout & Containers --- */
+  .app-container {
+    @apply opacity-0 transition-opacity duration-200 min-h-screen;
+    &.styles-loaded {
+      @apply opacity-100;
+    }
+  }
+
+  .grid-container {
+    @apply grid gap-4 p-4;
+    &.aircraft-grid {
+      @apply grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4;
+    }
+  }
+
+  /* --- Cards & Displays --- */
+  .card {
+    @apply bg-white rounded-lg shadow transition-shadow duration-200 hover:shadow-md;
+    &.aircraft-card {
+      @apply p-4 min-w-[200px] space-y-2;
+    }
+  }
+
+  /* --- Status Indicators --- */
+  .status-badge {
+    @apply px-2 py-1 rounded-full text-xs font-medium inline-flex items-center gap-1;
+    &.active {
+      @apply bg-green-100 text-green-800;
+    }
+    &.grounded {
+      @apply bg-yellow-100 text-yellow-800;
+    }
+    &.tracking {
+      @apply bg-blue-100 text-blue-800;
+    }
+  }
+
+  /* --- Map Containers --- */
+  .map-container {
+    @apply relative w-full h-[calc(100vh-4rem)] rounded-lg shadow-md;
+  }
+
+  .map-fullscreen-container {
+    @apply flex flex-col w-full overflow-hidden relative;
+    height: calc(100vh - 50px); /* Adjust based on your header height */
+  }
+
+  .map-fixed-container {
+    @apply relative w-full h-full;
+    isolation: isolate; /* Creates a new stacking context */
+  }
+
+  .map-root-container {
+    @apply relative w-full flex flex-col overflow-hidden;
+    height: calc(100vh - 50px); /* Adjust based on your header height */
+  }
+
+  /* --- Map UI Controls --- */
+  .map-ui-controls {
+    @apply absolute z-[1000];
+  }
+
+  .map-status-indicator {
+    @apply absolute bottom-4 right-4 bg-white rounded-md p-3 shadow-md z-[1000] max-w-sm text-sm;
+  }
+
+  .map-controls {
+    @apply z-[1000];
+  }
+
+  .reset-button {
+    @apply absolute top-10 left-10 z-[1000] bg-white border-none rounded p-2 font-medium shadow-md cursor-pointer;
+
+    &:hover {
+      @apply bg-gray-100;
+    }
+  }
+
+  /* --- Aircraft Information UI --- */
+
+  /* Info Panel */
+  .aircraft-info-panel {
+    @apply absolute top-4 right-4 bg-white rounded-lg shadow-xl p-4 z-[1000]
+           overflow-y-auto;
+    min-width: 300px;
+    max-width: 350px;
+    max-height: 85vh;
+    transition: all 0.3s ease-in-out;
+    animation: slideIn 0.3s ease-out;
+
+    .panel-header {
+      @apply flex justify-between items-start mb-3;
+    }
+
+    .panel-title {
+      @apply text-xl font-bold;
+    }
+
+    .close-button {
+      @apply p-1 hover:bg-gray-100 rounded-full transition-colors duration-150;
+    }
+
+    .aircraft-type {
+      @apply text-sm text-gray-700 mb-3;
+      transition: font-size 0.2s ease;
+    }
+
+    .stats-grid {
+      @apply grid grid-cols-2 gap-3 mb-4;
+    }
+
+    .stat-card {
+      @apply bg-gray-50 p-2 rounded;
+    }
+
+    .stat-label {
+      @apply text-xs text-gray-500;
+    }
+
+    .stat-value {
+      @apply font-medium;
+      transition: font-size 0.2s ease;
+    }
+
+    .details-section {
+      @apply border-t border-gray-200 pt-3;
+    }
+
+    .details-title {
+      @apply font-medium mb-2;
+    }
+
+    .details-table {
+      @apply w-full text-sm;
+    }
+
+    .details-table td:first-child {
+      @apply py-1 text-gray-500 w-1/3;
+    }
+
+    .position-text {
+      @apply mt-2 text-xs text-gray-500;
+    }
+  }
+
+  .aircraft-info-portal {
+    @apply fixed top-0 left-0 w-0 h-0 z-[9999];
+  }
+
+  .info-panel-backdrop {
+    @apply fixed inset-0 bg-black bg-opacity-20 flex items-start justify-end z-50;
+    animation: fadeIn 0.2s ease-in-out;
+  }
+
+  .info-panel {
+    @apply m-4 bg-white rounded-lg shadow-xl max-w-md overflow-auto;
+    max-height: calc(100vh - 32px);
+    animation: slideIn 0.3s ease-out;
+  }
+
+  /* --- Selector Components --- */
+  .unified-selector {
+    @apply relative z-[1000];
+
+    .selector-input {
+      @apply w-full px-4 py-2 border rounded-lg transition-colors duration-200;
+      @apply focus:border-blue-500 focus:ring-2 focus:ring-blue-200;
+    }
+
+    .selector-dropdown {
+      @apply absolute w-full mt-1 bg-white border rounded-lg shadow-lg;
+      @apply max-h-60 overflow-y-auto z-50;
+    }
+  }
+
+  /* --- Loading States --- */
+  .loading-spinner {
+    @apply animate-spin rounded-full border-4 border-gray-300;
+    border-top-color: theme('colors.blue.500');
+  }
+
+  .loading-overlay {
+    @apply absolute inset-0 bg-black bg-opacity-50;
+    @apply flex items-center justify-center z-40;
+  }
+}
+
+/* === Utility Layer === */
+@layer utilities {
+  .text-shadow-sm {
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+  }
+
+  .backdrop-blur-md {
+    backdrop-filter: blur(8px);
+  }
+}
+
+/* === Leaflet Overrides (Outside layers) === */
+
+/* Z-index overrides for Leaflet panes */
+.leaflet-map-pane {
+  z-index: 100 !important;
+}
+.leaflet-tile-pane {
+  z-index: 200 !important;
+}
+.leaflet-overlay-pane {
+  z-index: 300 !important;
+}
+.leaflet-shadow-pane {
+  z-index: 400 !important;
+}
+.leaflet-marker-pane {
+  z-index: 500 !important;
+}
+.leaflet-tooltip-pane {
+  z-index: 600 !important;
+}
+.leaflet-popup-pane {
+  z-index: 700 !important;
+}
+.leaflet-top,
+.leaflet-bottom {
+  z-index: 800 !important;
+}
+
+/* Styling for Leaflet controls */
+.leaflet-control-layers,
+.leaflet-control-zoom {
+  @apply shadow-md rounded-md border-0 !important;
+}
+
+.leaflet-control-layers-toggle,
+.leaflet-control-zoom a {
+  @apply bg-white !important;
+}
+
+/* === Responsive adjustments === */
+@media (max-width: 640px) {
+  .aircraft-info-panel {
+    @apply bottom-4 left-4 right-4 top-auto max-w-full;
+    max-height: 60vh;
+  }
+
+  .aircraft-info-panel .stats-grid {
+    @apply grid-cols-2 gap-2;
+  }
+}
+
+/* Larger screens */
+@media (min-width: 1280px) {
+  .aircraft-info-panel {
+    max-width: 400px;
+  }
+}
+
+/*
+ * CURSOR FIXES
+ * These need to be outside of Tailwind layers to override Leaflet's default styles
+ */
+.leaflet-container,
+.leaflet-grab,
+.leaflet-interactive {
+  /* Use crosshair - clean professional cursor for map applications */
+  cursor: crosshair !important;
+}
+
+.leaflet-dragging .leaflet-grab,
+.leaflet-dragging .leaflet-interactive,
+.leaflet-container:active {
+  /* Use move cursor when actively dragging */
+  cursor: move !important;
+}
+
+/* Keep pointer for controls and buttons */
+.leaflet-control-zoom a,
+.leaflet-control-layers-toggle,
+.leaflet-popup-close-button,
+.leaflet-container .leaflet-control-attribution {
+  cursor: pointer !important;
+}
