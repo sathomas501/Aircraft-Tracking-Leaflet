@@ -2,7 +2,6 @@
 import React, { useState, useEffect } from 'react';
 
 const OwnershipTypeFilter = ({ onFilterChange, activeFilters = [] }) => {
-  const [isVisible, setIsVisible] = useState(true);
   // Use all owner types as default if no active filters provided
   const [selectedFilters, setSelectedFilters] = useState(activeFilters);
 
@@ -11,9 +10,6 @@ const OwnershipTypeFilter = ({ onFilterChange, activeFilters = [] }) => {
     // If activeFilters is empty and it's the initial render, select all by default
     if (activeFilters.length > 0) {
       setSelectedFilters(activeFilters);
-    } else {
-      // This else clause no longer needed since we're initializing with all active filters
-      // in the EnhancedReactBaseMap component
     }
   }, [activeFilters]);
 
@@ -141,10 +137,6 @@ const OwnershipTypeFilter = ({ onFilterChange, activeFilters = [] }) => {
     },
   ];
 
-  const toggleVisibility = () => {
-    setIsVisible(!isVisible);
-  };
-
   const handleFilterToggle = (typeId) => {
     let newFilters;
 
@@ -157,202 +149,55 @@ const OwnershipTypeFilter = ({ onFilterChange, activeFilters = [] }) => {
     }
 
     setSelectedFilters(newFilters);
-  };
-
-  const handleSelectAll = () => {
-    const allTypeIds = ownerTypes.map((type) => type.id);
-    setSelectedFilters(allTypeIds);
-  };
-
-  const handleClearAll = () => {
-    setSelectedFilters([]);
-    // Optional: immediately apply empty filter to show all aircraft
-    // onFilterChange([]);
-  };
-
-  const applyFilters = () => {
-    onFilterChange(selectedFilters);
+    onFilterChange(newFilters); // Apply filter changes immediately
   };
 
   return (
-    <div
-      className="ownership-filter-container"
-      style={{
-        position: 'absolute',
-        bottom: '100px',
-        right: '20px',
-        backgroundColor: 'white',
-        border: '1px solid #ddd',
-        borderRadius: '4px',
-        boxShadow: '0 2px 6px rgba(0, 0, 0, 0.15)',
-        zIndex: 1000,
-        maxWidth: '250px',
-        overflow: 'hidden',
-        height: isVisible ? 'auto' : '36px',
-        transition: 'all 0.3s ease',
-      }}
-    >
-      <div
-        className="filter-header"
-        style={{
-          padding: '8px 12px',
-          backgroundColor: '#4f46e5',
-          borderBottom: isVisible ? '1px solid #4338ca' : 'none',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          cursor: 'pointer',
-          color: 'white',
-        }}
-        onClick={toggleVisibility}
-      >
-        <h3 style={{ margin: 0, fontSize: '14px', fontWeight: '600' }}>
-          Filter by Owner Type
-        </h3>
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            toggleVisibility();
-          }}
+    <div className="filter-content" style={{ width: '100%' }}>
+      {ownerTypes.map((type) => (
+        <div
+          key={type.id}
+          className="filter-item"
           style={{
-            background: 'none',
-            border: 'none',
-            fontSize: '18px',
-            cursor: 'pointer',
-            padding: '0 4px',
-            color: 'white',
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'center',
+            padding: '4px 8px',
+            fontSize: '13px',
+            cursor: 'pointer',
+            backgroundColor: selectedFilters.includes(type.id)
+              ? '#f1f5ff'
+              : 'transparent',
+            borderRadius: '3px',
+            margin: '2px 0',
           }}
-          title={isVisible ? 'Minimize' : 'Expand'}
+          onClick={() => handleFilterToggle(type.id)}
         >
-          {isVisible ? '▼' : '▲'}
-        </button>
-      </div>
-
-      {isVisible && (
-        <>
+          <input
+            type="checkbox"
+            checked={selectedFilters.includes(type.id)}
+            onChange={() => {}} // Handled by div click
+            style={{ marginRight: '8px' }}
+          />
           <div
-            className="filter-actions"
             style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              padding: '8px 12px',
-              borderBottom: '1px solid #eee',
+              width: '14px',
+              height: '14px',
+              backgroundColor: type.color,
+              borderRadius: '3px',
+              marginRight: '8px',
+              flexShrink: 0,
             }}
-          >
-            <button
-              onClick={handleSelectAll}
-              style={{
-                fontSize: '12px',
-                padding: '2px 6px',
-                backgroundColor: '#f0f0f0',
-                border: '1px solid #ddd',
-                borderRadius: '3px',
-                cursor: 'pointer',
-              }}
-            >
-              Select All
-            </button>
-            <button
-              onClick={handleClearAll}
-              style={{
-                fontSize: '12px',
-                padding: '2px 6px',
-                backgroundColor: '#f0f0f0',
-                border: '1px solid #ddd',
-                borderRadius: '3px',
-                cursor: 'pointer',
-              }}
-            >
-              Clear All
-            </button>
-          </div>
-
-          <div
-            className="filter-content"
-            style={{
-              padding: '8px 0',
-              maxHeight: '400px',
-              overflowY: 'auto',
-            }}
-            onWheel={(e) => e.stopPropagation()}
-          >
-            {ownerTypes.map((type) => (
-              <div
-                key={type.id}
-                className="filter-item"
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  padding: '4px 12px',
-                  fontSize: '13px',
-                  cursor: 'pointer',
-                  backgroundColor: selectedFilters.includes(type.id)
-                    ? '#f1f5ff'
-                    : 'transparent',
-                }}
-                onClick={() => handleFilterToggle(type.id)}
-              >
-                <input
-                  type="checkbox"
-                  checked={selectedFilters.includes(type.id)}
-                  onChange={() => {}} // Handled by div click
-                  style={{ marginRight: '8px' }}
-                />
-                <div
-                  style={{
-                    width: '16px',
-                    height: '16px',
-                    backgroundColor: type.color,
-                    borderRadius: '3px',
-                    marginRight: '8px',
-                    flexShrink: 0,
-                  }}
-                ></div>
-                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                  <span style={{ fontWeight: '500' }}>{type.name}</span>
-                  <span style={{ fontSize: '11px', color: '#666' }}>
-                    {type.description}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <div
-            className="filter-footer"
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              padding: '8px 12px',
-              borderTop: '1px solid #eee',
-            }}
-          >
-            <span style={{ fontSize: '12px', color: '#666' }}>
-              {selectedFilters.length} selected
+          ></div>
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <span style={{ fontWeight: '500', fontSize: '12px' }}>
+              {type.name}
             </span>
-            {selectedFilters.length > 0 && (
-              <button
-                onClick={applyFilters}
-                style={{
-                  fontSize: '12px',
-                  padding: '3px 8px',
-                  backgroundColor: '#4f46e5',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '3px',
-                  cursor: 'pointer',
-                }}
-              >
-                Apply Filters
-              </button>
-            )}
+            <span style={{ fontSize: '10px', color: '#666' }}>
+              {type.description}
+            </span>
           </div>
-        </>
-      )}
+        </div>
+      ))}
     </div>
   );
 };

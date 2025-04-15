@@ -650,9 +650,9 @@ const UnifiedAircraftSelector: React.FC<UnifiedAircraftSelectorProps> = ({
             !isNaN(plane.latitude) &&
             !isNaN(plane.longitude)
         );
-        
+
         // Apply owner type filter
-        let filteredByOwner = 
+        let filteredByOwner =
           ownerFilters.length === 0
             ? aircraftWithValidCoords
             : aircraftWithValidCoords.filter((aircraft) =>
@@ -857,7 +857,7 @@ const UnifiedAircraftSelector: React.FC<UnifiedAircraftSelectorProps> = ({
     .sort((a, b) => b.count - a.count)
     .slice(0, 8);
 
- return (
+  return (
     <div
       ref={containerRef}
       style={{
@@ -969,19 +969,20 @@ const UnifiedAircraftSelector: React.FC<UnifiedAircraftSelectorProps> = ({
                   </button>
                 </div>
               </div>
-              
+
               <div className="max-h-52 overflow-y-auto pr-1">
                 <OwnershipTypeFilter
                   onFilterChange={handleOwnerFilterChange}
                   activeFilters={ownerFilters}
                 />
               </div>
-              
+
               {/* Count of selected filters */}
               <div className="mt-2 text-xs text-gray-500">
-                {ownerFilters.length} of {allOwnerTypes.length} owner types selected
+                {ownerFilters.length} of {allOwnerTypes.length} owner types
+                selected
               </div>
-              
+
               {/* Apply button for owner filters */}
               <button
                 onClick={() => toggleFilterMode('owner')}
@@ -997,18 +998,454 @@ const UnifiedAircraftSelector: React.FC<UnifiedAircraftSelectorProps> = ({
               <div
                 className={`mb-4 ${filterMode === 'both' ? 'pb-3 border-b border-gray-200' : ''}`}
               >
-                {/* Manufacturer section content */}
-                {/* ... */}
-                {/* Keep all the manufacturer dropdown UI here */}
+                <div className="mb-2 flex justify-between items-center">
+                  <label className="text-sm font-medium text-gray-700">
+                    Manufacturer
+                  </label>
+                  {selectedManufacturer && (
+                    <button
+                      onClick={() => selectManufacturer(null)}
+                      className="text-xs text-indigo-600 hover:text-indigo-800"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+
+                {/* Manufacturer Dropdown */}
+                <div className="relative" ref={manufacturerMenuRef}>
+                  <button
+                    ref={dropdownButtonRef}
+                    className={`w-full flex items-center justify-between px-3 py-2 border ${
+                      isManufacturerMenuOpen
+                        ? 'border-indigo-500 ring-1 ring-indigo-300'
+                        : 'border-gray-300 hover:border-gray-400'
+                    } rounded-md bg-white transition-colors`}
+                    onClick={() =>
+                      setIsManufacturerMenuOpen(!isManufacturerMenuOpen)
+                    }
+                  >
+                    {selectedManufacturer ? (
+                      <span className="text-indigo-700 font-medium truncate">
+                        {manufacturers.find(
+                          (m) => m.value === selectedManufacturer
+                        )?.label || selectedManufacturer}
+                      </span>
+                    ) : (
+                      <span className="text-gray-500 truncate">
+                        Select manufacturer...
+                      </span>
+                    )}
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      className={`h-4 w-4 text-gray-500 transition-transform ${
+                        isManufacturerMenuOpen ? 'transform rotate-180' : ''
+                      }`}
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                    >
+                      <path
+                        fillRule="evenodd"
+                        d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
+                        clipRule="evenodd"
+                      />
+                    </svg>
+                  </button>
+
+                  {/* Manufacturer Dropdown Menu */}
+                  {isManufacturerMenuOpen && (
+                    <div
+                      className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-md shadow-lg"
+                      style={{ maxHeight: '300px', overflowY: 'auto' }}
+                    >
+                      <div className="sticky top-0 bg-white p-2 border-b">
+                        <input
+                          ref={searchInputRef}
+                          type="text"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                          placeholder="Search manufacturers..."
+                          value={manufacturerSearchTerm}
+                          onChange={(e) =>
+                            setManufacturerSearchTerm(e.target.value)
+                          }
+                        />
+                      </div>
+
+                      {filteredManufacturers.length === 0 ? (
+                        <div className="p-3 text-center text-gray-500">
+                          No results found
+                        </div>
+                      ) : (
+                        filteredManufacturers.map((manufacturer) => (
+                          <div
+                            key={manufacturer.value}
+                            className={`px-3 py-2 hover:bg-indigo-50 cursor-pointer ${
+                              selectedManufacturer === manufacturer.value
+                                ? 'bg-indigo-50 font-medium text-indigo-700'
+                                : 'text-gray-700'
+                            }`}
+                            onClick={() =>
+                              selectManufacturerAndClose(manufacturer.value)
+                            }
+                          >
+                            {manufacturer.label}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Model Selection - Only show if manufacturer selected */}
+                {selectedManufacturer && (
+                  <div className="mt-3">
+                    <div className="mb-2 flex justify-between items-center">
+                      <label className="text-sm font-medium text-gray-700">
+                        Model
+                      </label>
+                      {selectedModel && (
+                        <button
+                          onClick={() => selectModel(null)}
+                          className="text-xs text-indigo-600 hover:text-indigo-800"
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Model Dropdown */}
+                    <div className="relative" ref={modelMenuRef}>
+                      <button
+                        className={`w-full flex items-center justify-between px-3 py-2 border ${
+                          isModelMenuOpen
+                            ? 'border-indigo-500 ring-1 ring-indigo-300'
+                            : 'border-gray-300 hover:border-gray-400'
+                        } rounded-md bg-white transition-colors`}
+                        onClick={() => setIsModelMenuOpen(!isModelMenuOpen)}
+                      >
+                        <span className="text-gray-700 truncate">
+                          {selectedModel || `All Models (${totalActive})`}
+                        </span>
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          className={`h-4 w-4 text-gray-500 transition-transform ${
+                            isModelMenuOpen ? 'transform rotate-180' : ''
+                          }`}
+                          viewBox="0 0 20 20"
+                          fill="currentColor"
+                        >
+                          <path
+                            fillRule="evenodd"
+                            d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
+                            clipRule="evenodd"
+                          />
+                        </svg>
+                      </button>
+
+                      {/* Model Menu */}
+                      {isModelMenuOpen && (
+                        <div
+                          className="absolute z-20 mt-1 w-full bg-white shadow-lg rounded-md border border-gray-200 overflow-y-auto"
+                          style={{ maxHeight: '300px' }}
+                        >
+                          <div className="sticky top-0 bg-white border-b z-10">
+                            <div
+                              className="px-3 py-2 hover:bg-indigo-50 cursor-pointer font-medium"
+                              onClick={() => handleModelSelect('')}
+                            >
+                              All Models ({totalActive})
+                            </div>
+                          </div>
+
+                          {Object.entries(groupedModels)
+                            .sort(([a], [b]) => a.localeCompare(b))
+                            .map(([letter, models]) => (
+                              <div key={letter}>
+                                <div className="px-3 py-1 text-xs text-gray-500 bg-gray-50 sticky top-10 z-10">
+                                  {letter}
+                                </div>
+                                {models
+                                  .sort((a, b) =>
+                                    a.MODEL.localeCompare(b.MODEL)
+                                  )
+                                  .map((model) => (
+                                    <div
+                                      key={model.MODEL}
+                                      className={`px-3 py-2 hover:bg-indigo-50 cursor-pointer flex justify-between ${
+                                        selectedModel === model.MODEL
+                                          ? 'bg-indigo-50 font-medium text-indigo-700'
+                                          : 'text-gray-700'
+                                      }`}
+                                      onClick={() =>
+                                        handleModelSelect(model.MODEL)
+                                      }
+                                    >
+                                      <span>{model.MODEL}</span>
+                                      <span className="text-gray-500 text-sm">
+                                        {model.count}
+                                      </span>
+                                    </div>
+                                  ))}
+                              </div>
+                            ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Quick model selection */}
+                {selectedManufacturer && modelsByPopularity.length > 0 && (
+                  <div className="mt-3">
+                    <div className="text-xs text-gray-500 mb-1">
+                      Popular models:
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      {modelsByPopularity.map((model) => (
+                        <div
+                          key={model.MODEL}
+                          className={`px-2 py-1 rounded-full text-xs cursor-pointer ${
+                            selectedModel === model.MODEL
+                              ? 'bg-indigo-100 text-indigo-800 border border-indigo-300'
+                              : 'bg-gray-100 text-gray-700 border border-gray-200 hover:bg-gray-200'
+                          }`}
+                          onClick={() => selectModel(model.MODEL)}
+                        >
+                          {model.MODEL} ({model.count})
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
             {/* Geofence Filter Section */}
             {(filterMode === 'geofence' || filterMode === 'both') && (
               <div className="mb-4">
-                {/* Geofence section content */}
-                {/* ... */}
-                {/* Keep all the geofence UI here */}
+                <div className="mb-2 flex justify-between items-center">
+                  <label className="text-sm font-medium text-gray-700">
+                    Location Search
+                  </label>
+                  {isGeofenceActive && (
+                    <button
+                      onClick={() => {
+                        setGeofenceLocation('');
+                        setGeofenceCoordinates(null);
+                        setGeofenceAircraft([]);
+                        setIsGeofenceActive(false);
+                        clearGeofenceData?.();
+                      }}
+                      className="text-xs text-indigo-600 hover:text-indigo-800"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex flex-col space-y-2">
+                  <div className="flex space-x-2">
+                    <input
+                      type="text"
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded-md"
+                      placeholder="ZIP code or coordinates..."
+                      value={geofenceLocation}
+                      onChange={(e) => setGeofenceLocation(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (
+                          e.key === 'Enter' &&
+                          !combinedLoading &&
+                          geofenceLocation
+                        ) {
+                          processGeofenceSearch();
+                        }
+                      }}
+                    />
+                    <button
+                      className={`px-3 py-2 rounded-md text-white ${
+                        combinedLoading ||
+                        (!geofenceLocation && !isGettingLocation)
+                          ? 'bg-gray-400 cursor-not-allowed'
+                          : 'bg-indigo-600 hover:bg-indigo-700'
+                      }`}
+                      onClick={processGeofenceSearch}
+                      disabled={
+                        combinedLoading ||
+                        (!geofenceLocation && !isGettingLocation)
+                      }
+                    >
+                      {combinedLoading ? (
+                        <svg
+                          className="animate-spin h-5 w-5"
+                          viewBox="0 0 24 24"
+                        >
+                          <circle
+                            className="opacity-25"
+                            cx="12"
+                            cy="12"
+                            r="10"
+                            stroke="currentColor"
+                            strokeWidth="4"
+                          ></circle>
+                          <path
+                            className="opacity-75"
+                            fill="currentColor"
+                            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                          ></path>
+                        </svg>
+                      ) : (
+                        'Search'
+                      )}
+                    </button>
+                  </div>
+
+                  <button
+                    className={`flex items-center justify-center px-3 py-2 border border-indigo-300 rounded-md text-indigo-700 bg-indigo-50 hover:bg-indigo-100 transition-colors ${
+                      isGettingLocation ? 'opacity-75 cursor-not-allowed' : ''
+                    }`}
+                    onClick={getUserLocation}
+                    disabled={isGettingLocation || combinedLoading}
+                  >
+                    {isGettingLocation ? (
+                      <>
+                        <svg
+                          className="animate-spin h-4 w-4 mr-2"
+                          viewBox="0 0 24 24"
+                        >
+                          <circle
+                            className="opacity-25"
+                            cx="12"
+                            cy="12"
+                            r="10"
+                            stroke="currentColor"
+                            strokeWidth="4"
+                          ></circle>
+                          <path
+                            className="opacity-75"
+                            fill="currentColor"
+                            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                          ></path>
+                        </svg>
+                        Getting location...
+                      </>
+                    ) : (
+                      <>
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          className="h-4 w-4 mr-2"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"
+                          />
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"
+                          />
+                        </svg>
+                        Use My Current Location
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                <div className="mt-3">
+                  <label className="text-sm font-medium text-gray-700 block mb-1">
+                    Radius: {geofenceRadius} km
+                  </label>
+                  <input
+                    type="range"
+                    min="5"
+                    max="100"
+                    step="5"
+                    value={geofenceRadius}
+                    onChange={(e) =>
+                      setGeofenceRadius(parseInt(e.target.value))
+                    }
+                    className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                  />
+                  <div className="flex justify-between text-xs text-gray-500 mt-1">
+                    <span>5 km</span>
+                    <span>50 km</span>
+                    <span>100 km</span>
+                  </div>
+                </div>
+
+                {isGeofenceActive && geofenceCoordinates && (
+                  <div className="mt-2 bg-gray-50 p-2 rounded-md text-xs text-gray-600">
+                    <div className="font-medium text-indigo-700 mb-1">
+                      {geofenceAircraft.length} aircraft found
+                    </div>
+                    <div>Location: {geofenceLocation}</div>
+                    <div>
+                      Coordinates: {geofenceCoordinates.lat.toFixed(4)},{' '}
+                      {geofenceCoordinates.lng.toFixed(4)}
+                    </div>
+                    <div>Radius: {geofenceRadius} km</div>
+                    {geofenceAircraft.length > 0 && (
+                      <div className="mt-1 max-h-16 overflow-y-auto">
+                        <div className="text-xs font-medium text-gray-700">
+                          Nearest aircraft:
+                        </div>
+                        {geofenceAircraft
+                          .sort((a, b) => {
+                            // Sort by closest distance if latitude/longitude available
+                            if (
+                              typeof a.latitude === 'number' &&
+                              typeof a.longitude === 'number' &&
+                              typeof b.latitude === 'number' &&
+                              typeof b.longitude === 'number' &&
+                              geofenceCoordinates
+                            ) {
+                              const distA = calculateDistance(
+                                geofenceCoordinates.lat,
+                                geofenceCoordinates.lng,
+                                a.latitude,
+                                a.longitude
+                              );
+                              const distB = calculateDistance(
+                                geofenceCoordinates.lat,
+                                geofenceCoordinates.lng,
+                                b.latitude,
+                                b.longitude
+                              );
+                              return distA - distB;
+                            }
+                            return 0;
+                          })
+                          .slice(0, 3)
+                          .map((aircraft) => (
+                            <div
+                              key={aircraft.ICAO24}
+                              className="text-xs mt-0.5"
+                            >
+                              {aircraft.ICAO24} •{' '}
+                              {aircraft.MODEL ||
+                                aircraft.TYPE_AIRCRAFT ||
+                                'Unknown'}{' '}
+                              •
+                              {typeof aircraft.latitude === 'number' &&
+                              typeof aircraft.longitude === 'number'
+                                ? ` ${calculateDistance(
+                                    geofenceCoordinates.lat,
+                                    geofenceCoordinates.lng,
+                                    aircraft.latitude,
+                                    aircraft.longitude
+                                  ).toFixed(1)} km away`
+                                : ' Distance unknown'}
+                            </div>
+                          ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
@@ -1039,7 +1476,9 @@ const UnifiedAircraftSelector: React.FC<UnifiedAircraftSelectorProps> = ({
                       {activeModels.length} models
                     </span>
                   ) : filterMode === 'owner' && displayedAircraft ? (
-                    <span>Tracking {displayedAircraft.length} aircraft by owner type</span>
+                    <span>
+                      Tracking {displayedAircraft.length} aircraft by owner type
+                    </span>
                   ) : (
                     <span>No aircraft selected</span>
                   )}
@@ -1085,9 +1524,9 @@ const UnifiedAircraftSelector: React.FC<UnifiedAircraftSelectorProps> = ({
                 Aircraft count:{' '}
                 {filterMode === 'geofence' || filterMode === 'both'
                   ? geofenceAircraft.length
-                  : filterMode === 'owner' 
-                  ? displayedAircraft?.length || 0
-                  : totalActive}
+                  : filterMode === 'owner'
+                    ? displayedAircraft?.length || 0
+                    : totalActive}
               </div>
             </div>
 
@@ -1107,8 +1546,10 @@ const UnifiedAircraftSelector: React.FC<UnifiedAircraftSelectorProps> = ({
                     : 'bg-indigo-600 hover:bg-indigo-700'
                 } text-white font-medium rounded-md`}
                 disabled={
-                  isRefreshing || 
-                  (filterMode !== 'owner' && !selectedManufacturer && !isGeofenceActive)
+                  isRefreshing ||
+                  (filterMode !== 'owner' &&
+                    !selectedManufacturer &&
+                    !isGeofenceActive)
                 }
               >
                 {isRefreshing ? (
@@ -1145,3 +1586,6 @@ const UnifiedAircraftSelector: React.FC<UnifiedAircraftSelectorProps> = ({
       )}
     </div>
   );
+};
+
+export default UnifiedAircraftSelector;
