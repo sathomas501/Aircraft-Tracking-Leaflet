@@ -6,6 +6,8 @@ import type { ExtendedAircraft } from '../../../types/base';
 import type { AircraftModel } from '../../../types/aircraft-models';
 import { adaptGeofenceAircraft } from '../../../lib/utils/geofenceAdapter';
 import {
+  postalCodeToCoordinates,
+  getAircraftNearPostalCode,
   getAircraftNearLocation,
   calculateDistance,
   searchLocationWithMapbox,
@@ -16,6 +18,7 @@ import { useGeolocation } from '../hooks/useGeolocation';
 import openSkyTrackingService from '@/lib/services/openSkyTrackingService';
 import OwnershipTypeFilter from '../map/components/OwnershipTypeFilter';
 import { MAP_CONFIG, getBoundsByRegion } from '../../../config/map';
+import GeofenceControl from '../map/GeofenceControl';
 
 interface UnifiedAircraftSelectorProps {
   manufacturers: SelectOption[];
@@ -33,12 +36,21 @@ const UnifiedAircraftSelector: React.FC<UnifiedAircraftSelectorProps> = ({
     totalActive,
     selectManufacturer,
     selectModel,
+    reset,
+    fullRefresh,
     refreshPositions,
     mapInstance,
+    updateAircraftData,
     clearGeofenceData,
     updateGeofenceAircraft,
+    blockManufacturerApiCalls,
+    setBlockManufacturerApiCalls,
+    isManufacturerApiBlocked,
+    setIsManufacturerApiBlocked,
+    geofenceCenter,
     setGeofenceCenter,
     toggleGeofence,
+    clearGeofence,
     displayedAircraft,
   } = useEnhancedMapContext();
 
@@ -71,9 +83,14 @@ const UnifiedAircraftSelector: React.FC<UnifiedAircraftSelectorProps> = ({
   const [geofenceEnabled, setGeofenceEnabled] = useState(false);
   const [activeRegion, setActiveRegion] = useState<string | null>(null);
   const [isGeofenceActive, setIsGeofenceActive] = useState(false);
+  const [combinedModeReady, setCombinedModeReady] = useState<boolean>(false);
+  const [regionOutline, setRegionOutline] = useState<any>(null);
   const [selectedRegion, setSelectedRegion] = useState<string>(
     MAP_CONFIG.REGIONS.GLOBAL
   );
+
+  // State for active tab
+  const [activeTab, setActiveTab] = useState('manufacturer');
 
   // Draggable state
   const [position, setPosition] = useState({ x: 20, y: 20 });
@@ -150,6 +167,11 @@ const UnifiedAircraftSelector: React.FC<UnifiedAircraftSelectorProps> = ({
     return ownerTypeToString(ownerType);
   };
 
+  // Function to pass to GeofenceControl
+  const handleTabChange = (tabName: string): void => {
+    setActiveTab(tabName);
+  };
+
   // Helper function to convert numeric owner types to strings
   const ownerTypeToString = (type: number | string): string => {
     const typeNum = typeof type === 'string' ? parseInt(type, 10) : type;
@@ -187,6 +209,9 @@ const UnifiedAircraftSelector: React.FC<UnifiedAircraftSelectorProps> = ({
     if (mapInstance) {
       const bounds = getBoundsByRegion(region);
       mapInstance.fitBounds(bounds as any);
+
+      // Draw the region outline
+      drawRegionOutline(region);
     }
 
     // Apply regional bounds to the current active filter
@@ -196,6 +221,50 @@ const UnifiedAircraftSelector: React.FC<UnifiedAircraftSelectorProps> = ({
     if (displayedAircraft && displayedAircraft.length > 0) {
       filterAircraftByRegion(region);
     }
+  };
+
+  // 3. Create function to draw the region outline
+  const drawRegionOutline = (region: string) => {
+    if (!mapInstance) return;
+
+    // Clear any existing outline
+    if (regionOutline) {
+      regionOutline.remove();
+    }
+
+    // Get the bounds for the selected region
+    const bounds = getBoundsByRegion(region) as [
+      [number, number],
+      [number, number],
+    ];
+    const [[southWest_lat, southWest_lng], [northEast_lat, northEast_lng]] =
+      bounds;
+
+    // Create a polygon from the bounds
+    const L = require('leaflet');
+    const rectangle = L.rectangle(bounds, {
+      color: '#4f46e5', // Indigo color matching your UI
+      weight: 3,
+      opacity: 0.7,
+      fill: true,
+      fillColor: '#4f46e5',
+      fillOpacity: 0.1,
+      dashArray: '5, 10', // Optional: creates a dashed line
+      interactive: false, // Prevents the rectangle from capturing mouse events
+    });
+
+    // Add to map
+    rectangle.addTo(mapInstance);
+
+    // Store reference so we can remove it later
+    setRegionOutline(rectangle);
+
+    // Update the state to include both the rectangle and the label
+    setRegionOutline({
+      remove: () => {
+        rectangle.remove();
+      },
+    });
   };
 
   // Function to apply regional context to active filter
@@ -268,6 +337,34 @@ const UnifiedAircraftSelector: React.FC<UnifiedAircraftSelectorProps> = ({
     } finally {
       setLocalLoading(false);
     }
+  };
+
+  // 5. Make sure to clear the outline when component unmounts or when region is cleared
+  useEffect(() => {
+    return () => {
+      if (regionOutline) {
+        regionOutline.remove();
+      }
+    };
+  }, [regionOutline]);
+
+  // 6. Add a clear function to remove the region outline
+  const clearRegionFilter = () => {
+    setActiveRegion(null);
+
+    if (regionOutline) {
+      regionOutline.remove();
+      setRegionOutline(null);
+    }
+
+    // Reset map view to global if needed
+    if (mapInstance) {
+      const globalBounds = getBoundsByRegion(MAP_CONFIG.REGIONS.GLOBAL);
+      mapInstance.fitBounds(globalBounds as any);
+    }
+
+    // Clear any region-based filtering
+    // (Depending on your app structure, you might need to refresh data or clear filters)
   };
 
   // Filter manufacturers by search term
@@ -1021,7 +1118,10 @@ const UnifiedAircraftSelector: React.FC<UnifiedAircraftSelectorProps> = ({
             Select All
           </button>
           <button
-            onClick={() => setOwnerFilters([])}
+            onClick={() => {
+              setOwnerFilters([]);
+              clearRegionFilter(); // Call your existing region clearing function
+            }}
             className="text-xs text-indigo-600 hover:text-indigo-800"
           >
             Clear All
@@ -1340,52 +1440,35 @@ const UnifiedAircraftSelector: React.FC<UnifiedAircraftSelectorProps> = ({
         <label className="text-sm font-medium text-gray-700">
           Location Search
         </label>
-        <div className="flex items-center space-x-2">
-          {isGeofenceActive && (
-            <button
-              onClick={() => {
-                setGeofenceLocation('');
-                setGeofenceCoordinates(null);
-                setGeofenceAircraft([]);
-                setIsGeofenceActive(false);
-                clearGeofenceData?.();
-              }}
-              className="text-xs text-indigo-600 hover:text-indigo-800"
-            >
-              Clear
-            </button>
-          )}
-          {/* Geofence toggle switch */}
-          <div
-            className="relative inline-flex items-center cursor-pointer"
-            onClick={() => {
-              if (isGeofenceActive) {
-                // Clear geofence
-                clearGeofenceData?.();
-                setIsGeofenceActive(false);
-              } else if (geofenceCoordinates) {
-                // Reactivate existing geofence
-                toggleGeofence();
-                setIsGeofenceActive(true);
-                // Restore aircraft data if available
-                if (geofenceAircraft.length > 0) {
-                  updateGeofenceAircraft(geofenceAircraft);
-                }
+
+        {/* Geofence toggle button - simplified version */}
+        <button
+          onClick={() => {
+            if (isGeofenceActive) {
+              // Clear geofence
+              clearGeofenceData?.();
+              setIsGeofenceActive(false);
+            } else if (geofenceCoordinates) {
+              // Reactivate existing geofence
+              toggleGeofence();
+              setIsGeofenceActive(true);
+              // Restore aircraft data if available
+              if (geofenceAircraft.length > 0) {
+                updateGeofenceAircraft(geofenceAircraft);
               }
-            }}
-          >
-            <span className="text-xs mr-2 text-gray-500">
-              {isGeofenceActive ? 'Active' : 'Inactive'}
-            </span>
-            <div
-              className={`w-9 h-5 rounded-full transition-colors ${isGeofenceActive ? 'bg-indigo-600' : 'bg-gray-300'}`}
-            >
-              <div
-                className={`transform transition-transform duration-200 h-4 w-4 rounded-full bg-white mt-0.5 ${isGeofenceActive ? 'translate-x-4 ml-0.5' : 'translate-x-0 ml-0.5'}`}
-              ></div>
-            </div>
-          </div>
-        </div>
+            } else {
+              // Just toggle if no other condition applies
+              toggleGeofence();
+            }
+          }}
+          className={`px-3 py-1 rounded-md text-sm ${
+            isGeofenceActive
+              ? 'bg-blue-500 text-white'
+              : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+          }`}
+        >
+          {isGeofenceActive ? 'Geofence Active' : 'Enable Geofence'}
+        </button>
       </div>
 
       <div className="flex flex-col space-y-2">
@@ -1508,6 +1591,25 @@ const UnifiedAircraftSelector: React.FC<UnifiedAircraftSelectorProps> = ({
           <span>100 km</span>
         </div>
       </div>
+
+      {/* Clear button shown when geofence is active */}
+      {isGeofenceActive && (
+        <div className="mt-3">
+          <button
+            onClick={() => {
+              clearGeofence();
+              setGeofenceLocation('');
+              setGeofenceCoordinates(null);
+              setGeofenceAircraft([]);
+              setIsGeofenceActive(false);
+              clearGeofenceData?.();
+            }}
+            className="w-full px-3 py-2 border border-red-200 text-red-600 rounded-md text-sm font-medium hover:bg-red-50"
+          >
+            Clear Geofence
+          </button>
+        </div>
+      )}
 
       {renderGeofenceInfo()}
     </div>
@@ -1712,10 +1814,46 @@ const UnifiedAircraftSelector: React.FC<UnifiedAircraftSelectorProps> = ({
   const renderActionButtons = () => (
     <div className="flex space-x-2 mt-4">
       <button
-        onClick={() => clearAllFilters()}
-        className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50"
+        onClick={() => {
+          // Clear owner filters
+          setOwnerFilters([]);
+
+          // Clear region state
+          setActiveRegion(null);
+
+          // Properly remove the region outline from the map
+          if (regionOutline) {
+            // Make sure we're calling the remove method properly
+            if (typeof regionOutline.remove === 'function') {
+              regionOutline.remove();
+            } else if (
+              regionOutline.rectangle &&
+              typeof regionOutline.rectangle.remove === 'function'
+            ) {
+              regionOutline.rectangle.remove();
+            }
+
+            // If we have separate references to the rectangle and label
+            if (
+              regionOutline.label &&
+              typeof regionOutline.label.remove === 'function'
+            ) {
+              regionOutline.label.remove();
+            }
+
+            // Reset the state
+            setRegionOutline(null);
+          }
+
+          // Reset map view if needed
+          if (mapInstance) {
+            const globalBounds = getBoundsByRegion(MAP_CONFIG.REGIONS.GLOBAL);
+            mapInstance.fitBounds(globalBounds as any);
+          }
+        }}
+        className="text-xs text-indigo-600 hover:text-indigo-800"
       >
-        Clear All Filters
+        Clear All
       </button>
       <button
         onClick={handleManualRefresh}

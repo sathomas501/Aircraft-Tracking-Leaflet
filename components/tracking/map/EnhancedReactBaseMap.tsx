@@ -382,18 +382,7 @@ const EnhancedReactBaseMap: React.FC<ReactBaseMapProps> = ({ onError }) => {
         {/* Geofence components */}
         <MapClickHandler />
         <GeofenceCircle />
-
-        {/* Ownership filter */}
-        <OwnershipTypeFilter
-          onFilterChange={handleOwnerFilterChange}
-          activeFilters={ownerFilters}
-        />
       </MapContainer>
-
-      {/* Geofence control */}
-      <div className="absolute top-16 right-5 z-50">
-        <GeofenceControl />
-      </div>
 
       {/* Geofence info display */}
       {isGeofenceActive && geofenceCenter && (
@@ -403,19 +392,6 @@ const EnhancedReactBaseMap: React.FC<ReactBaseMapProps> = ({ onError }) => {
           </span>
         </div>
       )}
-
-      {/* Aircraft status display */}
-      <div className="absolute bottom-5 left-5 z-50">
-        <EnhancedTooltip content="Current status" position="top">
-          <div className="bg-white p-2 rounded-md shadow-md">
-            <span className="text-sm font-medium">
-              {isRefreshing
-                ? 'Refreshing...'
-                : `${filteredAircraft.length} aircraft`}
-            </span>
-          </div>
-        </EnhancedTooltip>
-      </div>
 
       {/* Settings panel */}
       {panels.settings.isOpen && (

@@ -155,7 +155,7 @@ export class DatabaseManager {
    * Get manufacturers with aircraft count
    */
   public async getManufacturersWithCount(
-    limit: number = 50
+    limit: number = 75
   ): Promise<{ name: string; count: number }[]> {
     const cacheKey = `manufacturers-count-${limit}`;
 
@@ -176,22 +176,16 @@ export class DatabaseManager {
     );
   }
 
-  /**
-   * Get ICAO24 codes for a specific MANUFACTURER
-   * @param MANUFACTURER The MANUFACTURER name
-   * @returns Array of ICAO24 codes as strings
-   */
   public async getIcao24sForManufacturer(
     MANUFACTURER: string
   ): Promise<string[]> {
-    // Check if we need to initialize first
     if (!this.isInitialized) {
+      console.log('[DB] Not initialized, calling initialize()');
       await this.initialize();
     }
 
-    const cacheKey = `ICAO24s-${MANUFACTURER}`;
+    const cacheKey = `ICAO24s-${MANUFACTURER.toUpperCase()}`;
 
-    // Try to get from cache first
     const cachedData = this.getFromCache<string[]>(cacheKey);
     if (cachedData) {
       console.log(`[DB] Cache hit for: ${cacheKey}`);
@@ -204,17 +198,18 @@ export class DatabaseManager {
       const result = await this.db!.all<{ ICAO24: string }[]>(
         `SELECT DISTINCT ICAO24 
        FROM aircraft 
-       WHERE MANUFACTURER = ? 
+       WHERE LOWER(MANUFACTURER) = LOWER(?) 
        AND ICAO24 IS NOT NULL`,
         [MANUFACTURER]
       );
 
-      // Extract just the ICAO24 codes and normalize them to lowercase
       const ICAO24s = result.map((row) => row.ICAO24.toLowerCase());
 
-      // Store in cache (5 minute TTL)
-      this.setInCache(cacheKey, ICAO24s, 300);
+      console.log(
+        `[DB] Retrieved ${ICAO24s.length} ICAO24s for ${MANUFACTURER}`
+      );
 
+      this.setInCache(cacheKey, ICAO24s, 300);
       return ICAO24s;
     } catch (error) {
       console.error(
@@ -224,6 +219,7 @@ export class DatabaseManager {
       return [];
     }
   }
+
   /**
    * Get aircraft by ICAO24 codes
    */

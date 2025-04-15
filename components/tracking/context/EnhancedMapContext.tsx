@@ -77,6 +77,7 @@ interface EnhancedMapContextType {
   setGeofenceRadius: (radius: number | null) => void;
   toggleGeofence: () => void;
   clearGeofence: () => {};
+  geofenceCoordinates: { lat: number; lng: number } | null;
 }
 
 // Create context with default values
@@ -127,6 +128,7 @@ const EnhancedMapContext = createContext<EnhancedMapContextType>({
   isGeofenceActive: false,
   setGeofenceCenter: () => {},
   setGeofenceRadius: () => {},
+  geofenceCoordinates: null,
   toggleGeofence: () => {},
   clearGeofence: () => ({}),
   filteredAircraft: [],
@@ -168,6 +170,9 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
     lat: number;
     lng: number;
   } | null>(null);
+
+  // Derived state for geofence coordinates
+  const geofenceCoordinates = useMemo(() => geofenceCenter, [geofenceCenter]);
   const [geofenceRadius, setGeofenceRadius] = useState<number | null>(25); // Default 25km radius
   const [isGeofenceActive, setIsGeofenceActive] = useState<boolean>(false);
 
@@ -722,6 +727,7 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
     geofenceCenter,
     geofenceRadius,
     isGeofenceActive,
+    geofenceCoordinates,
     setGeofenceCenter,
     setGeofenceRadius,
     toggleGeofence,

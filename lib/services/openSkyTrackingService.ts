@@ -508,7 +508,7 @@ class OpenSkyTrackingService {
       try {
         console.log(`[OpenSky] Fetching ICAO24s for ${MANUFACTURER}`);
 
-        const response = await fetch('/api/tracking/ICAO24s', {
+        const response = await fetch('/api/tracking/icao24s', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ MANUFACTURER }),
