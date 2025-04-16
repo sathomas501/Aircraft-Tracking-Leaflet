@@ -18,19 +18,15 @@ import MapControllerWithOptions from './MapControllerWithOptions';
 import SimplifiedAircraftMarker from './SimplifiedAircraftMarker';
 import { useEnhancedUI } from '../context/EnhancedUIContext';
 import DraggablePanel from '../DraggablePanel';
-import EnhancedTooltip from './components/AircraftTooltip';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 import 'leaflet/dist/leaflet.css';
-import OwnershipTypeFilter from '../map/components/OwnershipTypeFilter';
 // Import the tooltip provider
 import { AircraftTooltipProvider } from '../context/AircraftTooltipContext';
 import type { SelectOption } from '@/types/base';
-import GeofenceCircle from './GeofenceCircle';
-import GeofenceControl from './GeofenceControl';
 import { adaptGeofenceAircraft } from '../../../lib/utils/geofenceAdapter';
 import { enrichGeofenceAircraft } from '../../../lib/utils/geofenceEnricher';
 import { getAircraftNearLocation } from '../../../lib/services/geofencing';
-import RibbonAircraftSelector from '../selector/Ribon';
+import RibbonAircraftSelector from '../selector/Ribbon';
 
 // Map Events component to handle zoom changes
 const MapEvents: React.FC = () => {
