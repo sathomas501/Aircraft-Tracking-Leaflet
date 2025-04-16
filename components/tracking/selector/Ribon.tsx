@@ -20,6 +20,7 @@ interface RibbonAircraftSelectorProps {
   manufacturers: SelectOption[];
 }
 
+// Fix the component declaration to explicitly return JSX.Element
 const RibbonAircraftSelector: React.FC<RibbonAircraftSelectorProps> = ({
   manufacturers,
 }) => {
@@ -485,8 +486,50 @@ const RibbonAircraftSelector: React.FC<RibbonAircraftSelectorProps> = ({
       .includes(manufacturerSearchTerm.toLowerCase())
   );
 
-  // Function to get user's current location
+  /**
+   * Add a debounced/delayed version of the manufacturer data fetching function
+   * to prevent overloading the API
+   */
+  const fetchManufacturerData = (manufacturer: string) => {
+    if (isRateLimited) {
+      console.log(`Skipping data fetch - rate limited for ${rateLimitTimer}s`);
+      return;
+    }
+
+    console.log(`Fetching data for manufacturer: ${manufacturer}`);
+
+    try {
+      // If you have a context function for this, call it after a slight delay
+      if (typeof refreshPositions === 'function') {
+        // Apply a small delay to prevent overwhelming the API
+        setTimeout(() => {
+          refreshPositions().catch((error: any) => {
+            if (error.message?.includes('rate limit') || error.status === 429) {
+              handleRateLimit(30);
+            } else {
+              console.error('Error fetching manufacturer data:', error);
+            }
+          });
+        }, 200);
+      }
+    } catch (error: any) {
+      if (error.message?.includes('rate limit') || error.status === 429) {
+        handleRateLimit(30);
+      } else {
+        console.error('Error scheduling manufacturer data fetch:', error);
+      }
+    }
+  };
+
+  // Function to get user's current location with rate limit handling
   const getUserLocation = async () => {
+    if (isRateLimited) {
+      alert(
+        `Rate limited. Please wait ${rateLimitTimer || 30} seconds before trying to get location.`
+      );
+      return;
+    }
+
     setIsGettingLocation(true);
     try {
       const position = await getCurrentPosition();
@@ -502,54 +545,68 @@ const RibbonAircraftSelector: React.FC<RibbonAircraftSelectorProps> = ({
         setGeofenceLocation(`${latitude.toFixed(6)}, ${longitude.toFixed(6)}`);
 
         // Automatically trigger the geofence search
-        const fetchedAircraft = await getAircraftNearLocation(
-          latitude,
-          longitude,
-          geofenceRadius
-        );
-
-        if (fetchedAircraft.length === 0) {
-          alert(
-            `No aircraft found near your current location. Try increasing the radius.`
+        try {
+          const fetchedAircraft = await getAircraftNearLocation(
+            latitude,
+            longitude,
+            geofenceRadius
           );
-          setIsGettingLocation(false);
-          return;
-        }
 
-        // Process the aircraft data
-        const adaptedAircraft = adaptGeofenceAircraft(fetchedAircraft);
-        const enrichedAircraft = await enrichGeofenceAircraft(adaptedAircraft);
+          if (fetchedAircraft.length === 0) {
+            alert(
+              `No aircraft found near your current location. Try increasing the radius.`
+            );
+            setIsGettingLocation(false);
+            return;
+          }
 
-        // Save to local state
-        setGeofenceAircraft(enrichedAircraft);
+          // Process the aircraft data
+          const adaptedAircraft = adaptGeofenceAircraft(fetchedAircraft);
+          const enrichedAircraft =
+            await enrichGeofenceAircraft(adaptedAircraft);
 
-        // Clear existing aircraft data
-        if (clearGeofenceData) {
-          clearGeofenceData();
-        }
+          // Save to local state
+          setGeofenceAircraft(enrichedAircraft);
 
-        // Update the map with new aircraft
-        updateGeofenceAircraft(enrichedAircraft);
-        setIsGeofenceActive(true);
+          // Clear existing aircraft data
+          if (clearGeofenceData) {
+            clearGeofenceData();
+          }
 
-        // Center the map on user's location
-        if (mapInstance) {
-          const radiusInDegrees = geofenceRadius / 111;
-          const bounds = [
-            [latitude - radiusInDegrees, longitude - radiusInDegrees],
-            [latitude + radiusInDegrees, longitude + radiusInDegrees],
-          ];
+          // Update the map with new aircraft
+          updateGeofenceAircraft(enrichedAircraft);
+          setIsGeofenceActive(true);
 
-          mapInstance.setView([latitude, longitude], 9);
-          setTimeout(() => {
-            mapInstance.fitBounds(bounds as any);
-            mapInstance.invalidateSize();
-          }, 200);
-        }
+          // Center the map on user's location
+          if (mapInstance) {
+            const radiusInDegrees = geofenceRadius / 111;
+            const bounds = [
+              [latitude - radiusInDegrees, longitude - radiusInDegrees],
+              [latitude + radiusInDegrees, longitude + radiusInDegrees],
+            ];
 
-        // If in geofence mode, ensure the filter mode is set correctly
-        if (filterMode !== 'geofence' && filterMode !== 'both') {
-          setFilterMode('geofence');
+            mapInstance.setView([latitude, longitude], 9);
+            setTimeout(() => {
+              mapInstance.fitBounds(bounds as any);
+              mapInstance.invalidateSize();
+            }, 200);
+          }
+
+          // If in geofence mode, ensure the filter mode is set correctly
+          if (filterMode !== 'geofence' && filterMode !== 'both') {
+            setFilterMode('geofence');
+          }
+        } catch (error: any) {
+          if (error.message?.includes('rate limit') || error.status === 429) {
+            handleRateLimit(30);
+            // Still update the location even if we couldn't get aircraft
+            if (mapInstance) {
+              mapInstance.setView([latitude, longitude], 9);
+              mapInstance.invalidateSize();
+            }
+          } else {
+            throw error;
+          }
         }
 
         // Close the dropdown after selection
@@ -565,51 +622,24 @@ const RibbonAircraftSelector: React.FC<RibbonAircraftSelectorProps> = ({
     }
   };
 
-  // Create an effect to sync the component state with the external geofence button
-  useEffect(() => {
-    // Update internal state when geofence is toggled externally
-    if (isGeofenceActive !== geofenceEnabled) {
-      setGeofenceEnabled(isGeofenceActive);
-    }
-  }, [isGeofenceActive]);
-
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      // Check if click is outside of all dropdowns
-      const isOutsideAll = Object.values(dropdownRefs).every(
-        (ref) => !ref.current || !ref.current.contains(event.target as Node)
-      );
-
-      if (isOutsideAll) {
-        setActiveDropdown(null);
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, []);
-
-  // Clean up region outline when component unmounts
-  useEffect(() => {
-    return () => {
-      if (regionOutline) {
-        regionOutline.remove();
-      }
-    };
-  }, [regionOutline]);
-
   /**
-   * Process geofence search
+   * Process geofence search with rate limit handling
    */
   const processGeofenceSearch = async () => {
     if (!geofenceLocation) return;
 
+    // Check if rate limited
+    if (isRateLimited) {
+      alert(
+        `Rate limited. Please wait ${rateLimitTimer || 30} seconds before searching again.`
+      );
+      return;
+    }
+
     // Block API calls while doing geofence search in combined mode
     if (filterMode === 'both') {
       openSkyTrackingService.setBlockAllApiCalls(true);
+      setBlockManufacturerApiCalls(true);
     }
 
     // Set loading state
@@ -621,13 +651,32 @@ const RibbonAircraftSelector: React.FC<RibbonAircraftSelectorProps> = ({
       );
 
       // This will handle Postal codes, place names, addresses, POIs, etc.
-      const fetchedAircraft = await getAircraftNearSearchedLocation(
-        geofenceLocation,
-        geofenceRadius
-      );
+      let fetchedAircraft;
+      try {
+        fetchedAircraft = await getAircraftNearSearchedLocation(
+          geofenceLocation,
+          geofenceRadius
+        );
+      } catch (error: any) {
+        if (error.message?.includes('rate limit') || error.status === 429) {
+          const retryAfter = 30; // Default to 30 seconds if not specified
+          handleRateLimit(retryAfter);
+          setLocalLoading(false);
+          return;
+        }
+        throw error;
+      }
 
       // Get coordinates for the map
-      const locations = await searchLocationWithMapbox(geofenceLocation, 1);
+      let locations: { lat: number; lng: number; name: string }[];
+      try {
+        locations = await searchLocationWithMapbox(geofenceLocation, 1);
+      } catch (error) {
+        console.error('Error searching location with Mapbox:', error);
+        // Continue with aircraft data if available
+        locations = [];
+      }
+
       let coordinates: { lat: number; lng: number } | null = null;
 
       if (locations.length > 0) {
@@ -665,7 +714,7 @@ const RibbonAircraftSelector: React.FC<RibbonAircraftSelectorProps> = ({
       }
       if (!isGeofenceActive) {
         toggleGeofence();
-      } else {
+      } else if (!coordinates) {
         throw new Error('Could not determine coordinates for the location');
       }
 
@@ -683,15 +732,6 @@ const RibbonAircraftSelector: React.FC<RibbonAircraftSelectorProps> = ({
       console.log('Enriching geofence aircraft with static data...');
       const enrichedAircraft = await enrichGeofenceAircraft(adaptedAircraft);
 
-      // Debug the first aircraft
-      if (enrichedAircraft.length > 0) {
-        console.log('Enriched aircraft sample:', {
-          icao24: enrichedAircraft[0].ICAO24,
-          manufacturer: enrichedAircraft[0].MANUFACTURER,
-          model: enrichedAircraft[0].MODEL,
-        });
-      }
-
       // Save the FULL set to local state
       setGeofenceAircraft(enrichedAircraft);
       setIsGeofenceActive(true);
@@ -705,6 +745,7 @@ const RibbonAircraftSelector: React.FC<RibbonAircraftSelectorProps> = ({
       if (filterMode === 'both' && selectedManufacturer) {
         // Make sure API calls remain blocked
         openSkyTrackingService.setBlockAllApiCalls(true);
+        setBlockManufacturerApiCalls(true);
         setTimeout(() => {
           applyCombinedFilters();
         }, 100);
@@ -736,11 +777,16 @@ const RibbonAircraftSelector: React.FC<RibbonAircraftSelectorProps> = ({
 
       // Close dropdown after search
       setActiveDropdown(null);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error in geofence search:', error);
-      alert(
-        `Error: ${error instanceof Error ? error.message : 'Unknown error occurred'}`
-      );
+
+      if (error.message?.includes('rate limit') || error.status === 429) {
+        handleRateLimit(30);
+      } else {
+        alert(
+          `Error: ${error instanceof Error ? error.message : 'Unknown error occurred'}`
+        );
+      }
     } finally {
       setLocalLoading(false);
     }
@@ -750,6 +796,7 @@ const RibbonAircraftSelector: React.FC<RibbonAircraftSelectorProps> = ({
   const clearAllFilters = () => {
     // Unblock API calls
     openSkyTrackingService.setBlockAllApiCalls(false);
+    setBlockManufacturerApiCalls(false);
 
     // Clear manufacturer selection
     selectManufacturer(null);
@@ -983,15 +1030,6 @@ const RibbonAircraftSelector: React.FC<RibbonAircraftSelectorProps> = ({
       // Pure manufacturer mode - allow API calls
       openSkyTrackingService.setBlockAllApiCalls(false);
       fetchManufacturerData(value);
-    }
-  };
-
-  // Fetch data for a selected manufacturer
-  const fetchManufacturerData = (manufacturer: string) => {
-    console.log(`Fetching data for manufacturer: ${manufacturer}`);
-
-    if (typeof refreshPositions === 'function') {
-      refreshPositions();
     }
   };
 
