@@ -21,7 +21,7 @@ import DraggablePanel from '../DraggablePanel';
 import EnhancedTooltip from './components/AircraftTooltip';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 import 'leaflet/dist/leaflet.css';
-import UnifiedAircraftSelector from '../selector/UnifiedAircraftSelector';
+import RibbonAircraftSelector from '../selector/Ribon';
 import OwnershipTypeFilter from '../map/components/OwnershipTypeFilter';
 // Import the tooltip provider
 import { AircraftTooltipProvider } from '../context/AircraftTooltipContext';
@@ -412,7 +412,7 @@ const EnhancedReactBaseMap: React.FC<ReactBaseMapProps> = ({ onError }) => {
       {/* Manufacturer filter */}
       {manufacturers.length > 0 && (
         <div className="absolute top-5 left-5 z-50">
-          <UnifiedAircraftSelector manufacturers={manufacturers} />
+          <RibbonAircraftSelector manufacturers={manufacturers} />
         </div>
       )}
     </div>

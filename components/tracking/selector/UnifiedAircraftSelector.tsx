@@ -6,8 +6,6 @@ import type { ExtendedAircraft } from '../../../types/base';
 import type { AircraftModel } from '../../../types/aircraft-models';
 import { adaptGeofenceAircraft } from '../../../lib/utils/geofenceAdapter';
 import {
-  postalCodeToCoordinates,
-  getAircraftNearPostalCode,
   getAircraftNearLocation,
   calculateDistance,
   searchLocationWithMapbox,
@@ -18,7 +16,6 @@ import { useGeolocation } from '../hooks/useGeolocation';
 import openSkyTrackingService from '@/lib/services/openSkyTrackingService';
 import OwnershipTypeFilter from '../map/components/OwnershipTypeFilter';
 import { MAP_CONFIG, getBoundsByRegion } from '../../../config/map';
-import GeofenceControl from '../map/GeofenceControl';
 
 interface UnifiedAircraftSelectorProps {
   manufacturers: SelectOption[];
