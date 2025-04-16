@@ -3,7 +3,12 @@ import React, { useState, useEffect } from 'react';
 
 const OwnershipTypeFilter = ({ onFilterChange, activeFilters = [] }) => {
   // Use all owner types as default if no active filters provided
-  const [selectedFilters, setSelectedFilters] = useState(activeFilters);
+  const [selectedFilters, setSelectedFilters] = useState(activeFilters || []);
+
+  // Add an effect to sync with parent updates
+  useEffect(() => {
+    setSelectedFilters(activeFilters || []);
+  }, [activeFilters]);
 
   // Update local state when props change
   useEffect(() => {
@@ -152,6 +157,32 @@ const OwnershipTypeFilter = ({ onFilterChange, activeFilters = [] }) => {
     onFilterChange(newFilters); // Apply filter changes immediately
   };
 
+  // Inside your OwnershipTypeFilter component
+  const handleOwnerTypeToggle = (typeId) => {
+    const newFilters = selectedFilters.includes(typeId)
+      ? selectedFilters.filter((id) => id !== typeId)
+      : [...selectedFilters, typeId];
+
+    setSelectedFilters(newFilters);
+    onFilterChange(newFilters);
+
+    // Add debugging
+    console.log(`Toggled ${typeId}, new filters:`, newFilters);
+  };
+
+  // For "Select All" button
+  const selectAll = () => {
+    const allTypeIds = types.map((type) => type.id);
+    setSelectedFilters(allTypeIds);
+    onFilterChange(allTypeIds);
+  };
+
+  // For "Clear All" button
+  const clearAll = () => {
+    setSelectedFilters([]);
+    onFilterChange([]);
+  };
+
   return (
     <div className="filter-content" style={{ width: '100%' }}>
       {ownerTypes.map((type) => (
@@ -175,7 +206,7 @@ const OwnershipTypeFilter = ({ onFilterChange, activeFilters = [] }) => {
           <input
             type="checkbox"
             checked={selectedFilters.includes(type.id)}
-            onChange={() => {}} // Handled by div click
+            onChange={() => handleOwnerTypeToggle(type.id)}
             style={{ marginRight: '8px' }}
           />
           <div

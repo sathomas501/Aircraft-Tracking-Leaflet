@@ -698,6 +698,7 @@ class OpenSkyTrackingService {
       activeRequests.delete(cacheKey);
     }
   }
+
   /**
    * Notify all subscribers of changes
    */
@@ -735,6 +736,41 @@ class OpenSkyTrackingService {
    */
   public getTrackedAircraft(): Aircraft[] {
     return this.trackedAircraft;
+  }
+
+  /**
+   * Aggregate aircraft into model statistics
+   */
+  private aggregateAircraftModels(aircraft: Aircraft[]): AircraftModel[] {
+    const modelMap = new Map<string, AircraftModel>();
+
+    aircraft.forEach((a) => {
+      if (!a.MODEL) return; // Skip aircraft without MODEL info
+
+      const key = `${a.MANUFACTURER || 'Unknown'}-${a.MODEL}`;
+      const existing = modelMap.get(key);
+
+      if (existing) {
+        existing.count++;
+        existing.activeCount++;
+        existing.totalCount++;
+        if (existing.ICAO24s && a.ICAO24) {
+          existing.ICAO24s.push(a.ICAO24);
+        }
+      } else {
+        modelMap.set(key, {
+          MODEL: a.MODEL,
+          MANUFACTURER: a.MANUFACTURER || this.currentManufacturer || 'Unknown',
+          label: a.MODEL,
+          count: 1,
+          activeCount: 1,
+          totalCount: 1,
+          ICAO24s: a.ICAO24 ? [a.ICAO24] : [],
+        });
+      }
+    });
+
+    return Array.from(modelMap.values());
   }
 
   /**
@@ -887,6 +923,206 @@ class OpenSkyTrackingService {
       setTimeout(() => {
         setRefreshInProgress(false);
       }, resetDelay + 500);
+    }
+  }
+
+  /**
+   * Track a manufacturer's aircraft with progress updates
+   * @param MANUFACTURER The manufacturer to track
+   * @param progressCallback A callback that will be called with progress updates
+   */
+  public async trackManufacturerWithProgress(
+    MANUFACTURER: string,
+    progressCallback: (progress: {
+      message?: string;
+      aircraft?: Aircraft[];
+      models?: AircraftModel[];
+      total?: number;
+      complete?: boolean;
+    }) => void
+  ): Promise<Aircraft[]> {
+    // Check block flag first
+    if (blockAllApiCalls) {
+      console.log(
+        `[OpenSky] API calls blocked - skipping tracking for ${MANUFACTURER}`
+      );
+      progressCallback({
+        message: 'API calls are currently blocked',
+        aircraft: [],
+        models: [],
+        total: 0,
+        complete: true,
+      });
+      return [];
+    }
+
+    // Stop any existing tracking
+    this.stopTracking();
+
+    if (!MANUFACTURER) {
+      progressCallback({
+        message: 'No manufacturer specified',
+        aircraft: [],
+        models: [],
+        total: 0,
+        complete: true,
+      });
+      return [];
+    }
+
+    console.log(`[OpenSky] Starting progressive tracking for ${MANUFACTURER}`);
+    this.currentManufacturer = MANUFACTURER;
+    this.trackingActive = true;
+    this.loading = true;
+
+    try {
+      // Clear active set and tracked aircraft
+      this.activeIcao24s.clear();
+      this.trackedAircraft = [];
+
+      // First get ICAO24 codes for this MANUFACTURER
+      progressCallback({
+        message: `Fetching aircraft identifiers for ${MANUFACTURER}...`,
+        complete: false,
+      });
+
+      const ICAO24s = await this.getIcao24sForManufacturer(MANUFACTURER);
+
+      if (ICAO24s.length === 0) {
+        console.log(`[OpenSky] No ICAO24 codes found for ${MANUFACTURER}`);
+        progressCallback({
+          message: `No aircraft found for ${MANUFACTURER}`,
+          aircraft: [],
+          models: [],
+          total: 0,
+          complete: true,
+        });
+
+        this.trackedAircraft = [];
+        this.trackedIcao24s.clear();
+        this.loading = false;
+        return [];
+      }
+
+      progressCallback({
+        message: `Found ${ICAO24s.length} aircraft. Loading position data...`,
+        complete: false,
+      });
+
+      // Process in smaller batches to avoid rate limits
+      const BATCH_SIZE = 50; // Smaller than the 100 OpenSky limit
+      const batches = [];
+      for (let i = 0; i < ICAO24s.length; i += BATCH_SIZE) {
+        batches.push(ICAO24s.slice(i, i + BATCH_SIZE));
+      }
+
+      let loadedAircraft: Aircraft[] = [];
+
+      // Process each batch with delay between batches
+      for (let i = 0; i < batches.length; i++) {
+        const batch = batches[i];
+        const batchPercent = Math.round((i / batches.length) * 100);
+
+        progressCallback({
+          message: `Loading batch ${i + 1}/${batches.length} (${batchPercent}%)...`,
+          complete: false,
+        });
+
+        try {
+          // Get data for this batch
+          const batchAircraft = await this.getLiveAircraftData(
+            MANUFACTURER,
+            batch,
+            true, // Include static data
+            false // Don't limit to active only for discovery
+          );
+
+          if (batchAircraft.length > 0) {
+            // Add to our running total
+            loadedAircraft = [...loadedAircraft, ...batchAircraft];
+
+            // Update active tracked set
+            this.updateActiveAircraftSet(batchAircraft);
+
+            // Update our tracked aircraft with what we have so far
+            this.trackedAircraft = loadedAircraft;
+
+            // Create model stats using the aggregation function
+            const models = this.aggregateAircraftModels(loadedAircraft);
+            const totalActive = loadedAircraft.length;
+
+            // Report progress with what we have so far
+            progressCallback({
+              message: `Loaded ${loadedAircraft.length} of ${ICAO24s.length} aircraft...`,
+              aircraft: loadedAircraft,
+              models: models,
+              total: totalActive,
+              complete: false,
+            });
+          }
+
+          // Wait between batches to avoid rate limits, but only if not the last batch
+          if (i < batches.length - 1) {
+            await new Promise((resolve) => setTimeout(resolve, 5000)); // 5 second delay
+          }
+        } catch (error) {
+          console.error(`[OpenSky] Error processing batch ${i + 1}:`, error);
+
+          // Check if we recently hit a rate limit and should wait
+          const timeSinceRateLimit = Date.now() - this.lastRateLimitTime;
+          if (this.lastRateLimitTime > 0 && timeSinceRateLimit < 60000) {
+            const waitTime = Math.ceil((60000 - timeSinceRateLimit) / 1000);
+            progressCallback({
+              message: `Recently rate limited. Waiting ${waitTime}s before continuing...`,
+              complete: false,
+            });
+            await new Promise((resolve) =>
+              setTimeout(resolve, 60000 - timeSinceRateLimit)
+            );
+          }
+
+          // For batch processing, add more aggressive delay between batches
+          for (let i = 0; i < batches.length; i++) {
+            // Wait longer before trying the next batch
+            await new Promise((resolve) => setTimeout(resolve, 60000)); // 1 minute wait
+          }
+        }
+      }
+
+      // Final updates
+      this.lastRefreshTime = Date.now();
+      this.lastFullRefreshTime = Date.now();
+      this.updateTrackedIcao24sSet();
+      this.notifySubscribers();
+
+      // Final callback
+      const models = this.aggregateAircraftModels(loadedAircraft);
+      const totalActive = loadedAircraft.length;
+
+      progressCallback({
+        message: `Completed loading ${loadedAircraft.length} aircraft for ${MANUFACTURER}`,
+        aircraft: loadedAircraft,
+        models: models,
+        total: totalActive,
+        complete: true,
+      });
+
+      console.log(
+        `[OpenSky] Progressive tracking complete for ${MANUFACTURER}: ${loadedAircraft.length} aircraft`
+      );
+      return loadedAircraft;
+    } catch (error) {
+      console.error(
+        `[OpenSky] Error in progressive tracking for ${MANUFACTURER}:`,
+        error
+      );
+      progressCallback({
+        message: `Error tracking ${MANUFACTURER}: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        complete: true,
+      });
+      return this.trackedAircraft;
+    } finally {
+      this.loading = false;
     }
   }
 

@@ -91,9 +91,8 @@ export default async function handler(
 
       if (activeOnly) {
         // Only return aircraft with position data
-        const activeAircraft = mergedAircraft.filter(
-          (aircraft) => aircraft.latitude && aircraft.longitude
-        );
+       const mergedAircraft = /* your code that initializes this variable */;
+const activeAircraft = mergedAircraft.filter((aircraft: AircraftWithTracking) => aircraft.latitude && aircraft.longitude);
 
         console.log(
           `[API] Filtering to ${activeAircraft.length} active aircraft out of ${mergedAircraft.length} total`
@@ -240,7 +239,9 @@ async function fetchAircraftBatch(ICAO24Batch: string[]): Promise<Aircraft[]> {
       await new Promise((resolve) => setTimeout(resolve, retryAfter * 1000));
 
       // Retry the request
-      const retryResponse = await fetch('/api/proxy/opensky', {
+      const baseUrl =
+        process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3001';
+      const retryResponse = await fetch(`${baseUrl}/api/proxy/opensky`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ICAO24s: ICAO24Batch }),

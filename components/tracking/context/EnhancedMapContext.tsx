@@ -9,7 +9,11 @@ import React, {
   useMemo,
 } from 'react';
 import L from 'leaflet';
-import type { SelectOption, ExtendedAircraft } from '@/types/base';
+import type {
+  SelectOption,
+  ExtendedAircraft,
+  AircraftPosition,
+} from '@/types/base';
 import type { CachedAircraftData } from '@/types/base'; // Import your new type
 import type { AircraftModel } from '../../../types/aircraft-models';
 import openSkyTrackingService from '@/lib/services/openSkyTrackingService';
@@ -175,7 +179,10 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
   const geofenceCoordinates = useMemo(() => geofenceCenter, [geofenceCenter]);
   const [geofenceRadius, setGeofenceRadius] = useState<number | null>(25); // Default 25km radius
   const [isGeofenceActive, setIsGeofenceActive] = useState<boolean>(false);
-
+  // Add this to your state declarations
+  const [aircraftPositions, setAircraftPositions] = useState<
+    AircraftPosition[]
+  >([]);
   // Toggle geofence activation
   const toggleGeofence = useCallback(() => {
     setIsGeofenceActive((prev) => !prev);
@@ -217,8 +224,6 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
   // Flag to track if we're in geofence mode
   const [isGeofenceMode, setIsGeofenceMode] = useState<boolean>(false);
 
-  // In your EnhancedMapContext.tsx
-  // Define the filter function correctly
   // Define the filter function correctly
   const filterAircraftByGeofence = useCallback(() => {
     if (!geofenceCenter || !isGeofenceActive) {
@@ -482,38 +487,75 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
   );
 
   // Handle MANUFACTURER selection
+  // In your EnhancedMapContext.tsx - modify the selectManufacturer function
+
   const selectManufacturer = async (MANUFACTURER: string | null) => {
     // Exit geofence mode when selecting a MANUFACTURER
     setIsGeofenceMode(false);
-
     setSelectedManufacturer(MANUFACTURER);
     setSelectedModel(null);
     setIsLoading(true);
     setLastRefreshed(null);
-    setSelectedManufacturer(MANUFACTURER);
-    setSelectedModel(null);
+
+    // Clear previous data
+    setDisplayedAircraft([]);
+    setActiveModels([]);
+    setTotalActive(0);
+
+    // If null, just exit
+    if (MANUFACTURER === null) {
+      setIsLoading(false);
+      return;
+    }
 
     // If we're blocking API calls, exit early
     if (isManufacturerApiBlocked) {
       console.log(
         `[EnhancedMapContext] API calls blocked for manufacturer: ${MANUFACTURER}`
       );
-      return; // Exit early without making any API calls
+      setIsLoading(false);
+      return;
     }
 
-    // Exit geofence mode when selecting a manufacturer (only if not blocked)
-    setIsGeofenceMode(false);
-    setIsLoading(true);
-    setLastRefreshed(null);
-
     try {
-      // Only make API call if not blocked
-      await openSkyTrackingService.trackManufacturer(MANUFACTURER ?? '');
+      // Start tracking with a progress handler
+      setTrackingStatus(`Loading aircraft for ${MANUFACTURER}...`);
+
+      // Use the existing service but with a progress callback
+      // In EnhancedMapContext.tsx, modify your callback to handle both types:
+
+      await openSkyTrackingService.trackManufacturerWithProgress(
+        MANUFACTURER,
+        (progress) => {
+          // Update the tracking status message
+          if (progress.message) {
+            setTrackingStatus(progress.message);
+          }
+
+          // Update displayed aircraft as they're loaded
+          if (progress.aircraft) {
+            // Cast the aircraft array to ExtendedAircraft[] since our context uses that type
+            setDisplayedAircraft(progress.aircraft as ExtendedAircraft[]);
+          }
+
+          // Update model stats
+          if (progress.models) {
+            setActiveModels(progress.models);
+          }
+
+          // Update total count
+          if (progress.total !== undefined) {
+            setTotalActive(progress.total);
+          }
+        }
+      );
+
       setLastRefreshed(new Date().toLocaleTimeString());
     } catch (error) {
       onError(
         `Error tracking manufacturer: ${error instanceof Error ? error.message : 'Unknown error'}`
       );
+      setTrackingStatus('Error loading aircraft data');
     } finally {
       setIsLoading(false);
     }

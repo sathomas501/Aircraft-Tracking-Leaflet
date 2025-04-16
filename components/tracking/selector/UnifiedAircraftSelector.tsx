@@ -152,10 +152,36 @@ const UnifiedAircraftSelector: React.FC<UnifiedAircraftSelectorProps> = ({
 
   //####part 2 helper functions and event handlers
 
-  const handleOwnerFilterChange = (types: string[]) => {
-    setOwnerFilters(types);
+  // Add this function to your component
+  const applyOwnerTypeFilter = (filters: string[]) => {
+    // Skip filtering if all types are selected or none are selected
+    if (filters.length === 0 || filters.length === allOwnerTypes.length) {
+      // If no filters or all filters, show all aircraft
+      // This depends on how you're managing your aircraft data
+      return;
+    }
+
+    // Filter the aircraft based on selected owner types
+    if (displayedAircraft && displayedAircraft.length > 0) {
+      const filteredAircraft = displayedAircraft.filter((aircraft) => {
+        const ownerType = getAircraftOwnerType(aircraft);
+        return filters.includes(ownerType);
+      });
+
+      // Update the displayed aircraft
+      if (clearGeofenceData) {
+        clearGeofenceData();
+      }
+      updateGeofenceAircraft(filteredAircraft);
+    }
   };
 
+  const handleOwnerFilterChange = (updatedFilters: string[]) => {
+    setOwnerFilters(updatedFilters);
+
+    // Apply the filter to your aircraft data
+    applyOwnerTypeFilter(updatedFilters);
+  };
   // Reset owner filters to select all
   const resetOwnerFilters = () => {
     setOwnerFilters([...allOwnerTypes]);
@@ -350,21 +376,50 @@ const UnifiedAircraftSelector: React.FC<UnifiedAircraftSelectorProps> = ({
 
   // 6. Add a clear function to remove the region outline
   const clearRegionFilter = () => {
+    // Clear region state
     setActiveRegion(null);
 
+    // Clear region outline
     if (regionOutline) {
-      regionOutline.remove();
+      try {
+        // Make the removal more robust
+        if (typeof regionOutline.remove === 'function') {
+          regionOutline.remove();
+        } else if (
+          regionOutline.rectangle &&
+          typeof regionOutline.rectangle.remove === 'function'
+        ) {
+          regionOutline.rectangle.remove();
+        }
+
+        // Clear any labels associated with the region if they exist
+        if (
+          regionOutline.label &&
+          typeof regionOutline.label.remove === 'function'
+        ) {
+          regionOutline.label.remove();
+        }
+      } catch (error) {
+        console.error('Error removing region outline:', error);
+      }
+
+      // Reset the regionOutline state
       setRegionOutline(null);
     }
 
-    // Reset map view to global if needed
+    // Reset map view to global
     if (mapInstance) {
-      const globalBounds = getBoundsByRegion(MAP_CONFIG.REGIONS.GLOBAL);
-      mapInstance.fitBounds(globalBounds as any);
+      try {
+        const globalBounds = getBoundsByRegion(MAP_CONFIG.REGIONS.GLOBAL);
+        mapInstance.fitBounds(globalBounds as any);
+        mapInstance.invalidateSize(); // Force a map refresh
+      } catch (error) {
+        console.error('Error resetting map view:', error);
+      }
     }
 
-    // Clear any region-based filtering
-    // (Depending on your app structure, you might need to refresh data or clear filters)
+    // If you need to force a re-render, use a state update instead of forceUpdate
+    // setRefreshCounter(prev => prev + 1);
   };
 
   // Filter manufacturers by search term
@@ -968,7 +1023,27 @@ const UnifiedAircraftSelector: React.FC<UnifiedAircraftSelectorProps> = ({
     } else {
       // Pure manufacturer mode - allow API calls
       openSkyTrackingService.setBlockAllApiCalls(false);
+      // Add explicit data fetching for manufacturer-only mode
+      // This is likely the missing trigger
+      fetchManufacturerData(value);
     }
+  };
+
+  // Add this function to handle manufacturer-specific data fetching
+  const fetchManufacturerData = (manufacturer: string) => {
+    console.log(`Fetching data for manufacturer: ${manufacturer}`);
+
+    // If you have a context function for this, call it directly
+    if (typeof refreshPositions === 'function') {
+      refreshPositions();
+    }
+
+    // Or if you need to make a direct API call
+    // You might need to implement this based on your API structure
+    // Example:
+    // fetchAircraftByManufacturer(manufacturer)
+    //   .then(data => updateAircraftData(data))
+    //   .catch(error => console.error('Error fetching manufacturer data:', error));
   };
 
   /**
