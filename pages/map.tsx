@@ -3,14 +3,14 @@ import React, { useState, useEffect } from 'react';
 import type { NextPage } from 'next';
 import dynamic from 'next/dynamic';
 import { toast, Toaster } from 'react-hot-toast';
-import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
+import AircraftSpinner from '../components/tracking/map/components/AircraftSpinner';
 
 // Dynamically import the map component
 const AircraftTrackingMap = dynamic(
   () => import('@/components/tracking/map/AircraftTrackingMap'),
   {
     ssr: false,
-    loading: () => <LoadingSpinner message="Loading map..." />,
+    loading: () => <AircraftSpinner isLoading={true} />,
   }
 );
 
@@ -68,7 +68,7 @@ const MapPage: NextPage = () => {
           className="flex justify-center items-center"
           style={{ height: 'calc(100vh - 64px)' }}
         >
-          <LoadingSpinner message="Loading manufacturers..." />
+          <AircraftSpinner isLoading={true} />
         </div>
       ) : (
         /* Map Area */

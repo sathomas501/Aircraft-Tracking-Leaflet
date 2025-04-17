@@ -91,8 +91,23 @@ export default async function handler(
 
       if (activeOnly) {
         // Only return aircraft with position data
-       const mergedAircraft = /* your code that initializes this variable */;
-const activeAircraft = mergedAircraft.filter((aircraft: AircraftWithTracking) => aircraft.latitude && aircraft.longitude);
+        const mergedAircraft = liveData.map((liveAircraft) => {
+          const icao = liveAircraft.ICAO24.toLowerCase();
+          const staticData = staticAircraft[icao] || {};
+          return {
+            ...staticData,
+            ...liveAircraft,
+            ICAO24: icao,
+            _tracking: {
+              MANUFACTURER,
+              lastSeen: Date.now(),
+            },
+          };
+        });
+        const activeAircraft = mergedAircraft.filter(
+          (aircraft: AircraftWithTracking) =>
+            aircraft.latitude && aircraft.longitude
+        );
 
         console.log(
           `[API] Filtering to ${activeAircraft.length} active aircraft out of ${mergedAircraft.length} total`

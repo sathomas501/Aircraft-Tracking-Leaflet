@@ -1,0 +1,77 @@
+/* components/tracking/map/components/AircraftSpinner.module.css */
+.loadingOverlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: #f5f5f5;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 9999;
+}
+
+.loadingContainer {
+  position: relative;
+  width: 100%;
+  height: 40px;
+}
+
+.aircraft {
+  position: absolute;
+  width: 30px;
+  height: 30px;
+  left: -50px; /* Start outside the visible area */
+  top: 5px;
+  animation: moveAircraft 4s infinite; /*  animation speed higher is slower */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  color: #4f46e5; /* Your primary indigo color */
+  font-size: 24px;
+}
+
+/*spacing between aircraft*/
+
+.aircraft2 {
+  animation-delay: 0.3s; /* Changed from 0.5s to 0.3s for shorter delay */
+}
+
+.aircraft3 {
+  animation-delay: 0.6s; /* Changed from 1s to 0.6s for shorter delay */
+}
+
+.aircraft4 {
+  animation-delay: 0.9s; /* Changed from 1.5s to 0.9s for shorter delay */
+}
+
+/* To adjust how long planes pause in the middle, modify the gap between the two middle keyframes (currently 30% and 50%) */
+
+@keyframes moveAircraft {
+  0% {
+    left: -50px;
+    transform: scale(1) rotate(0deg);
+  }
+  30% {
+    left: calc(50% - 15px);
+    transform: scale(1.5) rotate(0deg);
+  }
+  50% {
+    left: calc(50% - 15px);
+    transform: scale(1.5) rotate(0deg);
+  }
+  80% {
+    left: calc(100% + 50px);
+    transform: scale(1) rotate(0deg);
+  }
+  100% {
+    left: calc(100% + 50px);
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+/* Hide the overlay when content is loaded */
+:global(body.loaded) .loadingOverlay {
+  display: none;
+}

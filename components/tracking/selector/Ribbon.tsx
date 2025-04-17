@@ -203,12 +203,15 @@ const RibbonAircraftSelector: React.FC<RibbonAircraftSelectorProps> = ({
   }, [regionOutline]);
 
   // Toggle dropdown menus
-  const toggleDropdown = (dropdown: string) => {
+  // Add this to prevent event propagation in your click handlers
+  const toggleDropdown = (dropdown: string, event: React.MouseEvent) => {
     if (activeDropdown === dropdown) {
       setActiveDropdown(null);
     } else {
       setActiveDropdown(dropdown);
     }
+    // Prevent events from bubbling up
+    event.stopPropagation();
   };
 
   // Function to handle API rate limit errors
@@ -366,36 +369,67 @@ const RibbonAircraftSelector: React.FC<RibbonAircraftSelectorProps> = ({
   const applyRegionalBoundsToActiveFilter = () => {
     if (!activeRegion) return;
 
+    // Get the bounds for the selected region
+    const bounds = getBoundsByRegion(activeRegion);
+    if (!bounds) {
+      console.error(`No bounds found for region: ${activeRegion}`);
+      return;
+    }
+
     // Apply region bounds to current filter mode logic
     switch (filterMode) {
       case 'manufacturer':
-        // Limit manufacturer filter to region
+        // Filter by manufacturer AND region bounds
+        filterAircraftByRegion(activeRegion);
+        // Then apply manufacturer filter to the already region-filtered data
         break;
       case 'geofence':
-        // Limit geofence to region
+        // Just use the region as the geofence
+        filterAircraftByRegion(activeRegion);
         break;
       case 'both':
-        // Limit geofence to region
+        // Apply both manufacturer and region filters
+        filterAircraftByRegion(activeRegion);
+        // Then apply manufacturer filter
         break;
       case 'owner':
-        // Limit geofence to region
+        // Filter by owner type AND region bounds
+        filterAircraftByRegion(activeRegion);
+        // Then apply owner filter
         break;
-      // etc.
+      default:
+        // Default just apply region filter
+        filterAircraftByRegion(activeRegion);
     }
   };
 
   const filterAircraftByRegion = (region: string) => {
     if (!displayedAircraft || displayedAircraft.length === 0) return;
-
     setLocalLoading(true);
 
     try {
       // Get the bounds for the selected region
-      const bounds = getBoundsByRegion(region);
-      const [[minLat, minLng], [maxLat, maxLng]] = bounds as [
-        [number, number],
-        [number, number],
-      ];
+      const boundsExpression = getBoundsByRegion(region);
+
+      // Ensure bounds is in the correct format
+      if (!Array.isArray(boundsExpression) || boundsExpression.length !== 2) {
+        console.error(
+          `Invalid bounds format for region: ${region}`,
+          boundsExpression
+        );
+        setLocalLoading(false);
+        return;
+      }
+
+      // Extract coordinates - Leaflet uses [lat, lng] format
+      const [[minLat, minLng], [maxLat, maxLng]] = boundsExpression;
+
+      console.log(`Filtering by region: ${region} with bounds:`, {
+        minLat,
+        minLng,
+        maxLat,
+        maxLng,
+      });
 
       // Filter aircraft based on coordinates within the bounds
       const filteredAircraft = displayedAircraft.filter((aircraft) => {
@@ -423,9 +457,8 @@ const RibbonAircraftSelector: React.FC<RibbonAircraftSelectorProps> = ({
         clearGeofenceData();
       }
       updateGeofenceAircraft(filteredAircraft);
-
       console.log(
-        `Filtered to ${filteredAircraft.length} aircraft in ${region} region`
+        `Filtered to ${filteredAircraft.length} aircraft in ${region} region (out of ${displayedAircraft.length} total)`
       );
     } catch (error) {
       console.error('Error filtering aircraft by region:', error);
@@ -1153,7 +1186,7 @@ const RibbonAircraftSelector: React.FC<RibbonAircraftSelectorProps> = ({
             ? 'bg-indigo-100 text-indigo-700'
             : 'hover:bg-gray-100'
         }`}
-        onClick={() => toggleDropdown('filter')}
+        onClick={(event) => toggleDropdown('filter', event)}
       >
         <span className="flex items-center gap-1">
           <svg
@@ -1334,7 +1367,7 @@ const RibbonAircraftSelector: React.FC<RibbonAircraftSelectorProps> = ({
               ? 'bg-indigo-50 text-indigo-600'
               : 'hover:bg-gray-100'
         }`}
-        onClick={() => toggleDropdown('manufacturer')}
+        onClick={(event) => toggleDropdown('manufacturer', event)}
       >
         <span className="flex items-center gap-1">
           <svg
@@ -1451,7 +1484,7 @@ const RibbonAircraftSelector: React.FC<RibbonAircraftSelectorProps> = ({
                   ? 'bg-indigo-50 text-indigo-600'
                   : 'hover:bg-gray-100'
           }`}
-          onClick={() => isEnabled && toggleDropdown('model')}
+          onClick={(event) => isEnabled && toggleDropdown('model', event)}
           disabled={!isEnabled}
         >
           <span className="flex items-center gap-1">
@@ -1591,7 +1624,7 @@ const RibbonAircraftSelector: React.FC<RibbonAircraftSelectorProps> = ({
               ? 'bg-indigo-50 text-indigo-600'
               : 'hover:bg-gray-100'
         }`}
-        onClick={() => toggleDropdown('location')}
+        onClick={(event) => toggleDropdown('location', event)}
       >
         <span className="flex items-center gap-1">
           <svg
@@ -1842,7 +1875,7 @@ const RibbonAircraftSelector: React.FC<RibbonAircraftSelectorProps> = ({
               ? 'bg-indigo-50 text-indigo-600'
               : 'hover:bg-gray-100'
         }`}
-        onClick={() => toggleDropdown('region')}
+        onClick={(event) => toggleDropdown('region', event)}
       >
         <span className="flex items-center gap-1">
           <svg
@@ -1921,7 +1954,7 @@ const RibbonAircraftSelector: React.FC<RibbonAircraftSelectorProps> = ({
               ? 'bg-indigo-50 text-indigo-600'
               : 'hover:bg-gray-100'
         }`}
-        onClick={() => toggleDropdown('owner')}
+        onClick={(event) => toggleDropdown('owner', event)}
       >
         <span className="flex items-center gap-1">
           <svg
@@ -2015,7 +2048,7 @@ const RibbonAircraftSelector: React.FC<RibbonAircraftSelectorProps> = ({
             ? 'bg-indigo-100 text-indigo-700'
             : 'hover:bg-gray-100'
         }`}
-        onClick={() => toggleDropdown('actions')}
+        onClick={(event) => toggleDropdown('actions', event)}
       >
         <span className="flex items-center gap-1">
           <svg
@@ -2195,7 +2228,7 @@ const RibbonAircraftSelector: React.FC<RibbonAircraftSelectorProps> = ({
 
   // Main render method
   return (
-    <div className="w-full sticky top-0 z-50 bg-white">
+    <div className="w-full sticky top-0 z-[100] bg-white overflow-visible">
       {/* Main ribbon containing all controls */}
       <div className="flex items-center h-12">
         {/* Logo / Title */}

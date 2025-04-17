@@ -1,4 +1,4 @@
-// components/tracking/utils/AircraftIcon.tsx
+// components/tracking/map/AircraftIcon/AircraftIcon.tsx
 import type { Aircraft } from '@/types/base';
 
 interface AircraftIconOptions {
@@ -35,7 +35,186 @@ export const getTooltipFontSize = (zoomLevel: number): string => {
   return '0.75rem'; // 12px
 };
 
-// Updated getAircraftIconUrl function with more specific icon mapping
+// determineAircraftType function that prioritizes the database type_aircraft code
+// Enhanced determineAircraftType function with support for both FAA and international codes
+export const determineAircraftType = (
+  aircraft: Aircraft & {
+    type?: string;
+    TYPE_AIRCRAFT?: string;
+    MODEL?: string;
+    MANUFACTURER?: string;
+    type_aircraft?: string | number;
+  }
+): string => {
+  // Start with type_aircraft code - this is definitive
+  if (aircraft.type_aircraft !== undefined && aircraft.type_aircraft !== null) {
+    // Convert to string for unified handling
+    const typeCode = String(aircraft.type_aircraft).trim();
+
+    console.log('Processing type_aircraft code:', {
+      icao: aircraft.ICAO24,
+      typeCode: typeCode,
+    });
+
+    // Check if it's an international code format (contains letters)
+    if (typeCode.match(/[A-Za-z]/)) {
+      // It contains letters, likely an international code
+      const intlCode = typeCode.toUpperCase();
+
+      // Define mappings for common international aircraft type codes
+      const intlCodeMap: Record<string, string> = {
+        // Helicopter codes
+        H2T: 'helicopter',
+        H2P: 'helicopter', // Twin-engine helicopter
+        H1P: 'helicopter', // Single-engine helicopter
+        H1E: 'helicopter', // Light helicopter
+        H2E: 'helicopter', // Heavy helicopter
+        H1T: 'helicopter', // Single turbine helicopter
+
+        // Jet aircraft
+        L1J: 'jet', // Single-engine jet
+        L2J: 'jet', // Twin-engine jet
+        L3J: 'jet', // Three-engine jet
+        L4J: 'jet', // Four-engine jet
+
+        // Propeller aircraft
+        L1P: 'singleEngine', // Single-engine prop
+        L2P: 'twinEngine', // Twin-engine prop
+        L3P: 'twinEngine', // Three-engine prop
+        L4P: 'twinEngine', // Four-engine prop
+
+        // Turboprop aircraft
+        L1T: 'turboprop', // Single-engine turboprop
+        L2T: 'turboprop', // Twin-engine turboprop
+        L3T: 'turboprop', // Three-engine turboprop
+        L4T: 'turboprop', // Four-engine turboprop
+
+        // Other types
+        GLID: 'glider',
+        BALL: 'balloon',
+        ULAC: 'weightshift', // Ultra-light aircraft
+        GYRO: 'gyroplane',
+
+        // Special single-character codes
+        H: 'hybrid',
+        O: 'other',
+      };
+
+      // Check if we have a mapping for this international code
+      if (intlCodeMap[intlCode]) {
+        console.log(
+          `Aircraft type detected by international code ${intlCode}:`,
+          {
+            icao: aircraft.ICAO24,
+            mappedType: intlCodeMap[intlCode],
+          }
+        );
+        return intlCodeMap[intlCode];
+      }
+
+      // If it starts with 'H', it's likely a helicopter
+      if (intlCode.startsWith('H')) {
+        console.log('Helicopter detected by international code prefix H:', {
+          icao: aircraft.ICAO24,
+          intlCode: intlCode,
+        });
+        return 'helicopter';
+      }
+
+      // Log unknown international codes for future reference
+      console.log('Unknown international type code:', {
+        icao: aircraft.ICAO24,
+        code: intlCode,
+      });
+    }
+    // Check if it's a numeric FAA type code
+    else if (!isNaN(Number(typeCode))) {
+      const numericCode = parseInt(typeCode, 10);
+
+      // Map type codes to aircraft types based on the FAA schema
+      switch (numericCode) {
+        case 1:
+          return 'glider';
+        case 2:
+          return 'balloon';
+        case 3:
+          return 'blimp';
+        case 4:
+          return 'singleEngine';
+        case 5:
+          return 'twinEngine';
+        case 6:
+          console.log('Helicopter detected by FAA type code 6 (Rotorcraft)!', {
+            icao: aircraft.ICAO24,
+          });
+          return 'helicopter';
+        case 7:
+          return 'weightshift';
+        case 8:
+          return 'parachute';
+        case 9:
+          console.log('Gyroplane detected by FAA type code 9!', {
+            icao: aircraft.ICAO24,
+          });
+          return 'gyroplane';
+        default:
+          console.log('Unknown numeric type_aircraft code:', {
+            icao: aircraft.ICAO24,
+            code: numericCode,
+          });
+      }
+    }
+  }
+
+  // Fallback detection for Eurocopter based on manufacturer/model
+  if (
+    aircraft.MANUFACTURER &&
+    aircraft.MANUFACTURER.toUpperCase().includes('EUROCOPTER')
+  ) {
+    console.log('Eurocopter detected by manufacturer!', {
+      icao: aircraft.ICAO24,
+      manufacturer: aircraft.MANUFACTURER,
+    });
+    return 'helicopter';
+  }
+
+  if (
+    aircraft.MODEL &&
+    (aircraft.MODEL.toUpperCase().includes('EC 130') ||
+      aircraft.MODEL.toUpperCase().includes('EC130') ||
+      aircraft.MODEL.toUpperCase().includes('EC 135') ||
+      aircraft.MODEL.toUpperCase().includes('EC135'))
+  ) {
+    console.log('Eurocopter detected by model!', {
+      icao: aircraft.ICAO24,
+      model: aircraft.MODEL,
+    });
+    return 'helicopter';
+  }
+
+  // Final fallback to text-based detection if needed
+  const typeString = [aircraft.type, aircraft.TYPE_AIRCRAFT]
+    .filter(Boolean)
+    .join(' ')
+    .toUpperCase();
+
+  if (
+    typeString.includes('HELICOPTER') ||
+    typeString.includes('ROTOR') ||
+    typeString.includes('EUROCOPTER')
+  ) {
+    console.log('Helicopter detected by type description!', {
+      icao: aircraft.ICAO24,
+      typeString: typeString,
+    });
+    return 'helicopter';
+  }
+
+  // Default to 'default' if no specific type is detected
+  return 'default';
+};
+
+// Updated getAircraftIconUrl function with country-based icon mapping
 export const getAircraftIconUrl = (
   aircraft: Aircraft & {
     type?: string;
@@ -44,7 +223,8 @@ export const getAircraftIconUrl = (
     TYPE_REGISTRANT?: number;
     ownerType?: number;
     TYPE_AIRCRAFT?: string;
-    type_aircraft?: string; // Add the FAA type_aircraft field
+    type_aircraft?: string | number; // FAA type_aircraft code
+    COUNTRY?: string; // Country field
   }
 ): string => {
   // Check if it's a government aircraft
@@ -56,174 +236,91 @@ export const getAircraftIconUrl = (
   // Determine the base aircraft type
   const aircraftType = determineAircraftType(aircraft);
 
-  // Log the detected aircraft type and FAA code to debug
-  console.log('Aircraft Details:', {
+  // Check if aircraft is from the US or another country
+  const isUS =
+    !aircraft.COUNTRY ||
+    aircraft.COUNTRY.trim().toUpperCase() === 'UNITED STATES' ||
+    aircraft.COUNTRY.trim().toUpperCase() === 'US' ||
+    aircraft.COUNTRY.trim().toUpperCase() === 'USA';
+
+  // Only use international prefix if aircraft is non-US AND international icons exist
+  // For now, just check if the country is set and not US
+  const iconPrefix = isUS ? '' : 'intl_';
+
+  console.log('Aircraft Icon Selection:', {
     icao: aircraft.ICAO24,
-    model: aircraft.MODEL,
-    aircraftType: aircraft.TYPE_AIRCRAFT,
-    faaTypeCode: aircraft.type_aircraft,
-    detectedType: aircraftType,
-    isSikorsky:
-      (aircraft.MODEL || '').toLowerCase().includes('s-76') ||
-      (aircraft.TYPE_AIRCRAFT || '').toLowerCase().includes('sikorsky'),
+    model: aircraft.MODEL || 'Unknown',
+    aircraftType: aircraftType,
+    typeCode: aircraft.type_aircraft,
+    country: aircraft.COUNTRY,
+    isUS: isUS,
+    isGovernment: isGovernment,
+    prefix: iconPrefix,
   });
 
-  // Icon mapping object with more specific icons
-  const iconMap: Record<string, Record<string, string>> = {
-    government: {
-      helicopter: '/icons/governmentRotorIconImg.png',
-      glider: '/icons/governmentJetIconImg.png', // Fall back to jet for government glider
-      balloon: '/icons/governmentJetIconImg.png', // Fall back to jet for government balloon
-      blimp: '/icons/governmentJetIconImg.png', // Fall back to jet for government blimp
-      singleEngine: '/icons/governmentJetIconImg.png',
-      twinEngine: '/icons/governmentJetIconImg.png',
-      weightshift: '/icons/governmentJetIconImg.png',
-      parachute: '/icons/governmentJetIconImg.png',
-      gyroplane: '/icons/governmentRotorIconImg.png', // Use rotor for gyroplane
-      hybrid: '/icons/governmentJetIconImg.png',
-      other: '/icons/governmentJetIconImg.png',
-      jet: '/icons/governmentJetIconImg.png',
-      turboprop: '/icons/governmentJetIconImg.png',
-      default: '/icons/governmentJetIconImg.png',
-    },
-    civilian: {
-      helicopter: '/icons/rotorIconImg.png',
-      glider: '/icons/defaultIconImg.png',
-      balloon: '/icons/aircraft_balloon.png',
-      blimp: '/icons/aircraft_balloon.png', // Use balloon for blimp
-      singleEngine: '/icons/defaultIconImg.png',
-      twinEngine: '/icons/defaultIconImg.png',
-      weightshift: '/icons/defaultIconImg.png',
-      parachute: '/icons/defaultIconImg.png',
-      gyroplane: '/icons/rotorIconImg.png', // Use rotor for gyroplane
-      hybrid: '/icons/defaultIconImg.png',
-      other: '/icons/defaultIconImg.png',
-      jet: '/icons/jetIconImg.png',
-      turboprop: '/icons/proplIconImg.png',
-      default: '/icons/defaultIconImg.png',
-    },
-    grounded: {
-      // For grounded aircraft, can use a specific grounded icon SVG
-      default: '/icons/aircraft_grounded.svg',
-    },
-  };
+  // Default to these icon paths if nothing else matches
+  let iconPath = '/icons/defaultIconImg.png'; // Default fallback
 
-  // Select the appropriate category (government, civilian, or grounded)
-  let category = isGovernment ? 'government' : 'civilian';
+  // Define a simple mapping for aircraft types to icon filenames
+  // If icon doesn't exist on disk, the default "missing image" will display
+  if (isGovernment) {
+    // Government aircraft icons
+    switch (aircraftType) {
+      case 'helicopter':
+      case 'gyroplane':
+        iconPath = `/icons/${iconPrefix}governmentRotorIconImg.png`;
+        break;
+      default:
+        iconPath = `/icons/${iconPrefix}governmentJetIconImg.png`;
+        break;
+    }
+  } else {
+    // Civilian aircraft icons
+    switch (aircraftType) {
+      case 'helicopter':
+      case 'gyroplane':
+        iconPath = `/icons/${iconPrefix}rotorIconImg.png`;
+        break;
+      case 'jet':
+        iconPath = `/icons/${iconPrefix}jetIconImg.png`;
+        break;
+      case 'turboprop':
+        iconPath = `/icons/${iconPrefix}proplIconImg.png`;
+        break;
+      case 'balloon':
+      case 'blimp':
+        iconPath = `/icons/${iconPrefix}aircraft_balloon.png`;
+        break;
+      case 'glider':
+        iconPath = `/icons/${iconPrefix}defaultIconImg.png`;
+        break;
+      case 'singleEngine':
+      case 'twinEngine':
+      default:
+        iconPath = `/icons/${iconPrefix}defaultIconImg.png`;
+        break;
+    }
+  }
 
-  // Override with grounded category if the aircraft is on ground and we want to show a different icon
+  // Override with grounded icon if the aircraft is on ground and we want to use a different icon
   if (isGrounded && false) {
-    // Set to true if you want to use grounded icons
-    category = 'grounded';
-    return iconMap.grounded.default;
+    // Change to true to enable grounded icons
+    iconPath = '/icons/aircraft_grounded.svg';
   }
 
-  // Special case for all Sikorsky S-76 variants
-  if (
-    (aircraft.MODEL || '').includes('S-76') ||
-    (aircraft.MODEL || '').includes('S76') ||
-    (aircraft.TYPE_AIRCRAFT || '').includes('SIKORSKY S-76') ||
-    (aircraft.TYPE_AIRCRAFT || '').includes('SIKORSKY S76')
-  ) {
-    console.log(
-      'SPECIAL OVERRIDE: Forcing helicopter icon for Sikorsky S-76 variant:',
-      aircraft.MODEL
+  console.log(
+    `Selected icon path: ${iconPath} for aircraft ${aircraft.ICAO24}`
+  );
+
+  // Make a final check to ensure we're returning a valid icon path
+  if (!iconPath) {
+    console.warn(
+      `No icon path found for aircraft ${aircraft.ICAO24}, using default`
     );
-    return iconMap[category]['helicopter'];
+    return `/icons/defaultIconImg.png`;
   }
 
-  // Return the appropriate icon URL (with fallback to default)
-  if (aircraftType === 'helicopter' || aircraftType === 'gyroplane') {
-    return iconMap[category]['helicopter'];
-  }
-
-  return iconMap[category][aircraftType] || iconMap[category].default;
-};
-
-// Enhanced determineAircraftType function with more specific type detection
-export const determineAircraftType = (
-  aircraft: Aircraft & {
-    type?: string;
-    TYPE_AIRCRAFT?: string;
-    MODEL?: string;
-  }
-): string => {
-  // Combine possible type fields for checking
-  const typeString = [aircraft.type, aircraft.TYPE_AIRCRAFT, aircraft.MODEL]
-    .filter(Boolean)
-    .join(' ')
-    .toLowerCase();
-
-  // Check for balloon (adding support for your aircraft_balloon.png)
-  if (typeString.includes('balloon') || typeString.includes('airship')) {
-    return 'balloon';
-  }
-
-  // Check for different helicopter/rotor types
-  if (typeString.includes('helicopter') || typeString.includes('rotor')) {
-    return 'helicopter';
-  }
-
-  // Check for different jet types
-  if (typeString.includes('jet') || typeString.includes('airliner')) {
-    return 'jet';
-  }
-
-  // Check for turboprop
-  if (typeString.includes('turboprop') || typeString.includes('turbo prop')) {
-    return 'turboprop';
-  }
-
-  // Check for twin engines
-  if (typeString.includes('twin')) {
-    return 'twinEngine';
-  }
-
-  // Check for single engine or piston aircraft
-  if (typeString.includes('single') || typeString.includes('piston')) {
-    return 'singleEngine';
-  }
-
-  // Manufacturer-based types
-  if (typeString.includes('cessna')) {
-    return typeString.includes('twin') ? 'twinEngine' : 'singleEngine';
-  }
-
-  if (typeString.includes('piper')) {
-    return 'singleEngine';
-  }
-
-  if (typeString.includes('beech') || typeString.includes('beechcraft')) {
-    return typeString.includes('king air') ? 'turboprop' : 'twinEngine';
-  }
-
-  if (typeString.includes('cirrus')) {
-    return 'singleEngine';
-  }
-
-  if (typeString.includes('boeing') || typeString.includes('airbus')) {
-    return 'jet';
-  }
-
-  if (typeString.includes('diamond')) {
-    return 'singleEngine';
-  }
-
-  if (typeString.includes('mooney')) {
-    return 'singleEngine';
-  }
-
-  if (typeString.includes('bombardier') || typeString.includes('embraer')) {
-    return 'jet';
-  }
-
-  // Default to type based on basic inference
-  if (typeString.includes('172') || typeString.includes('152')) {
-    return 'singleEngine';
-  }
-
-  // Default to jet for unknown types
-  return 'default';
+  return iconPath;
 };
 
 // Enhanced function to get a more detailed aircraft type description
@@ -270,6 +367,7 @@ export const createAircraftIcon = (
     TYPE_REGISTRANT?: number;
     ownerType?: number;
     TYPE_AIRCRAFT?: string;
+    COUNTRY?: string; // Add COUNTRY field here too
   },
   options: AircraftIconOptions = {}
 ): L.DivIcon | null => {
@@ -287,6 +385,14 @@ export const createAircraftIcon = (
   const ownerTypeClass = getOwnerTypeClass(aircraft);
   const statusClass = aircraft.on_ground ? 'grounded' : 'flying';
 
+  // Add country class for additional styling options
+  const isUS =
+    !aircraft.COUNTRY ||
+    aircraft.COUNTRY.trim().toUpperCase() === 'UNITED STATES' ||
+    aircraft.COUNTRY.trim().toUpperCase() === 'US' ||
+    aircraft.COUNTRY.trim().toUpperCase() === 'USA';
+  const countryClass = isUS ? 'us-aircraft' : 'international-aircraft';
+
   // Get owner type color for border
   const ownerBorderColor = getOwnerBorderColor(
     aircraft.TYPE_REGISTRANT ?? aircraft.ownerType ?? 0
@@ -295,7 +401,7 @@ export const createAircraftIcon = (
   // Create a completely non-interactive div icon
   const icon = L.divIcon({
     // Use a custom class that is NOT leaflet-interactive
-    className: `custom-aircraft-marker ${isSelected ? 'selected' : ''} ${statusClass} ${aircraftType}-type ${ownerTypeClass}`,
+    className: `custom-aircraft-marker ${isSelected ? 'selected' : ''} ${statusClass} ${aircraftType}-type ${ownerTypeClass} ${countryClass}`,
     html: `
       <div class="aircraft-marker" style="
         position: relative;

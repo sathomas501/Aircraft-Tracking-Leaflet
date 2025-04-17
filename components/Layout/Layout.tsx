@@ -1,11 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import {LoadingSpinner} from './../shared/LoadingSpinner/LoadingSpinner';
+import AircraftSpinner from '../tracking/map/components/AircraftSpinner';
 
 interface LayoutProps {
   children: React.ReactNode;
   aircraft?: number;
   title: string;
- }
+}
 
 export const Layout: React.FC<LayoutProps> = ({ children, aircraft }) => {
   const [isLoaded, setIsLoaded] = useState(false);
@@ -21,7 +21,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, aircraft }) => {
   if (!isLoaded) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <LoadingSpinner size="xl" message="Loading..." />
+        <AircraftSpinner isLoading={true} />
       </div>
     );
   }

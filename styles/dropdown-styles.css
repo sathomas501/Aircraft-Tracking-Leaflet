@@ -69,3 +69,8 @@
 .dropdown-menu .dropdown-item:hover {
   background-color: #eef2ff;
 }
+
+/* Higher than the map but lower than the loading overlay*/
+const dropdownZIndexStyle {
+  z-index: 1000;
+}

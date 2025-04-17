@@ -206,21 +206,53 @@ export async function getAircraftNearSearchedLocation(
         `Created ${radiusKm}km geofence for coordinates (${lat}, ${lng})`
       );
       return await fetchAircraftInGeofence(geofence);
-    } else {
-      // Try as a postal code or location name
+    }
+
+    // Try using Mapbox for global address search
+    try {
+      const locations = await searchLocationWithMapbox(
+        query,
+        1,
+        'place,postcode,address,poi,neighborhood,region,locality'
+      );
+
+      if (locations && locations.length > 0) {
+        // We got a valid location from Mapbox
+        const location = locations[0];
+        const geofence = createGeofence(location.lat, location.lng, radiusKm);
+        console.log(
+          `Created ${radiusKm}km geofence for location "${location.name}"`
+        );
+        return await fetchAircraftInGeofence(geofence);
+      }
+    } catch (mapboxError) {
+      console.warn(`Mapbox search failed for query "${query}":`, mapboxError);
+      // Continue to next method if Mapbox fails
+    }
+
+    // Fallback to postal code lookup if everything else fails
+    try {
       const geofence = await createGeofenceFromPostalCode(
         query,
         'us',
         radiusKm
       );
 
-      if (!geofence) {
-        throw new Error(`Could not create geofence for search "${query}"`);
+      if (geofence) {
+        console.log(
+          `Created ${radiusKm}km geofence for postal code "${query}"`
+        );
+        return await fetchAircraftInGeofence(geofence);
       }
-
-      console.log(`Created ${radiusKm}km geofence for search "${query}"`);
-      return await fetchAircraftInGeofence(geofence);
+    } catch (postalError) {
+      console.warn(
+        `Postal code lookup failed for query "${query}":`,
+        postalError
+      );
     }
+
+    console.error(`All location lookup methods failed for query: "${query}"`);
+    return [];
   } catch (error) {
     console.error(`Error getting aircraft near search "${query}":`, error);
     return [];
@@ -272,10 +304,59 @@ export async function getLocationSuggestions(
   }
 }
 
+export async function getCoordinatesFromQuery(
+  query: string
+): Promise<{ lat: number; lng: number; name: string } | null> {
+  try {
+    // First check if the query looks like coordinates
+    const coordsRegex = /^(-?\d+(\.\d+)?),\s*(-?\d+(\.\d+)?)$/;
+    const coordsMatch = query.match(coordsRegex);
+
+    if (coordsMatch) {
+      // It's coordinates, parse them
+      const lat = parseFloat(coordsMatch[1]);
+      const lng = parseFloat(coordsMatch[3]);
+
+      if (validateCoordinates(lat, lng)) {
+        return { lat, lng, name: `${lat}, ${lng}` };
+      }
+    }
+
+    // Use Mapbox for general global addresses (most robust)
+    const locations = await searchLocationWithMapbox(
+      query,
+      1,
+      'place,postcode,address,poi,neighborhood,region,locality'
+    );
+
+    if (locations && locations.length > 0) {
+      return {
+        lat: locations[0].lat,
+        lng: locations[0].lng,
+        name: locations[0].name,
+      };
+    }
+
+    console.error(`Could not resolve coordinates for query: "${query}"`);
+    return null;
+  } catch (error) {
+    console.error(`Error getting coordinates from query "${query}":`, error);
+    return null;
+  }
+}
+
 /**
  * Validates that coordinates are within global bounds
  */
 function validateCoordinates(lat: number, lng: number): boolean {
+  // Check for NaN or undefined values
+  if (isNaN(lat) || isNaN(lng)) {
+    console.error(
+      `Invalid coordinates: lat or lng is NaN - lat: ${lat}, lng: ${lng}`
+    );
+    return false;
+  }
+
   // Basic validation for coordinates globally
   const isValidLat = lat >= -90.0 && lat <= 90.0;
   const isValidLng = lng >= -180.0 && lng <= 180.0;
@@ -284,7 +365,8 @@ function validateCoordinates(lat: number, lng: number): boolean {
 
   if (!isValid) {
     console.error(`Invalid coordinates detected: lat ${lat}, lng ${lng}`);
-    console.error('These coordinates are outside valid bounds.');
+    if (!isValidLat) console.error(`Latitude must be between -90 and 90`);
+    if (!isValidLng) console.error(`Longitude must be between -180 and 180`);
   }
 
   return isValid;
@@ -298,7 +380,7 @@ function validateCoordinates(lat: number, lng: number): boolean {
 export async function postalCodeToCoordinates(
   postalCode: string,
   countryCode: string = 'us'
-): Promise<{ lat: number; lng: number }> {
+): Promise<{ lat: number; lng: number } | null> {
   try {
     console.log(
       `Fetching coordinates for Postal code: ${postalCode} in ${countryCode}`
@@ -313,8 +395,12 @@ export async function postalCodeToCoordinates(
         },
       }
     );
+
+    // Better error handling with response details
     if (!response.ok) {
-      throw new Error(`Geocoding API error: ${response.status}`);
+      const errorText = await response.text();
+      console.error(`Geocoding API error (${response.status}): ${errorText}`);
+      return null; // Return null instead of throwing to allow fallbacks
     }
 
     const data = await response.json();
@@ -336,15 +422,14 @@ export async function postalCodeToCoordinates(
     }
 
     // If no matches found
-    throw new Error(`No coordinates found for Postal code ${postalCode}`);
+    console.warn(`No coordinates found for Postal code ${postalCode}`);
+    return null;
   } catch (error) {
     console.error(
       `Error converting Postal code ${postalCode} to coordinates:`,
       error
     );
-    throw new Error(
-      `Failed to get coordinates for Postal code ${postalCode}: ${error instanceof Error ? error.message : 'Unknown error'}`
-    );
+    return null; // Return null to allow fallbacks
   }
 }
 
