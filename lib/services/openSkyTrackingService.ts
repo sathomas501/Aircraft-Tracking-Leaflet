@@ -119,6 +119,7 @@ class OpenSkyTrackingService {
   private lastFullRefreshTime: number = 0;
   private fullRefreshInterval: number = 3600000;
   private activeIcao24s: Set<string> = new Set();
+  private currentRegion: string | null = null;
 
   private persistentAircraftCache: Map<string, ExtendedAircraft> = new Map();
 
@@ -334,6 +335,209 @@ class OpenSkyTrackingService {
     );
 
     return this.trackedAircraft;
+  }
+
+  /**
+   * Track aircraft by region
+   */
+  public async trackRegion(region: number): Promise<Aircraft[]> {
+    if (blockAllApiCalls) {
+      console.log(`[OpenSky] API calls blocked - skipping region tracking`);
+      return [];
+    }
+
+    console.log(`[OpenSky] Tracking aircraft in region ${region}`);
+
+    try {
+      // Get aircraft in this region from API
+      const response = await fetch(
+        `/api/tracking/region?region=${encodeURIComponent(region)}`
+      );
+      if (!response.ok) {
+        throw new Error(`Region API error: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      const aircraftData = data.aircraft || [];
+
+      // Transform to match Aircraft interface
+      const transformedAircraft: Aircraft[] = aircraftData.map((a: any) => ({
+        ICAO24: a.ICAO24 || '',
+        REGISTRATION: a.REGISTRATION || '',
+        N_NUMBER: a.N_NUMBER,
+        MANUFACTURER: a.MANUFACTURER || '',
+        MODEL: a.MODEL || '',
+        OPERATOR: a.OPERATOR,
+        latitude: a.latitude || 0,
+        longitude: a.longitude || 0,
+        altitude: a.altitude || 0,
+        heading: a.heading || 0,
+        velocity: a.velocity || 0,
+        on_ground: a.on_ground || false,
+        last_contact: a.last_contact || 0,
+        NAME: a.NAME || '',
+        CITY: a.CITY || '',
+        STATE: a.STATE || '',
+        TYPE_REGISTRANT: a.TYPE_REGISTRANT || 0,
+        ownerType: a.ownerType,
+        TYPE_AIRCRAFT: a.TYPE_AIRCRAFT || '',
+        COUNTRY: a.COUNTRY,
+        isTracked: true,
+        REGION: a.REGION,
+      }));
+
+      console.log(
+        `[OpenSky] Found ${transformedAircraft.length} aircraft in region ${region}`
+      );
+
+      return transformedAircraft;
+    } catch (error) {
+      console.error(`[OpenSky] Error tracking region:`, error);
+      return [];
+    }
+  }
+  /**
+   * Helper method to get aircraft by region from your database
+   */
+  private async getAircraftByRegion(
+    region: string
+  ): Promise<ExtendedAircraft[]> {
+    try {
+      const response = await fetch(
+        `/api/tracking/region/${encodeURIComponent(region)}`
+      );
+
+      if (!response.ok) {
+        throw new Error(
+          `Failed to fetch aircraft by region: ${response.statusText}`
+        );
+      }
+
+      const data = await response.json();
+      return data as ExtendedAircraft[];
+    } catch (error) {
+      console.error(
+        `[OpenSky] Error fetching aircraft for region ${region}:`,
+        error
+      );
+      return [];
+    }
+  }
+
+  /**
+   * Merge static aircraft data with position data
+   */
+  private mergePositionData(
+    staticAircraft: ExtendedAircraft[],
+    positionData: Aircraft[]
+  ): ExtendedAircraft[] {
+    return staticAircraft
+      .map((aircraft) => {
+        const position = positionData.find(
+          (pos) => pos.ICAO24 === aircraft.ICAO24
+        );
+
+        if (position) {
+          return {
+            ...aircraft,
+            latitude: position.latitude,
+            longitude: position.longitude,
+            altitude: position.altitude,
+            heading: position.heading,
+            velocity: position.velocity,
+            on_ground: position.on_ground,
+            last_contact: position.last_contact,
+          };
+        }
+
+        return aircraft;
+      })
+      .filter(
+        (aircraft) =>
+          // Only keep aircraft that have valid position data
+          typeof aircraft.latitude === 'number' &&
+          typeof aircraft.longitude === 'number'
+      );
+  }
+
+  /**
+   * Refresh positions for aircraft in the current region
+   */
+  public async refreshRegionPositions(): Promise<ExtendedAircraft[]> {
+    if (!this.trackingActive || !this.currentRegion) {
+      console.log('[OpenSky] No active region tracking to refresh');
+      return [];
+    }
+
+    if (this.isRefreshingPositions) {
+      console.log('[OpenSky] Already refreshing positions, skipping');
+      return this.trackedAircraft as ExtendedAircraft[];
+    }
+
+    if (blockAllApiCalls) {
+      console.log(`[OpenSky] API calls blocked - skipping position refresh`);
+      return this.trackedAircraft as ExtendedAircraft[];
+    }
+
+    this.isRefreshingPositions = true;
+    setRefreshInProgress(true);
+    this.loading = true;
+
+    try {
+      const icaoIds = Array.from(this.activeIcao24s);
+
+      if (icaoIds.length === 0) {
+        console.log('[OpenSky] No active aircraft to refresh positions for');
+        return [];
+      }
+
+      console.log(
+        `[OpenSky] Refreshing positions for ${icaoIds.length} aircraft in region ${this.currentRegion}`
+      );
+
+      // Get only position updates for the active aircraft
+      const updatedPositions = await this.getLiveAircraftData(
+        '', // No manufacturer filter
+        icaoIds,
+        false, // No static data needed
+        true // Only active aircraft
+      );
+
+      // Update tracked aircraft with new positions
+      if (updatedPositions.length > 0) {
+        // Update the set of active aircraft
+        this.activeIcao24s.clear();
+        updatedPositions.forEach((aircraft) => {
+          if (aircraft.ICAO24) {
+            this.activeIcao24s.add(aircraft.ICAO24.toLowerCase());
+          }
+        });
+
+        // Merge with static data
+        const regionalAircraft = await this.getAircraftByRegion(
+          this.currentRegion
+        );
+        const mergedAircraft = this.mergePositionData(
+          regionalAircraft,
+          updatedPositions
+        );
+
+        this.trackedAircraft = mergedAircraft;
+        this.lastRefreshTime = Date.now();
+        this.notifySubscribers();
+      }
+
+      return this.trackedAircraft as ExtendedAircraft[];
+    } catch (error) {
+      console.error('[OpenSky] Error refreshing region positions:', error);
+      return this.trackedAircraft as ExtendedAircraft[];
+    } finally {
+      this.loading = false;
+      this.isRefreshingPositions = false;
+      setTimeout(() => {
+        setRefreshInProgress(false);
+      }, 500);
+    }
   }
 
   public getRefreshStats(): {
@@ -1067,19 +1271,6 @@ class OpenSkyTrackingService {
           }
         } catch (error) {
           console.error(`[OpenSky] Error processing batch ${i + 1}:`, error);
-
-          // Check if we recently hit a rate limit and should wait
-          const timeSinceRateLimit = Date.now() - this.lastRateLimitTime;
-          if (this.lastRateLimitTime > 0 && timeSinceRateLimit < 60000) {
-            const waitTime = Math.ceil((60000 - timeSinceRateLimit) / 1000);
-            progressCallback({
-              message: `Recently rate limited. Waiting ${waitTime}s before continuing...`,
-              complete: false,
-            });
-            await new Promise((resolve) =>
-              setTimeout(resolve, 60000 - timeSinceRateLimit)
-            );
-          }
 
           // For batch processing, add more aggressive delay between batches
           for (let i = 0; i < batches.length; i++) {

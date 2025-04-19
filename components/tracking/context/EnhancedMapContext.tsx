@@ -9,10 +9,11 @@ import React, {
   useMemo,
 } from 'react';
 import L from 'leaflet';
-import type {
+import {
   SelectOption,
   ExtendedAircraft,
   AircraftPosition,
+  RegionCode,
 } from '@/types/base';
 import type { CachedAircraftData } from '@/types/base'; // Import your new type
 import type { AircraftModel } from '../../../types/aircraft-models';
@@ -23,6 +24,11 @@ import {
   mergeAircraftData,
   clearAircraftData,
 } from '../persistence/AircraftDataPersistence';
+import type { LatLngBoundsExpression } from 'leaflet';
+import {
+  MAP_CONFIG,
+  getBoundsByRegion as configGetBoundsByRegion,
+} from '../../../config/map';
 
 // Define context interface
 interface EnhancedMapContextType {
@@ -65,8 +71,10 @@ interface EnhancedMapContextType {
   // Add new function for updating aircraft from geofence
   updateGeofenceAircraft: (geofenceAircraft: ExtendedAircraft[]) => void;
 
-  filterMode: 'manufacturer' | 'geofence' | 'both';
-  setFilterMode: (mode: 'manufacturer' | 'geofence' | 'both') => void;
+  filterMode: 'manufacturer' | 'geofence' | 'both' | 'region' | 'owner';
+  setFilterMode: (
+    mode: 'manufacturer' | 'geofence' | 'both' | 'region' | 'owner'
+  ) => void;
   blockManufacturerApiCalls: boolean;
   setBlockManufacturerApiCalls: (block: boolean) => void;
   isManufacturerApiBlocked: boolean;
@@ -82,6 +90,11 @@ interface EnhancedMapContextType {
   toggleGeofence: () => void;
   clearGeofence: () => {};
   geofenceCoordinates: { lat: number; lng: number } | null;
+
+  // Region selection properties
+  selectedRegion: RegionCode | string; // Allow both for backward compatibility
+  setSelectedRegion: (region: RegionCode | string) => void;
+  getBoundsByRegion: (region: string) => LatLngBoundsExpression;
 }
 
 // Create context with default values
@@ -136,6 +149,10 @@ const EnhancedMapContext = createContext<EnhancedMapContextType>({
   toggleGeofence: () => {},
   clearGeofence: () => ({}),
   filteredAircraft: [],
+  selectedRegion: RegionCode.GLOBAL,
+  setSelectedRegion: (region: RegionCode | string) => {},
+  getBoundsByRegion: (region: string) =>
+    configGetBoundsByRegion('GLOBAL') as LatLngBoundsExpression,
 });
 
 // Props for the context provider
@@ -174,6 +191,10 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
     lat: number;
     lng: number;
   } | null>(null);
+
+  const [selectedRegion, setSelectedRegion] = useState<RegionCode | string>(
+    RegionCode.GLOBAL
+  );
 
   // Derived state for geofence coordinates
   const geofenceCoordinates = useMemo(() => geofenceCenter, [geofenceCenter]);
@@ -216,7 +237,7 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
     useState<boolean>(false);
 
   const [filterMode, setFilterMode] = useState<
-    'manufacturer' | 'geofence' | 'both'
+    'manufacturer' | 'geofence' | 'both' | 'region' | 'owner'
   >('manufacturer');
   const [blockManufacturerApiCalls, setBlockManufacturerApiCalls] =
     useState<boolean>(false);
@@ -580,6 +601,15 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
     }
   };
 
+  // If you don't already have it, add this function to expose the map's getBoundsByRegion function
+  // Create a wrapped function that calls your map config function
+  const handleGetBoundsByRegion = useCallback(
+    (region: string): LatLngBoundsExpression => {
+      return configGetBoundsByRegion(region);
+    },
+    []
+  );
+
   // Reset all selections
   const reset = async () => {
     await selectManufacturer(null);
@@ -774,6 +804,11 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
     setGeofenceRadius,
     toggleGeofence,
     clearGeofence,
+
+    // Region selection
+    selectedRegion,
+    setSelectedRegion,
+    getBoundsByRegion: handleGetBoundsByRegion,
   };
 
   return (

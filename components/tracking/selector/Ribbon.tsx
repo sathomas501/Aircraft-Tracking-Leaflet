@@ -1,12 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useEnhancedMapContext } from '../context/EnhancedMapContext';
-import type { SelectOption } from '@/types/base';
+import { RegionCode, type SelectOption } from '@/types/base';
 import type { ExtendedAircraft } from '../../../types/base';
 import type { AircraftModel } from '../../../types/aircraft-models';
 import { adaptGeofenceAircraft } from '../../../lib/utils/geofenceAdapter';
 import {
   getAircraftNearLocation,
-  calculateDistance,
   searchLocationWithMapbox,
   getAircraftNearSearchedLocation,
 } from '../../../lib/services/geofencing';
@@ -14,11 +13,19 @@ import { enrichGeofenceAircraft } from '../../../lib/utils/geofenceEnricher';
 import { useGeolocation } from '../hooks/useGeolocation';
 import openSkyTrackingService from '@/lib/services/openSkyTrackingService';
 import OwnershipTypeFilter from '../map/components/OwnershipTypeFilter';
-import { MAP_CONFIG, getBoundsByRegion } from '../../../config/map';
+import {
+  MAP_CONFIG,
+  getBoundsByRegion,
+  getZoomLevelForRegion,
+} from '../../../config/map';
+import { RibbonRefreshButton } from '../map/components/RefreshButtonComponent';
+import { RibbonClearFiltersButton } from '../map/components/ribbon-clear';
 
 interface RibbonAircraftSelectorProps {
   manufacturers: SelectOption[];
 }
+
+type FilterMode = 'manufacturer' | 'geofence' | 'both' | 'owner' | 'region';
 
 // Fix the component declaration to explicitly return JSX.Element
 const RibbonAircraftSelector: React.FC<RibbonAircraftSelectorProps> = ({
@@ -56,9 +63,7 @@ const RibbonAircraftSelector: React.FC<RibbonAircraftSelectorProps> = ({
   const combinedLoading = isLoading || localLoading;
 
   // Local state
-  const [filterMode, setFilterMode] = useState<
-    'manufacturer' | 'geofence' | 'both' | 'owner' | 'region'
-  >('manufacturer');
+  const [filterMode, setFilterMode] = useState<FilterMode | null>(null);
 
   // Dropdown state
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
@@ -83,12 +88,14 @@ const RibbonAircraftSelector: React.FC<RibbonAircraftSelectorProps> = ({
     []
   );
   const [geofenceEnabled, setGeofenceEnabled] = useState(false);
-  const [activeRegion, setActiveRegion] = useState<string | null>(null);
+  const [activeRegion, setActiveRegion] = useState<RegionCode | string | null>(
+    null
+  );
   const [isGeofenceActive, setIsGeofenceActive] = useState(false);
   const [combinedModeReady, setCombinedModeReady] = useState<boolean>(false);
   const [regionOutline, setRegionOutline] = useState<any>(null);
-  const [selectedRegion, setSelectedRegion] = useState<string>(
-    MAP_CONFIG.REGIONS.GLOBAL
+  const [selectedRegion, setSelectedRegion] = useState<number>(
+    RegionCode.GLOBAL
   );
 
   // Refs for dropdown handling
@@ -301,33 +308,129 @@ const RibbonAircraftSelector: React.FC<RibbonAircraftSelectorProps> = ({
   };
 
   // Function to handle region selection
-  const handleRegionSelect = (region: string) => {
+  const handleRegionSelect = async (region: RegionCode) => {
     setActiveRegion(region);
     setSelectedRegion(region);
+    setLocalLoading(true);
 
-    // Set map bounds based on region
-    if (mapInstance) {
-      const bounds = getBoundsByRegion(region);
-      mapInstance.fitBounds(bounds as any);
+    try {
+      // Set map bounds based on region
+      if (mapInstance) {
+        const bounds = getBoundsByRegion(region);
+        mapInstance.fitBounds(bounds as any);
+        drawRegionOutline(region);
+      }
 
-      // Draw the region outline
-      drawRegionOutline(region);
+      // Instead of immediately fetching aircraft data,
+      // just store the region selection for later use
+      console.log(
+        `Region ${getRegionName(region)} selected. Waiting for manufacturer selection...`
+      );
+
+      // Optionally, you could fetch just the count of aircraft in this region
+      // to give the user an idea of the data volume
+      const countResponse = await fetch(
+        `/api/tracking/region-count?region=${region}`
+      );
+      if (countResponse.ok) {
+        const countData = await countResponse.json();
+        console.log(`${countData.count} aircraft available in this region`);
+      }
+
+      // Clear any previous aircraft data
+      if (clearGeofenceData) {
+        clearGeofenceData();
+      }
+    } catch (error) {
+      console.error('Error in region selection:', error);
+    } finally {
+      setLocalLoading(false);
+      setActiveDropdown(null);
+    }
+  };
+
+  const fetchAircraftByRegionAndManufacturer = async (
+    region: RegionCode,
+    manufacturer: string,
+    page: number = 1,
+    limit: number = 500
+  ) => {
+    if (!region || !manufacturer) {
+      console.log('Both region and manufacturer must be selected');
+      return;
     }
 
-    // Apply regional bounds to the current active filter
-    applyRegionalBoundsToActiveFilter();
+    setLocalLoading(true);
 
-    // If we have aircraft data, filter it to the selected region
-    if (displayedAircraft && displayedAircraft.length > 0) {
-      filterAircraftByRegion(region);
+    try {
+      const response = await fetch(
+        `/api/tracking/filtered-aircraft?region=${region}&manufacturer=${encodeURIComponent(manufacturer)}&page=${page}&limit=${limit}`
+      );
+      console.log(
+        `Fetching aircraft for region ${region} and manufacturer ${manufacturer}`
+      );
+
+      const data = await response.json();
+      const aircraftData = data.aircraft || [];
+
+      console.log(
+        'Full API response structure:',
+        JSON.stringify(data, null, 2)
+      );
+
+      console.log('API response data:', data);
+      console.log('Aircraft count:', data.aircraft?.length || 0);
+
+      if (!response.ok) {
+        throw new Error(`API error: ${response.statusText}`);
+      }
+
+      // Process the filtered aircraft data
+      if (aircraftData.length > 0) {
+        // Transform to ExtendedAircraft
+        interface AircraftData {
+          TYPE_AIRCRAFT?: string;
+          OPERATOR?: string;
+          REGION: number;
+        }
+
+        const extendedAircraft: ExtendedAircraft[] = aircraftData.map(
+          (aircraft: AircraftData) => ({
+            ...aircraft,
+            type: aircraft.TYPE_AIRCRAFT || 'Unknown',
+            isGovernment:
+              aircraft.OPERATOR?.toLowerCase().includes('government') ?? false,
+            REGION: aircraft.REGION,
+            zoomLevel: undefined,
+          })
+        );
+
+        console.log('Processed aircraft:', extendedAircraft);
+        console.log(
+          'About to update geofence aircraft with:',
+          extendedAircraft
+        );
+        console.log(
+          'updateGeofenceAircraft function:',
+          typeof updateGeofenceAircraft
+        );
+
+        // Update the map
+        updateGeofenceAircraft(extendedAircraft);
+      } else {
+        console.log(
+          `No aircraft found for manufacturer ${manufacturer} in region ${getRegionName(region)}`
+        );
+      }
+    } catch (error) {
+      console.error('Error fetching filtered aircraft:', error);
+    } finally {
+      setLocalLoading(false);
     }
-
-    // Close the dropdown after selection
-    setActiveDropdown(null);
   };
 
   // Create function to draw the region outline
-  const drawRegionOutline = (region: string) => {
+  const drawRegionOutline = (region: RegionCode) => {
     if (!mapInstance) return;
 
     // Clear any existing outline
@@ -380,26 +483,26 @@ const RibbonAircraftSelector: React.FC<RibbonAircraftSelectorProps> = ({
     switch (filterMode) {
       case 'manufacturer':
         // Filter by manufacturer AND region bounds
-        filterAircraftByRegion(activeRegion);
+        filterAircraftByRegion(activeRegion?.toString());
         // Then apply manufacturer filter to the already region-filtered data
         break;
       case 'geofence':
         // Just use the region as the geofence
-        filterAircraftByRegion(activeRegion);
+        filterAircraftByRegion(activeRegion?.toString());
         break;
       case 'both':
         // Apply both manufacturer and region filters
-        filterAircraftByRegion(activeRegion);
+        filterAircraftByRegion(activeRegion?.toString());
         // Then apply manufacturer filter
         break;
       case 'owner':
         // Filter by owner type AND region bounds
-        filterAircraftByRegion(activeRegion);
+        filterAircraftByRegion(activeRegion?.toString());
         // Then apply owner filter
         break;
       default:
         // Default just apply region filter
-        filterAircraftByRegion(activeRegion);
+        filterAircraftByRegion(activeRegion?.toString());
     }
   };
 
@@ -467,6 +570,109 @@ const RibbonAircraftSelector: React.FC<RibbonAircraftSelectorProps> = ({
     }
   };
 
+  const getAircraftByRegion = async (
+    region: string
+  ): Promise<ExtendedAircraft[]> => {
+    try {
+      // Replace with your actual API endpoint for querying your database
+      const response = await fetch(
+        `/api/tracking/region/${encodeURIComponent(region)}`
+      );
+
+      if (!response.ok) {
+        throw new Error(
+          `Error fetching aircraft by region: ${response.statusText}`
+        );
+      }
+
+      const data = await response.json();
+      return data as ExtendedAircraft[];
+    } catch (error) {
+      console.error('Error fetching aircraft by region:', error);
+      return [];
+    }
+  };
+
+  // Step 2: Only fetch position data for these specific aircraft
+  const fetchPositionsForRegionalAircraft = async (region: string) => {
+    setLocalLoading(true);
+
+    try {
+      // Get aircraft IDs from your database by region
+      const regionalAircraft = await getAircraftByRegion(region);
+
+      if (regionalAircraft.length === 0) {
+        return [];
+      }
+
+      // Extract ICAO24 identifiers
+      interface RegionalAircraft {
+        ICAO24: string;
+        REGISTRATION: string;
+        MANUFACTURER: string;
+        MODEL: string;
+        REGION: number;
+      }
+
+      const icaoIds: string[] = (regionalAircraft as any[]).map(
+        (aircraft) => aircraft.ICAO24 || ''
+      );
+
+      // Only fetch position data for these specific aircraft
+      // This is much more efficient for your OpenSky quota
+      const positions = await openSkyTrackingService.trackRegion(
+        icaoIds.length
+      );
+
+      // Merge the static data with the position data
+      interface PositionData {
+        ICAO24: string;
+        latitude: number;
+        longitude: number;
+        // other position data
+      }
+
+      interface StaticAircraftData {
+        ICAO24: string;
+        REGISTRATION: string;
+        MANUFACTURER: string;
+        MODEL: string;
+        REGION: number;
+      }
+
+      interface AircraftWithPosition extends StaticAircraftData {
+        latitude: number;
+        longitude: number;
+        // other position data
+      }
+
+      const aircraftWithPositions: AircraftWithPosition[] = positions.map(
+        (position: PositionData) => {
+          // Use a type assertion to fix the compatibility issue
+          const staticData = regionalAircraft.find(
+            (a) => a.ICAO24 === position.ICAO24
+          ) as StaticAircraftData | undefined;
+          return {
+            ...staticData,
+            latitude: position.latitude,
+            longitude: position.longitude,
+            // other position data
+            REGISTRATION: staticData?.REGISTRATION || position.ICAO24,
+            MANUFACTURER: staticData?.MANUFACTURER || 'Unknown',
+            MODEL: staticData?.MODEL || 'Unknown',
+          } as AircraftWithPosition;
+        }
+      );
+
+      return aircraftWithPositions;
+    } catch (error) {
+      console.error('Error fetching positions for regional aircraft:', error);
+      return [];
+    } finally {
+      setLocalLoading(false);
+    }
+  };
+
   // Clear function to remove the region outline
   const clearRegionFilter = () => {
     // Clear region state
@@ -501,14 +707,24 @@ const RibbonAircraftSelector: React.FC<RibbonAircraftSelectorProps> = ({
     }
 
     // Reset map view to global
+    const globalBounds = getBoundsByRegion(RegionCode.GLOBAL);
+    // 7. Reset map view to global with controlled zoom
+
     if (mapInstance) {
-      try {
-        const globalBounds = getBoundsByRegion(MAP_CONFIG.REGIONS.GLOBAL);
-        mapInstance.fitBounds(globalBounds as any);
-        mapInstance.invalidateSize(); // Force a map refresh
-      } catch (error) {
-        console.error('Error resetting map view:', error);
-      }
+      const globalBounds = getBoundsByRegion(RegionCode.GLOBAL);
+      const globalZoomLevel = getZoomLevelForRegion(RegionCode.GLOBAL); // This returns 3
+
+      // Use maxZoom to prevent zooming in too far
+      mapInstance.fitBounds(globalBounds, {
+        maxZoom: globalZoomLevel,
+        padding: MAP_CONFIG.PADDING.DEFAULT,
+      });
+
+      // Force the exact zoom level after bounds are applied
+      setTimeout(() => {
+        mapInstance.setZoom(globalZoomLevel);
+        mapInstance.invalidateSize(); // Force a refresh
+      }, 100);
     }
   };
 
@@ -620,7 +836,8 @@ const RibbonAircraftSelector: React.FC<RibbonAircraftSelectorProps> = ({
 
             mapInstance.setView([latitude, longitude], 9);
             setTimeout(() => {
-              mapInstance.fitBounds(bounds as any);
+              const globalBounds = getBoundsByRegion(RegionCode.GLOBAL);
+              mapInstance.fitBounds(globalBounds as any);
               mapInstance.invalidateSize();
             }, 200);
           }
@@ -802,7 +1019,8 @@ const RibbonAircraftSelector: React.FC<RibbonAircraftSelectorProps> = ({
 
           mapInstance.setView([coordinates.lat, coordinates.lng], 9);
           setTimeout(() => {
-            mapInstance.fitBounds(bounds as any);
+            const globalBounds = getBoundsByRegion(RegionCode.GLOBAL);
+            mapInstance.fitBounds(globalBounds as any);
             mapInstance.invalidateSize();
           }, 200);
         }
@@ -823,36 +1041,6 @@ const RibbonAircraftSelector: React.FC<RibbonAircraftSelectorProps> = ({
     } finally {
       setLocalLoading(false);
     }
-  };
-
-  // Clear all filters
-  const clearAllFilters = () => {
-    // Unblock API calls
-    openSkyTrackingService.setBlockAllApiCalls(false);
-    setBlockManufacturerApiCalls(false);
-
-    // Clear manufacturer selection
-    selectManufacturer(null);
-    selectModel(null);
-
-    // Clear geofence
-    setGeofenceLocation('');
-    setGeofenceCoordinates(null);
-    setGeofenceAircraft([]);
-    setIsGeofenceActive(false);
-    clearGeofenceData?.();
-
-    // Reset owner filters back to all selected
-    resetOwnerFilters();
-
-    // Clear region filter
-    clearRegionFilter();
-
-    // Reset filter mode
-    setFilterMode('manufacturer');
-
-    // Close dropdown
-    setActiveDropdown(null);
   };
 
   /**
@@ -897,7 +1085,9 @@ const RibbonAircraftSelector: React.FC<RibbonAircraftSelectorProps> = ({
       }
 
       // Clear display data
-      clearGeofenceData?.();
+      if (clearGeofenceData) {
+        clearGeofenceData();
+      }
 
       // Update the display
       updateGeofenceAircraft(filteredAircraft);
@@ -906,6 +1096,118 @@ const RibbonAircraftSelector: React.FC<RibbonAircraftSelectorProps> = ({
     } finally {
       setLocalLoading(false);
     }
+  };
+
+  // Replace your existing clearAllFilters function with this improved version
+  const clearAllFilters = () => {
+    console.log('Clearing all filters...');
+
+    // 1. Reset filter mode
+    setFilterMode('manufacturer');
+
+    // 2. Unblock API calls that might have been blocked
+    openSkyTrackingService.setBlockAllApiCalls(false);
+    setBlockManufacturerApiCalls(false);
+    setIsManufacturerApiBlocked(false);
+
+    // 3. Clear manufacturer selection
+    selectManufacturer(null);
+    selectModel(null);
+
+    // 4. Clear geofence
+    setGeofenceLocation('');
+    setGeofenceCoordinates(null);
+    setGeofenceAircraft([]);
+    setGeofenceEnabled(false);
+    setIsGeofenceActive(false);
+    if (typeof clearGeofence === 'function') {
+      clearGeofence();
+    }
+    if (typeof clearGeofenceData === 'function') {
+      clearGeofenceData();
+    }
+
+    // 5. Reset owner filters to select all
+    setOwnerFilters([...allOwnerTypes]);
+
+    // 6. Clear region filter properly
+    setActiveRegion(null);
+    setSelectedRegion(RegionCode.GLOBAL);
+
+    // Clear region outline from map
+    if (regionOutline) {
+      try {
+        // Handle different possible object structures
+        if (typeof regionOutline.remove === 'function') {
+          regionOutline.remove();
+        } else if (
+          regionOutline.rectangle &&
+          typeof regionOutline.rectangle.remove === 'function'
+        ) {
+          regionOutline.rectangle.remove();
+        }
+
+        // Clear any labels associated with the region
+        if (
+          regionOutline.label &&
+          typeof regionOutline.label.remove === 'function'
+        ) {
+          regionOutline.label.remove();
+        }
+      } catch (error) {
+        console.error('Error removing region outline:', error);
+      }
+
+      // Always reset the region outline state
+      setRegionOutline(null);
+    }
+
+    // 7. Reset map view to global with controlled zoom
+    if (mapInstance) {
+      const globalBounds = getBoundsByRegion(RegionCode.GLOBAL);
+      const globalZoomLevel = getZoomLevelForRegion(RegionCode.GLOBAL); // This returns 3
+
+      // Use maxZoom to prevent zooming in too far
+      mapInstance.fitBounds(globalBounds, {
+        maxZoom: globalZoomLevel,
+        padding: MAP_CONFIG.PADDING.DEFAULT,
+      });
+
+      // Force the exact zoom level after bounds are applied
+      setTimeout(() => {
+        mapInstance.setZoom(globalZoomLevel);
+        mapInstance.invalidateSize(); // Force a refresh
+      }, 100);
+    }
+
+    // Clear region filter properly
+    clearRegionFilter();
+
+    // 8. Reset to initial aircraft data
+    if (typeof reset === 'function') {
+      reset();
+    } else if (typeof fullRefresh === 'function') {
+      fullRefresh();
+    }
+
+    // 9. Close any open dropdown
+    setActiveDropdown(null);
+
+    // 10. Reset rate limiting states
+    setIsRateLimited(false);
+    setRateLimitTimer(null);
+
+    // 11. Clear combined mode state
+    setCombinedModeReady(false);
+
+    // 12. Reset search terms
+    setManufacturerSearchTerm('');
+
+    // 13. Dispatch a custom event that other components can listen for
+    const clearEvent = new CustomEvent('ribbon-filters-cleared');
+    document.dispatchEvent(clearEvent);
+
+    console.log('All filters cleared successfully');
   };
 
   /**
@@ -924,12 +1226,7 @@ const RibbonAircraftSelector: React.FC<RibbonAircraftSelectorProps> = ({
 
       // Apply region filtering if we already have data
       if (displayedAircraft && displayedAircraft.length > 0) {
-        filterAircraftByRegion(selectedRegion);
-      } else if (mapInstance) {
-        // Focus the map on the region if no data yet
-        const bounds = getBoundsByRegion(selectedRegion);
-        mapInstance.fitBounds(bounds as any);
-        mapInstance.invalidateSize();
+        filterAircraftByRegion(selectedRegion.toString());
       }
 
       // Clear manufacturer selection from the UI
@@ -1038,30 +1335,11 @@ const RibbonAircraftSelector: React.FC<RibbonAircraftSelectorProps> = ({
     // Set the manufacturer selection
     selectManufacturer(value);
 
-    // Handle different filter modes
-    if (filterMode === 'both') {
-      // Keep API calls blocked in combined mode
-      openSkyTrackingService.setBlockAllApiCalls(true);
-
-      // If we have geofence data, apply the combined filter
-      if (isGeofenceActive && geofenceAircraft.length > 0) {
-        setTimeout(() => {
-          applyCombinedFilters();
-        }, 100);
-      }
-    } else if (filterMode === 'geofence' && value !== '') {
-      // Switching from geofence to combined mode
-      setFilterMode('both');
-      openSkyTrackingService.setBlockAllApiCalls(true);
-
-      if (isGeofenceActive && geofenceAircraft.length > 0) {
-        setTimeout(() => {
-          applyCombinedFilters();
-        }, 100);
-      }
+    // If region is already selected, fetch filtered data
+    if (activeRegion !== null) {
+      fetchAircraftByRegionAndManufacturer(activeRegion as RegionCode, value);
     } else {
-      // Pure manufacturer mode - allow API calls
-      openSkyTrackingService.setBlockAllApiCalls(false);
+      // Otherwise, just proceed with manufacturer-only filtering as before
       fetchManufacturerData(value);
     }
   };
@@ -1078,75 +1356,6 @@ const RibbonAircraftSelector: React.FC<RibbonAircraftSelectorProps> = ({
       setTimeout(() => {
         applyCombinedFilters();
       }, 100);
-    }
-  };
-
-  /**
-   * Handle data refresh
-   */
-  const handleManualRefresh = async () => {
-    if (isRefreshing) return;
-
-    setIsRefreshing(true);
-    setActiveDropdown(null);
-
-    try {
-      if (filterMode === 'both' && isGeofenceActive && selectedManufacturer) {
-        // In combined mode, only refresh the geofence, then filter
-        if (geofenceCoordinates) {
-          const refreshedAircraft = await getAircraftNearLocation(
-            geofenceCoordinates.lat,
-            geofenceCoordinates.lng,
-            geofenceRadius
-          );
-
-          if (refreshedAircraft.length > 0) {
-            const adaptedAircraft = adaptGeofenceAircraft(refreshedAircraft);
-            const enrichedAircraft =
-              await enrichGeofenceAircraft(adaptedAircraft);
-
-            // Store the full set
-            setGeofenceAircraft(enrichedAircraft);
-
-            // Apply the filtering
-            setTimeout(() => {
-              applyCombinedFilters();
-            }, 100);
-          }
-        }
-      } else if (filterMode === 'geofence' && isGeofenceActive) {
-        // Pure geofence refresh
-        if (geofenceCoordinates) {
-          const refreshedAircraft = await getAircraftNearLocation(
-            geofenceCoordinates.lat,
-            geofenceCoordinates.lng,
-            geofenceRadius
-          );
-
-          if (refreshedAircraft.length > 0) {
-            const adaptedAircraft = adaptGeofenceAircraft(refreshedAircraft);
-            const enrichedAircraft =
-              await enrichGeofenceAircraft(adaptedAircraft);
-
-            setGeofenceAircraft(enrichedAircraft);
-            updateGeofenceAircraft(enrichedAircraft);
-          }
-        }
-      } else if (filterMode === 'manufacturer' && selectedManufacturer) {
-        // Manufacturer-only refresh
-        await refreshPositions();
-      } else if (filterMode === 'owner') {
-        // Refresh and reapply owner filters
-        toggleFilterMode('owner');
-      } else if (filterMode === 'region' && selectedRegion) {
-        // Refresh region filter
-        handleRegionSelect(selectedRegion);
-      }
-    } catch (error) {
-      console.error('Error refreshing aircraft data:', error);
-      alert('Failed to refresh aircraft data. Please try again.');
-    } finally {
-      setIsRefreshing(false);
     }
   };
 
@@ -1203,15 +1412,9 @@ const RibbonAircraftSelector: React.FC<RibbonAircraftSelectorProps> = ({
               d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"
             />
           </svg>
-          {filterMode === 'manufacturer'
-            ? 'Manufacturer'
-            : filterMode === 'geofence'
-              ? 'Location'
-              : filterMode === 'both'
-                ? 'Combined'
-                : filterMode === 'owner'
-                  ? 'Owner Type'
-                  : 'Region'}
+          {filterMode
+            ? filterMode.charAt(0).toUpperCase() + filterMode.slice(1) // Capitalized label
+            : 'Filter Selection'}
         </span>
         <svg
           xmlns="http://www.w3.org/2000/svg"
@@ -1864,14 +2067,24 @@ const RibbonAircraftSelector: React.FC<RibbonAircraftSelectorProps> = ({
     </div>
   );
 
+  // Helper function to get region name from code
+  const getRegionName = (regionCode: RegionCode): string => {
+    const entry = Object.entries(MAP_CONFIG.REGIONS).find(
+      ([_, code]) => code === regionCode
+    );
+    return entry ? entry[0] : 'Unknown Region';
+  };
+
   // Render Region Dropdown
+
   const renderRegionDropdown = () => (
     <div ref={dropdownRefs.region} className="relative">
+      {/* Button showing region name */}
       <button
         className={`px-4 py-2 flex items-center justify-between gap-2 ${
           activeDropdown === 'region'
             ? 'bg-indigo-100 text-indigo-700'
-            : activeRegion
+            : activeRegion !== null
               ? 'bg-indigo-50 text-indigo-600'
               : 'hover:bg-gray-100'
         }`}
@@ -1892,7 +2105,9 @@ const RibbonAircraftSelector: React.FC<RibbonAircraftSelectorProps> = ({
               d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
             />
           </svg>
-          {activeRegion || 'Region'}
+          {activeRegion !== null && typeof activeRegion !== 'string'
+            ? getRegionName(activeRegion)
+            : 'Region'}
         </span>
         <svg
           xmlns="http://www.w3.org/2000/svg"
@@ -1910,34 +2125,25 @@ const RibbonAircraftSelector: React.FC<RibbonAircraftSelectorProps> = ({
         </svg>
       </button>
 
+      {/* Dropdown with region options */}
       {activeDropdown === 'region' && (
         <div className="absolute left-0 top-full mt-1 w-52 bg-white shadow-lg rounded-md border border-gray-200 z-50">
           <div className="p-3 grid grid-cols-1 gap-2">
-            {Object.values(MAP_CONFIG.REGIONS).map((region) => (
+            {/* Map through region entries to display names but use codes for selection */}
+            {Object.entries(MAP_CONFIG.REGIONS).map(([name, code]) => (
               <button
-                key={region}
-                onClick={() => handleRegionSelect(region)}
+                key={name}
+                onClick={() => handleRegionSelect(code as RegionCode)}
                 className={`px-3 py-2 text-sm rounded-md ${
-                  selectedRegion === region
+                  selectedRegion === code
                     ? 'bg-indigo-100 text-indigo-700 border border-indigo-300'
                     : 'bg-gray-50 text-gray-700 border border-gray-200 hover:bg-gray-100'
                 }`}
               >
-                {region}
+                {name}
               </button>
             ))}
           </div>
-
-          {activeRegion && (
-            <div className="p-3 border-t flex justify-end">
-              <button
-                onClick={clearRegionFilter}
-                className="px-3 py-1 border border-red-200 text-red-600 rounded-md text-sm font-medium hover:bg-red-50"
-              >
-                Clear Region
-              </button>
-            </div>
-          )}
         </div>
       )}
     </div>
@@ -2039,128 +2245,15 @@ const RibbonAircraftSelector: React.FC<RibbonAircraftSelectorProps> = ({
     </div>
   );
 
-  // Render Actions Dropdown
-  const renderActionsDropdown = () => (
-    <div ref={dropdownRefs.actions} className="relative">
-      <button
-        className={`px-4 py-2 flex items-center justify-between gap-2 ${
-          activeDropdown === 'actions'
-            ? 'bg-indigo-100 text-indigo-700'
-            : 'hover:bg-gray-100'
-        }`}
-        onClick={(event) => toggleDropdown('actions', event)}
-      >
-        <span className="flex items-center gap-1">
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            className="h-4 w-4"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M12 6v6m0 0v6m0-6h6m-6 0H6"
-            />
-          </svg>
-          Actions
-        </span>
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          className={`h-4 w-4 transition-transform ${activeDropdown === 'actions' ? 'transform rotate-180' : ''}`}
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M19 9l-7 7-7-7"
-          />
-        </svg>
-      </button>
-
-      {activeDropdown === 'actions' && (
-        <div className="absolute right-0 top-full mt-1 w-48 bg-white shadow-lg rounded-md border border-gray-200 z-50">
-          <button
-            onClick={handleManualRefresh}
-            className={`w-full px-4 py-2 text-left hover:bg-indigo-50 flex items-center gap-2 ${
-              isRefreshing ? 'bg-gray-400 cursor-not-allowed' : ''
-            }`}
-            disabled={isRefreshing}
-          >
-            {isRefreshing ? (
-              <>
-                <svg
-                  className="animate-spin h-4 w-4 text-white"
-                  xmlns="http://www.w3.org/2000/svg"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                >
-                  <circle
-                    className="opacity-25"
-                    cx="12"
-                    cy="12"
-                    r="10"
-                    stroke="currentColor"
-                    strokeWidth="4"
-                  ></circle>
-                  <path
-                    className="opacity-75"
-                    fill="currentColor"
-                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                  ></path>
-                </svg>
-                Refreshing...
-              </>
-            ) : (
-              <>
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  className="h-4 w-4"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                  />
-                </svg>
-                Refresh Data
-              </>
-            )}
-          </button>
-
-          <button
-            onClick={clearAllFilters}
-            className="w-full px-4 py-2 text-left hover:bg-indigo-50 flex items-center gap-2 border-t"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              className="h-4 w-4"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-              />
-            </svg>
-            Clear All Filters
-          </button>
-        </div>
-      )}
-    </div>
-  );
+  // Render Action Buttons
+  const renderActionButtons = () => {
+    return (
+      <div className="flex items-center gap-2 px-3">
+        <RibbonRefreshButton />
+        <RibbonClearFiltersButton onClear={clearAllFilters} />
+      </div>
+    );
+  };
 
   // Render Aircraft Stats
   const renderAircraftStats = () => {
@@ -2250,6 +2343,9 @@ const RibbonAircraftSelector: React.FC<RibbonAircraftSelectorProps> = ({
         {/* Divider */}
         <div className="h-6 w-px bg-gray-300 mx-1"></div>
 
+        {/* Region Dropdown */}
+        {renderRegionDropdown()}
+
         {/* Manufacturer Dropdown */}
         {renderManufacturerDropdown()}
 
@@ -2262,9 +2358,6 @@ const RibbonAircraftSelector: React.FC<RibbonAircraftSelectorProps> = ({
         {/* Location Dropdown */}
         {renderLocationDropdown()}
 
-        {/* Region Dropdown */}
-        {renderRegionDropdown()}
-
         {/* Owner Type Dropdown */}
         {renderOwnerDropdown()}
 
@@ -2274,8 +2367,8 @@ const RibbonAircraftSelector: React.FC<RibbonAircraftSelectorProps> = ({
         {/* Aircraft Stats Display */}
         {renderAircraftStats()}
 
-        {/* Actions Dropdown */}
-        {renderActionsDropdown()}
+        {/* Action Buttons - Replace the Actions Dropdown */}
+        {renderActionButtons()}
       </div>
     </div>
   );

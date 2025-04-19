@@ -40,16 +40,15 @@ export const getTooltipFontSize = (zoomLevel: number): string => {
 export const determineAircraftType = (
   aircraft: Aircraft & {
     type?: string;
-    TYPE_AIRCRAFT?: string;
+    TYPE_AIRCRAFT?: string | number;
     MODEL?: string;
     MANUFACTURER?: string;
-    type_aircraft?: string | number;
   }
 ): string => {
   // Start with type_aircraft code - this is definitive
-  if (aircraft.type_aircraft !== undefined && aircraft.type_aircraft !== null) {
+  if (aircraft.TYPE_AIRCRAFT !== undefined && aircraft.TYPE_AIRCRAFT !== null) {
     // Convert to string for unified handling
-    const typeCode = String(aircraft.type_aircraft).trim();
+    const typeCode = String(aircraft.TYPE_AIRCRAFT).trim();
 
     console.log('Processing type_aircraft code:', {
       icao: aircraft.ICAO24,
@@ -222,8 +221,7 @@ export const getAircraftIconUrl = (
     on_ground?: boolean;
     TYPE_REGISTRANT?: number;
     ownerType?: number;
-    TYPE_AIRCRAFT?: string;
-    type_aircraft?: string | number; // FAA type_aircraft code
+    TYPE_AIRCRAFT?: string | number; // FAA type_aircraft code
     COUNTRY?: string; // Country field
   }
 ): string => {
@@ -251,7 +249,7 @@ export const getAircraftIconUrl = (
     icao: aircraft.ICAO24,
     model: aircraft.MODEL || 'Unknown',
     aircraftType: aircraftType,
-    typeCode: aircraft.type_aircraft,
+    typeCode: aircraft.TYPE_AIRCRAFT,
     country: aircraft.COUNTRY,
     isUS: isUS,
     isGovernment: isGovernment,

@@ -77,7 +77,7 @@ class ManufacturersService {
 
     try {
       console.log('[ManufacturersService] Fetching manufacturers...');
-      const response = await fetch('/api/aircraft/manufacturers');
+      const response = await fetch('/api/tracking/manufacturers');
 
       if (!response.ok) {
         throw new Error(
@@ -120,7 +120,7 @@ class ManufacturersService {
 
     try {
       console.log('[ManufacturersService] Refreshing manufacturers...');
-      const response = await fetch('/api/aircraft/manufacturers');
+      const response = await fetch('/api/tracking/manufacturers');
 
       if (!response.ok) {
         throw new Error(

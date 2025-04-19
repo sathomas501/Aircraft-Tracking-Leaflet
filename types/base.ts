@@ -34,7 +34,7 @@ export interface OpenSkyState {
   NAME?: string;
   CITY?: string;
   STATE?: string;
-  COUNTRY?:string;
+  COUNTRY?: string;
   TYPE_AIRCRAFT?: string;
   TYPE_REGISTRANT?: number;
   ownerType?: number;
@@ -93,7 +93,6 @@ export interface Aircraft {
   TYPE_REGISTRANT: number;
   ownerType?: number;
   TYPE_AIRCRAFT: string;
-  AIRCRAFT_TYPE?: string;
   COUNTRY?: string;
 
   // Tracking state
@@ -335,8 +334,28 @@ export interface ModelSelectorProps {
 }
 
 export interface ExtendedAircraft extends Aircraft {
-  type: string; // From DynamicMap
-  isGovernment: boolean; // From DynamicMap
+  type: string;
+  isGovernment: boolean;
   zoomLevel?: number;
-  // Add any additional OpenSky properties if needed
+  REGION?: RegionCode; // Now numeric instead of string
+}
+
+// Add this to your types/base.ts file
+export interface RegionalAircraft {
+  ICAO24: string;
+  REGISTRATION: string;
+  MANUFACTURER: string;
+  MODEL?: string;
+  REGION: number;
+  // Add other required properties
+}
+
+export enum RegionCode {
+  GLOBAL = 0,
+  North_America = 1,
+  Europe = 2,
+  Asia = 3,
+  South_America = 4,
+  Africa = 5,
+  Oceania = 6,
 }

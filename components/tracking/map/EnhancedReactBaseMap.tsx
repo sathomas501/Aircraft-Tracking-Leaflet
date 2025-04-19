@@ -24,6 +24,7 @@ import { adaptGeofenceAircraft } from '../../../lib/utils/geofenceAdapter';
 import { enrichGeofenceAircraft } from '../../../lib/utils/geofenceEnricher';
 import { getAircraftNearLocation } from '../../../lib/services/geofencing';
 import AircraftSpinner from './components/AircraftSpinner';
+import PopupFixer from './components/PopupFixer';
 
 // Map Events component to handle zoom changes
 const MapEvents: React.FC = () => {
@@ -369,6 +370,7 @@ const EnhancedReactBaseMap: React.FC<ReactBaseMapProps> = ({ onError }) => {
         {/* Geofence components */}
         <MapClickHandler />
         <GeofenceCircle />
+        <PopupFixer />
       </MapContainer>
       {/* Other components remain the same */}
       {/* ... */}

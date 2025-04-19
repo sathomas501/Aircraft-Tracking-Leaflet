@@ -1,8 +1,7 @@
 // pages/api/tracking/live.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
 import dbManager from '../../../lib/db/DatabaseManager';
-import { Aircraft } from '@/types/base';
-import openSkyProxyHandler from '../proxy/opensky';
+import { Aircraft, TrackingData, RegionCode } from '@/types/base';
 
 // Cache for API responses
 const TRACKING_CACHE = new Map<string, { data: any; timestamp: number }>();
@@ -105,8 +104,7 @@ export default async function handler(
           };
         });
         const activeAircraft = mergedAircraft.filter(
-          (aircraft: AircraftWithTracking) =>
-            aircraft.latitude && aircraft.longitude
+          (aircraft: TrackingData) => aircraft.latitude && aircraft.longitude
         );
 
         console.log(

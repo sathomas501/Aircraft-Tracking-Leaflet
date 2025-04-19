@@ -1,4 +1,5 @@
 import type { LatLngBoundsExpression } from 'leaflet';
+import { RegionCode } from '../types/base';
 
 export const MAP_CONFIG = {
   // Set center to a more global view (close to 0,0 but adjusted for better visibility)
@@ -7,14 +8,29 @@ export const MAP_CONFIG = {
 
   // Keep North America bounds but add definitions for other regions
   NORTH_AMERICA_BOUNDS: [
-    [8.0, -170.0], // Southwest (includes Central America)
-    [83.0, -50.0], // Northeast (includes Canada's northern territories)
+    [7.0, -180.0], // Southwest (includes Hawaii and southern Central America)
+    [72.0, -50.0], // Northeast (includes most of Canada, excludes far northern territories)
   ] as LatLngBoundsExpression,
 
+  REGION_ZOOM_LEVELS: {
+    GLOBAL: 3,
+    North_America: 4,
+    South_America: 4,
+    Europe: 4,
+    Asia: 4,
+    Africa: 4,
+    Oceania: 4,
+  },
+
   // Add other regional bounds
+  SOUTH_AMERICA_BOUNDS: [
+    [-60.0, -85.0],
+    [15.0, -30.0],
+  ] as LatLngBoundsExpression,
+
   EUROPE_BOUNDS: [
-    [34.0, -10.0],
-    [72.0, 45.0],
+    [36.0, -10.0],
+    [70.0, 40.0],
   ] as LatLngBoundsExpression,
 
   ASIA_BOUNDS: [
@@ -39,7 +55,7 @@ export const MAP_CONFIG = {
 
   OPTIONS: {
     zoomControl: false,
-    minZoom: 2, // Allow a bit more zoom out for global view
+    minZoom: 3, // Allow a bit more zoom out for global view
     maxZoom: 18,
     scrollWheelZoom: true as const,
     worldCopyJump: true,
@@ -90,7 +106,7 @@ export const MAP_CONFIG = {
   },
 
   REFRESH_INTERVALS: {
-    POSITION_UPDATE: 5000,
+    POSITION_UPDATE: 50000,
     DATA_SYNC: 60000,
   },
 
@@ -118,14 +134,15 @@ export const MAP_CONFIG = {
 
   // Define regions for quick selection
   REGIONS: {
-    GLOBAL: 'Global',
-    NORTH_AMERICA: 'North America',
-    EUROPE: 'Europe',
-    ASIA: 'Asia',
-    AFRICA: 'Africa',
-    OCEANIA: 'Oceania',
+    GLOBAL: RegionCode.GLOBAL,
+    North_America: RegionCode.North_America,
+    Europe: RegionCode.Europe,
+    Asia: RegionCode.Asia,
+    Africa: RegionCode.Africa,
+    Oceania: RegionCode.Oceania,
+    South_America: RegionCode.South_America,
   },
-} as const;
+};
 
 // Reusable Bounds and Tile Layer
 export const CONTINENTAL_US_BOUNDS: LatLngBoundsExpression =
@@ -143,20 +160,92 @@ export const getLeafletCRS = () => {
 };
 
 // Helper function to get bounds by region name
-export const getBoundsByRegion = (region: string): LatLngBoundsExpression => {
+export const getBoundsByRegion = (
+  region: RegionCode | string
+): LatLngBoundsExpression => {
+  // Check if the region is a string (backward compatibility)
+  if (typeof region === 'string') {
+    // Handle legacy string-based regions for backward compatibility
+    switch (region) {
+      case 'North America':
+        return MAP_CONFIG.NORTH_AMERICA_BOUNDS;
+      case 'Europe':
+        return MAP_CONFIG.EUROPE_BOUNDS;
+      case 'Asia':
+        return MAP_CONFIG.ASIA_BOUNDS;
+      case 'Africa':
+        return MAP_CONFIG.AFRICA_BOUNDS;
+      case 'Oceania':
+        return MAP_CONFIG.OCEANIA_BOUNDS;
+      case 'South America':
+        return MAP_CONFIG.SOUTH_AMERICA_BOUNDS;
+      case 'Global':
+      default:
+        return MAP_CONFIG.GLOBAL_BOUNDS;
+    }
+  }
+
+  // Handle numeric regions
   switch (region) {
-    case MAP_CONFIG.REGIONS.NORTH_AMERICA:
+    case RegionCode.North_America:
       return MAP_CONFIG.NORTH_AMERICA_BOUNDS;
-    case MAP_CONFIG.REGIONS.EUROPE:
+    case RegionCode.Europe:
       return MAP_CONFIG.EUROPE_BOUNDS;
-    case MAP_CONFIG.REGIONS.ASIA:
+    case RegionCode.Asia:
       return MAP_CONFIG.ASIA_BOUNDS;
-    case MAP_CONFIG.REGIONS.AFRICA:
+    case RegionCode.Africa:
       return MAP_CONFIG.AFRICA_BOUNDS;
-    case MAP_CONFIG.REGIONS.OCEANIA:
+    case RegionCode.Oceania:
       return MAP_CONFIG.OCEANIA_BOUNDS;
-    case MAP_CONFIG.REGIONS.GLOBAL:
+    case RegionCode.South_America:
+      return MAP_CONFIG.SOUTH_AMERICA_BOUNDS;
+    case RegionCode.GLOBAL:
     default:
       return MAP_CONFIG.GLOBAL_BOUNDS;
+  }
+};
+
+// Add a new helper function to get the appropriate zoom level for a region
+export const getZoomLevelForRegion = (region: RegionCode | string): number => {
+  // Handle string-based regions for backward compatibility
+  if (typeof region === 'string') {
+    switch (region) {
+      case 'North America':
+        return MAP_CONFIG.REGION_ZOOM_LEVELS.North_America;
+      case 'Europe':
+        return MAP_CONFIG.REGION_ZOOM_LEVELS.Europe;
+      case 'Asia':
+        return MAP_CONFIG.REGION_ZOOM_LEVELS.Asia;
+      case 'Africa':
+        return MAP_CONFIG.REGION_ZOOM_LEVELS.Africa;
+      case 'Oceania':
+        return MAP_CONFIG.REGION_ZOOM_LEVELS.Oceania;
+      case 'Global':
+      default:
+        return MAP_CONFIG.REGION_ZOOM_LEVELS.GLOBAL;
+    }
+  }
+
+  // Handle numeric regions
+  switch (region) {
+    case RegionCode.North_America:
+      return MAP_CONFIG.REGION_ZOOM_LEVELS.North_America;
+    case RegionCode.Europe:
+      return MAP_CONFIG.REGION_ZOOM_LEVELS.Europe;
+    case RegionCode.Asia:
+      return MAP_CONFIG.REGION_ZOOM_LEVELS.Asia;
+    case RegionCode.Africa:
+      return MAP_CONFIG.REGION_ZOOM_LEVELS.Africa;
+    case RegionCode.Oceania:
+      return MAP_CONFIG.REGION_ZOOM_LEVELS.Oceania;
+    case RegionCode.South_America:
+      // Fallback if South America zoom level isn't defined
+      return (
+        MAP_CONFIG.REGION_ZOOM_LEVELS.South_America ||
+        MAP_CONFIG.REGION_ZOOM_LEVELS.GLOBAL
+      );
+    case RegionCode.GLOBAL:
+    default:
+      return MAP_CONFIG.REGION_ZOOM_LEVELS.GLOBAL;
   }
 };
