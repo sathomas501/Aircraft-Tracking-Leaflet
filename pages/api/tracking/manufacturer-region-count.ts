@@ -1,7 +1,7 @@
-// pages/api/tracking/region-count.ts
+// pages/api/tracking/manufacturer-region-count.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
 import dbManager from '../../../lib/db/DatabaseManager';
-import { RegionCode } from '../../../types/base';
+import { RegionCode } from '@/types/base';
 
 export default async function handler(
   req: NextApiRequest,
@@ -21,52 +21,53 @@ export default async function handler(
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
-  const { region, manufacturer } = req.query;
+  const { REGION, MANUFACTURER } = req.query;
 
-  if (!manufacturer) {
-    return res.status(400).json({ error: 'Missing manufacturer parameter' });
+  if (!MANUFACTURER) {
+    return res.status(400).json({ error: 'Missing MANUFACTURER parameter' });
   }
 
   try {
-    let logMsg = `[API] Getting count for manufacturer ${manufacturer}`;
-    logMsg += region ? ` in region ${region}` : ' globally';
+    let logMsg = `[API] Getting count for MANUFACTURER ${MANUFACTURER}`;
+    logMsg += REGION ? ` in REGION ${REGION}` : ' globally';
     console.log(logMsg);
 
     let query = 'SELECT COUNT(*) as count FROM aircraft WHERE MANUFACTURER = ?';
-    let params: any[] = [manufacturer];
-    let cacheKey = `manufacturer-count-${manufacturer}`;
+    let params: any[] = [MANUFACTURER];
+    let cacheKey = `MANUFACTURER-count-${MANUFACTURER}`;
 
     // If region is provided, add it to the query
-    if (region) {
-      const regionCode = parseInt(region as string, 10);
+    if (REGION) {
+      const regionCode = parseInt(REGION as string, 10);
 
       // Validate region code
-      if (
-        isNaN(regionCode) ||
-        !Object.values(RegionCode).includes(regionCode)
-      ) {
+      if (isNaN(regionCode)) {
         return res.status(400).json({ error: 'Invalid region code' });
       }
 
-      query += ' AND region = ?';
+      query += ' AND REGION = ?';
       params.push(regionCode);
-      cacheKey += `-region-${regionCode}`;
+      cacheKey += `-REGION-${regionCode}`;
     }
 
-    // Execute query with 1 hour cache
+    // Execute query with 5 minute cache
     const result = await dbManager.query<{ count: number }>(
       cacheKey,
       query,
       params,
-      3600 // 1 hour cache
+      300 // 5 minutes cache
     );
 
     // Get the count from the result
     const count = result.length > 0 ? result[0].count : 0;
 
+    console.log(
+      `[API] Found ${count} ${MANUFACTURER} aircraft ${REGION ? `in REGION ${REGION}` : 'globally'}`
+    );
+
     res.status(200).json({
-      manufacturer: manufacturer,
-      region: region || 'global',
+      MANUFACTURER: MANUFACTURER,
+      REGION: REGION || 'global',
       count: count,
       timestamp: new Date().toISOString(),
     });

@@ -177,14 +177,17 @@ export class DatabaseManager {
   }
 
   public async getIcao24sForManufacturer(
-    MANUFACTURER: string
+    manufacturer: string,
+    region?: number | string
   ): Promise<string[]> {
     if (!this.isInitialized) {
       console.log('[DB] Not initialized, calling initialize()');
       await this.initialize();
     }
 
-    const cacheKey = `ICAO24s-${MANUFACTURER.toUpperCase()}`;
+    const cacheKey = region
+      ? `ICAO24s-${manufacturer.toUpperCase()}-${region}`
+      : `ICAO24s-${manufacturer.toUpperCase()}`;
 
     const cachedData = this.getFromCache<string[]>(cacheKey);
     if (cachedData) {
@@ -193,27 +196,48 @@ export class DatabaseManager {
     }
 
     console.log(`[DB] Cache miss for: ${cacheKey}, executing query`);
-
     try {
+      const queryParts = [
+        `SELECT DISTINCT ICAO24 FROM aircraft`,
+        `WHERE LOWER(MANUFACTURER) = LOWER(?)`,
+        `AND ICAO24 IS NOT NULL`,
+      ];
+      const queryParams: any[] = [manufacturer];
+
+      // Add region filtering if region is specified
+      if (region !== undefined) {
+        // Check if region is a number or string
+        if (typeof region === 'string' && !isNaN(parseInt(region, 10))) {
+          // If it's a numeric string, convert to number
+          queryParts.push(`AND REGION = ?`);
+          queryParams.push(parseInt(region, 10));
+        } else if (typeof region === 'number') {
+          // If it's already a number
+          queryParts.push(`AND REGION = ?`);
+          queryParams.push(region);
+        } else {
+          // Assume it's a state string
+          queryParts.push(`AND LOWER(STATE) = LOWER(?)`);
+          queryParams.push(region as string);
+        }
+      }
+
+      const query = queryParts.join(' ');
       const result = await this.db!.all<{ ICAO24: string }[]>(
-        `SELECT DISTINCT ICAO24 
-       FROM aircraft 
-       WHERE LOWER(MANUFACTURER) = LOWER(?) 
-       AND ICAO24 IS NOT NULL`,
-        [MANUFACTURER]
+        query,
+        queryParams
       );
 
       const ICAO24s = result.map((row) => row.ICAO24.toLowerCase());
-
       console.log(
-        `[DB] Retrieved ${ICAO24s.length} ICAO24s for ${MANUFACTURER}`
+        `[DB] Retrieved ${ICAO24s.length} ICAO24s for ${manufacturer}${region ? ` in region/state ${region}` : ''}`
       );
 
       this.setInCache(cacheKey, ICAO24s, 300);
       return ICAO24s;
     } catch (error) {
       console.error(
-        `[DB] Error retrieving ICAO24s for MANUFACTURER ${MANUFACTURER}:`,
+        `[DB] Error retrieving ICAO24s for manufacturer ${manufacturer}${region ? ` in region/state ${region}` : ''}:`,
         error
       );
       return [];

@@ -23,20 +23,26 @@ class IcaoManagementService {
   public constructor() {}
 
   /**
-   * Fetch ICAO24s for a MANUFACTURER, directly from the database.
+   * Fetch ICAO24s for a manufacturer with optional region filtering, directly from the database.
    */
   public async getIcao24sForManufacturer(
-    MANUFACTURER: string
+    manufacturer: string,
+    region?: number | string
   ): Promise<string[]> {
-    console.log(`[IcaoManagement] Fetching ICAO24s for ${MANUFACTURER}`);
-
+    console.log(
+      `[IcaoManagement] Fetching ICAO24s for ${manufacturer}${region ? ` in region ${region}` : ''}`
+    );
     try {
-      // Get ICAO24 codes directly from the database instead of making an API call
-      const allIcao24s =
-        await dbManager.getIcao24sForManufacturer(MANUFACTURER);
+      // Get ICAO24 codes directly from the database
+      const allIcao24s = await dbManager.getIcao24sForManufacturer(
+        manufacturer,
+        region
+      );
 
       if (allIcao24s.length === 0) {
-        console.warn(`[IcaoManagement] No ICAO24s found for ${MANUFACTURER}`);
+        console.warn(
+          `[IcaoManagement] No ICAO24s found for ${manufacturer}${region ? ` in region ${region}` : ''}`
+        );
         return [];
       }
 
