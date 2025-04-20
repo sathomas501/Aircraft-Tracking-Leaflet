@@ -1,0 +1,77 @@
+/* SearchRibbonSpinner.module.css */
+.searchRibbonContainer {
+  position: fixed;
+  top: 48px; /* Position it just below the main ribbon component */
+  left: 0;
+  right: 0;
+  z-index: 99;
+  display: flex;
+  justify-content: center;
+  pointer-events: none; /* Allow clicks to pass through */
+}
+
+.searchRibbon {
+  background-color: rgba(79, 70, 229, 0.9); /* Indigo color with transparency */
+  color: white;
+  padding: 8px 16px;
+  border-radius: 0 0 8px 8px;
+  display: flex;
+  align-items: center;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  animation: pulse 2s infinite ease-in-out;
+  max-width: 80%;
+}
+
+.aircraftContainer {
+  display: flex;
+  align-items: center;
+  margin-right: 12px;
+}
+
+.aircraft {
+  font-size: 16px;
+  animation: fly 2s infinite linear;
+  transform: rotate(90deg);
+  margin-right: 8px;
+}
+
+.aircraft2 {
+  animation-delay: 0.5s;
+}
+
+.aircraft3 {
+  animation-delay: 1s;
+}
+
+.loadingText {
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+@keyframes fly {
+  0% {
+    transform: rotate(90deg) translateX(-5px);
+    opacity: 0.4;
+  }
+  50% {
+    transform: rotate(90deg) translateX(0);
+    opacity: 1;
+  }
+  100% {
+    transform: rotate(90deg) translateX(5px);
+    opacity: 0.4;
+  }
+}
+
+@keyframes pulse {
+  0% {
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  }
+  50% {
+    box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);
+  }
+  100% {
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  }
+}

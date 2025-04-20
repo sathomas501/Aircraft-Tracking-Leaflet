@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { Filter, MapPin, Users, Layers, Globe } from 'lucide-react';
 import { useEnhancedMapContext } from '../context/EnhancedMapContext';
 import { RegionCode, type SelectOption } from '@/types/base';
 import type { ExtendedAircraft } from '../../../types/base';

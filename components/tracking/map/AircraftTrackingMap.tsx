@@ -5,7 +5,7 @@ import { EnhancedMapProvider } from '../context/EnhancedMapContext';
 import { EnhancedUIProvider } from '../../tracking/context/EnhancedUIContext';
 import type { SelectOption } from '@/types/base';
 import AircraftSpinner from '../../tracking/map/components/AircraftSpinner';
-import RibbonAircraftSelector from '../selector/Ribbon';
+import RibbonAircraftSelector from '../Ribbon';
 
 // Dynamically import the optimized map to avoid SSR issues
 const EnhancedMap = dynamic(() => import('./EnhancedReactBaseMap'), {
