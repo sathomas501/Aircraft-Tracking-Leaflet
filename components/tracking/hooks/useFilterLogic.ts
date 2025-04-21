@@ -3,7 +3,6 @@ import { RegionCode } from '@/types/base';
 import type { ExtendedAircraft } from '@/types/base';
 import { useEnhancedMapContext } from '../context/EnhancedMapContext';
 import openSkyTrackingService from '@/lib/services/openSkyTrackingService';
-import { getBoundsByRegion } from '@/config/map';
 import {
   getAircraftNearLocation,
   searchLocationWithMapbox,
@@ -12,6 +11,11 @@ import {
 import { adaptGeofenceAircraft } from '@/lib/utils/geofenceAdapter';
 import { enrichGeofenceAircraft } from '@/lib/utils/geofenceEnricher';
 import { useGeolocation } from '../hooks/useGeolocation';
+import {
+  MAP_CONFIG,
+  getBoundsByRegion,
+  getZoomLevelForRegion,
+} from '../../../config/map';
 
 export type FilterMode =
   | 'manufacturer'
@@ -171,6 +175,39 @@ export function useFilterLogic() {
       }
     };
   }, [regionOutline]);
+
+  // Effect to handle map click for geofence
+  useEffect(() => {
+    // Handler for map click events
+    const handleMapGeofenceClick = (event: any) => {
+      const { lat, lng } = event.detail;
+      console.log(
+        `useFilterLogic received map click at: ${lat.toFixed(6)}, ${lng.toFixed(6)}`
+      );
+
+      // Update the geofence coordinates
+      setGeofenceCoordinates({ lat, lng });
+
+      // Update the location display with formatted coordinates
+      setGeofenceLocation(`${lat.toFixed(6)}, ${lng.toFixed(6)}`);
+
+      // Open the location dropdown if it's not already open
+      if (activeDropdown !== 'location') {
+        setActiveDropdown('location');
+      }
+    };
+
+    // Add the event listener
+    document.addEventListener('map-geofence-click', handleMapGeofenceClick);
+
+    // Clean up
+    return () => {
+      document.removeEventListener(
+        'map-geofence-click',
+        handleMapGeofenceClick
+      );
+    };
+  }, []); // Empty dependency array means this runs once on mount
 
   // Main methods
   const toggleDropdown = (dropdown: string, event: React.MouseEvent) => {
@@ -415,7 +452,21 @@ export function useFilterLogic() {
       // Set map bounds based on region
       if (mapInstance) {
         const bounds = getBoundsByRegion(region);
-        mapInstance.fitBounds(bounds as any);
+
+        // Get the appropriate zoom level for this region from your config
+        const zoomLevel = getZoomLevelForRegion(region);
+
+        // First, set the appropriate zoom level
+        mapInstance.setZoom(zoomLevel);
+
+        // Then fit bounds with padding
+        const options = {
+          padding: MAP_CONFIG.PADDING.DEFAULT,
+          // Don't set maxZoom here as we want the region to be properly displayed
+        };
+
+        mapInstance.fitBounds(bounds as any, options);
+        mapInstance.invalidateSize();
         drawRegionOutline(region);
       }
 
@@ -484,6 +535,7 @@ export function useFilterLogic() {
   };
 
   // Geofence methods
+  // Fixed getUserLocation function
   const getUserLocation = async () => {
     if (isRateLimited) {
       alert(
@@ -498,10 +550,10 @@ export function useFilterLogic() {
 
       if (position) {
         const { latitude, longitude } = position.coords;
-        setGeofenceCenter({ lat: latitude, lng: longitude });
 
         // Update state with coordinates
         setGeofenceCoordinates({ lat: latitude, lng: longitude });
+        setGeofenceCenter({ lat: latitude, lng: longitude });
 
         // Update the location display with coordinates
         setGeofenceLocation(`${latitude.toFixed(6)}, ${longitude.toFixed(6)}`);
@@ -539,20 +591,17 @@ export function useFilterLogic() {
           updateGeofenceAircraft(enrichedAircraft);
           setIsGeofenceActive(true);
 
-          // Center the map on user's location
+          // Center the map on user's location - SIMPLIFIED ZOOM LOGIC
           if (mapInstance) {
-            const radiusInDegrees = geofenceRadius / 111;
-            const bounds = [
-              [latitude - radiusInDegrees, longitude - radiusInDegrees],
-              [latitude + radiusInDegrees, longitude + radiusInDegrees],
-            ];
+            // Don't modify zoom if it's already at an appropriate level
+            const currentZoom = mapInstance.getZoom();
+            const targetZoom = currentZoom <= 7 ? 9 : currentZoom;
 
-            mapInstance.setView([latitude, longitude], 9);
-            setTimeout(() => {
-              const globalBounds = getBoundsByRegion(RegionCode.GLOBAL);
-              mapInstance.fitBounds(globalBounds as any);
-              mapInstance.invalidateSize();
-            }, 200);
+            // Set the view directly to the user's location
+            mapInstance.setView([latitude, longitude], targetZoom);
+
+            // Make sure the map reflects changes
+            mapInstance.invalidateSize();
           }
 
           // If in geofence mode, ensure the filter mode is set correctly
@@ -713,26 +762,18 @@ export function useFilterLogic() {
         // Just show all aircraft in the geofence
         updateGeofenceAircraft(enrichedAircraft);
 
-        // Center the map
+        // Center the map - SIMPLIFIED ZOOM LOGIC
         if (mapInstance && coordinates) {
-          const radiusInDegrees = geofenceRadius / 111;
-          const bounds = [
-            [
-              coordinates.lat - radiusInDegrees,
-              coordinates.lng - radiusInDegrees,
-            ],
-            [
-              coordinates.lat + radiusInDegrees,
-              coordinates.lng + radiusInDegrees,
-            ],
-          ];
+          // Get current zoom level
+          const currentZoom = mapInstance.getZoom();
+          // Use appropriate zoom level based on current view
+          const targetZoom = currentZoom <= 7 ? 9 : currentZoom;
 
-          mapInstance.setView([coordinates.lat, coordinates.lng], 9);
-          setTimeout(() => {
-            const globalBounds = getBoundsByRegion(RegionCode.GLOBAL);
-            mapInstance.fitBounds(globalBounds as any);
-            mapInstance.invalidateSize();
-          }, 200);
+          // Set view to the coordinates
+          mapInstance.setView([coordinates.lat, coordinates.lng], targetZoom);
+
+          // Ensure map is updated
+          mapInstance.invalidateSize();
         }
       }
 
@@ -752,27 +793,63 @@ export function useFilterLogic() {
     }
   };
 
+  /**
+   * STEP 3: Fix toggleGeofenceState to better handle manually clicking the button
+   */
   const toggleGeofenceState = (enabled: boolean) => {
-    setGeofenceEnabled(enabled);
+    console.log('toggleGeofenceState called with:', enabled);
+    console.log('Current geofenceCoordinates:', geofenceCoordinates);
+
     if (enabled) {
-      // Enable geofence if we have coordinates
-      if (geofenceCoordinates) {
+      // Check if we have valid coordinates
+      if (
+        geofenceCoordinates &&
+        typeof geofenceCoordinates.lat === 'number' &&
+        typeof geofenceCoordinates.lng === 'number' &&
+        !isNaN(geofenceCoordinates.lat) &&
+        !isNaN(geofenceCoordinates.lng)
+      ) {
+        console.log('Valid coordinates found, enabling geofence');
+
+        // Set flags first
+        setGeofenceEnabled(true);
         setIsGeofenceActive(true);
-        toggleGeofence(); // Call the context function
+
+        // Call context toggle function if available
+        if (typeof toggleGeofence === 'function') {
+          toggleGeofence();
+        }
 
         // Display aircraft if we have them
-        if (geofenceAircraft.length > 0) {
+        if (geofenceAircraft && geofenceAircraft.length > 0) {
+          console.log(
+            `Showing ${geofenceAircraft.length} aircraft in geofence`
+          );
           updateGeofenceAircraft(geofenceAircraft);
+        } else {
+          // No aircraft data yet, trigger a search
+          console.log('No aircraft data yet, triggering search');
+          setTimeout(() => {
+            processGeofenceSearch();
+          }, 100);
         }
       } else {
-        // If no coordinates yet, prompt user to set location
-        alert('Please set a location before enabling geofence');
+        // No valid coordinates
+        console.warn('No valid coordinates, showing alert');
+        alert(
+          'Please set a location before enabling geofence.\n\nClick anywhere on the map to set a location.'
+        );
         setGeofenceEnabled(false);
+        setIsGeofenceActive(false);
       }
     } else {
-      // Disable geofence but keep the data
+      // Disabling geofence
+      console.log('Disabling geofence');
+      setGeofenceEnabled(false);
       setIsGeofenceActive(false);
-      if (clearGeofenceData) {
+
+      // Clear geofence data if function available
+      if (typeof clearGeofenceData === 'function') {
         clearGeofenceData();
       }
     }
@@ -1024,8 +1101,8 @@ export function useFilterLogic() {
 
     // 7. Reset map view to global
     if (mapInstance) {
-      const globalBounds = getBoundsByRegion(RegionCode.GLOBAL);
-      mapInstance.fitBounds(globalBounds as any);
+      // Use the predefined center and zoom level from your map config
+      mapInstance.setView(MAP_CONFIG.CENTER, MAP_CONFIG.DEFAULT_ZOOM);
       mapInstance.invalidateSize();
     }
 

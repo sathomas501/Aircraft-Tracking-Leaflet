@@ -11,6 +11,7 @@ import { RibbonRefreshButton } from './map/components/RefreshButtonComponent';
 import { RibbonClearFiltersButton } from './map/components/ribbon-clear';
 import { useEnhancedMapContext } from './context/EnhancedMapContext';
 import type { RibbonProps } from './types/filters';
+import ManualRefreshButton from './map/components/ManualRefreshButton';
 
 const RibbonAircraftSelector: React.FC<RibbonProps> = ({ manufacturers }) => {
   // Get the aircraft state from context
@@ -70,6 +71,18 @@ const RibbonAircraftSelector: React.FC<RibbonProps> = ({ manufacturers }) => {
       return 'Searching for aircraft in this region...';
     }
     return 'Searching for aircraft...';
+  };
+
+  const renderActionButtons = () => {
+    return (
+      <div className="flex items-center gap-2 px-3">
+        <ManualRefreshButton
+          onRefresh={filterLogic.refreshWithFilters}
+          disabled={combinedLoading || localLoading || isRefreshing}
+        />
+        <RibbonClearFiltersButton onClear={clearAllFilters} />
+      </div>
+    );
   };
 
   // Render Aircraft Stats
@@ -242,11 +255,8 @@ const RibbonAircraftSelector: React.FC<RibbonProps> = ({ manufacturers }) => {
           {/* Aircraft Stats Display */}
           {renderAircraftStats()}
 
-          {/* Action Buttons */}
-          <div className="flex items-center gap-2 px-3">
-            <RibbonRefreshButton />
-            <RibbonClearFiltersButton onClear={clearAllFilters} />
-          </div>
+          {/* Action Buttons - This line uses the renderActionButtons function */}
+          {renderActionButtons()}
         </div>
       </div>
 

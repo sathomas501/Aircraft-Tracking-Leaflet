@@ -280,10 +280,10 @@ const EnhancedReactBaseMap: React.FC<ReactBaseMapProps> = ({ onError }) => {
       setGeofenceCenter,
       isGeofenceActive,
       geofenceRadius,
-      updateGeofenceAircraft, // Make sure this is available in your context
+      updateGeofenceAircraft,
     } = useEnhancedMapContext();
 
-    // This function will get and process aircraft data
+    // This function will get and process aircraft data when geofence is active
     const fetchAircraftForClickLocation = async (lat: number, lng: number) => {
       try {
         console.log('Fetching aircraft near clicked location:', lat, lng);
@@ -295,13 +295,13 @@ const EnhancedReactBaseMap: React.FC<ReactBaseMapProps> = ({ onError }) => {
           geofenceRadius || 25
         );
 
-        // Process the aircraft data just like in your other functions
+        // Process the aircraft data
         if (fetchedAircraft.length === 0) {
           console.log('No aircraft found near clicked location');
           return;
         }
 
-        // Convert to your application's format if needed
+        // Convert to your application's format
         const adaptedAircraft = adaptGeofenceAircraft(fetchedAircraft);
         const enrichedAircraft = await enrichGeofenceAircraft(adaptedAircraft);
 
@@ -318,14 +318,21 @@ const EnhancedReactBaseMap: React.FC<ReactBaseMapProps> = ({ onError }) => {
 
     const map = useMapEvents({
       click: (e) => {
+        const { lat, lng } = e.latlng;
+        console.log('Map clicked at:', lat, lng);
+
+        // Always set the geofence center
+        setGeofenceCenter({ lat, lng });
+
+        // Always dispatch a custom event with the coordinates
+        // This will be caught by the useFilterLogic hook
+        const event = new CustomEvent('map-geofence-click', {
+          detail: { lat, lng },
+        });
+        document.dispatchEvent(event);
+
+        // If geofence is already active, also fetch the aircraft data
         if (isGeofenceActive) {
-          const { lat, lng } = e.latlng;
-          console.log('Map clicked at:', lat, lng);
-
-          // Set the geofence center (visual part)
-          setGeofenceCenter({ lat, lng });
-
-          // Fetch aircraft data for this location (data part)
           fetchAircraftForClickLocation(lat, lng);
         }
       },
