@@ -90,6 +90,8 @@ interface EnhancedMapContextType {
   toggleGeofence: () => void;
   clearGeofence: () => {};
   geofenceCoordinates: { lat: number; lng: number } | null;
+  isGeofencePlacementMode: boolean;
+  setIsGeofencePlacementMode: (isPlacementMode: boolean) => void;
 
   // Region selection properties
   selectedRegion: RegionCode | string; // Allow both for backward compatibility
@@ -153,6 +155,8 @@ const EnhancedMapContext = createContext<EnhancedMapContextType>({
   setSelectedRegion: (region: RegionCode | string) => {},
   getBoundsByRegion: (region: string) =>
     configGetBoundsByRegion('GLOBAL') as LatLngBoundsExpression,
+  isGeofencePlacementMode: false,
+  setIsGeofencePlacementMode: () => {},
 });
 
 // Props for the context provider
@@ -200,6 +204,9 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
   const geofenceCoordinates = useMemo(() => geofenceCenter, [geofenceCenter]);
   const [geofenceRadius, setGeofenceRadius] = useState<number | null>(25); // Default 25km radius
   const [isGeofenceActive, setIsGeofenceActive] = useState<boolean>(false);
+  const [isGeofencePlacementMode, setIsGeofencePlacementMode] =
+    useState<boolean>(false);
+
   // Add this to your state declarations
   const [aircraftPositions, setAircraftPositions] = useState<
     AircraftPosition[]
@@ -804,6 +811,8 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
     setGeofenceRadius,
     toggleGeofence,
     clearGeofence,
+    isGeofencePlacementMode,
+    setIsGeofencePlacementMode,
 
     // Region selection
     selectedRegion,

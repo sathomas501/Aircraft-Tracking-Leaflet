@@ -10,6 +10,7 @@ import {
   Circle, // Add this import
   Popup, // Add this if you're using Popup
 } from 'react-leaflet';
+import { MapPin, Crosshair, X } from 'lucide-react';
 import { MAP_CONFIG } from '@/config/map';
 import LeafletTouchFix from './components/LeafletTouchFix';
 import { useEnhancedMapContext } from '../context/EnhancedMapContext';
@@ -207,7 +208,7 @@ const EnhancedReactBaseMap: React.FC<ReactBaseMapProps> = ({ onError }) => {
     geofenceCenter,
     geofenceRadius,
   ]);
-  //###################################################################################################
+
   const GeofenceCircle: React.FC = () => {
     const { geofenceCenter, geofenceRadius, isGeofenceActive } =
       useEnhancedMapContext();
@@ -231,6 +232,30 @@ const EnhancedReactBaseMap: React.FC<ReactBaseMapProps> = ({ onError }) => {
           weight: 2,
         }}
       />
+    );
+  };
+
+  const PlacementModeControls = () => {
+    const { isGeofencePlacementMode, setIsGeofencePlacementMode } =
+      useEnhancedMapContext();
+
+    if (!isGeofencePlacementMode) return null;
+
+    return (
+      <div className="fixed top-20 left-1/2 transform -translate-x-1/2 z-50 flex flex-col items-center">
+        <div className="bg-indigo-600 text-white px-4 py-2 rounded-md shadow-lg flex items-center gap-2 mb-2">
+          <Crosshair size={16} />
+          <span>Click anywhere on map to set geofence location</span>
+        </div>
+
+        <button
+          onClick={() => setIsGeofencePlacementMode(true)}
+          className="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-md shadow-md hover:bg-gray-50 flex items-center gap-2"
+        >
+          <X size={16} />
+          Exit Placement Mode
+        </button>
+      </div>
     );
   };
 
@@ -281,9 +306,39 @@ const EnhancedReactBaseMap: React.FC<ReactBaseMapProps> = ({ onError }) => {
       isGeofenceActive,
       geofenceRadius,
       updateGeofenceAircraft,
+      isGeofencePlacementMode,
+      setIsGeofencePlacementMode,
     } = useEnhancedMapContext();
 
-    // This function will get and process aircraft data when geofence is active
+    // State for the temporary indicator
+    const [showIndicator, setShowIndicator] = useState(false);
+
+    // Effect to manage cursor styling based on mode
+    useEffect(() => {
+      // Find the map container element
+      const mapElement = document.querySelector('.leaflet-container');
+      if (mapElement) {
+        // Apply cursor style based on mode
+        if (isGeofencePlacementMode) {
+          mapElement.classList.add('geofence-placement-mode');
+
+          // Show the indicator when placement mode is activated
+          setShowIndicator(true);
+
+          // Hide indicator after 5 seconds
+          const timer = setTimeout(() => {
+            setShowIndicator(false);
+          }, 5000);
+
+          return () => clearTimeout(timer);
+        } else {
+          mapElement.classList.remove('geofence-placement-mode');
+          setShowIndicator(false);
+        }
+      }
+    }, [isGeofencePlacementMode]);
+
+    // Function to get and process aircraft data
     const fetchAircraftForClickLocation = async (lat: number, lng: number) => {
       try {
         console.log('Fetching aircraft near clicked location:', lat, lng);
@@ -316,29 +371,47 @@ const EnhancedReactBaseMap: React.FC<ReactBaseMapProps> = ({ onError }) => {
       }
     };
 
+    // Map event handler
     const map = useMapEvents({
       click: (e) => {
         const { lat, lng } = e.latlng;
-        console.log('Map clicked at:', lat, lng);
 
-        // Always set the geofence center
-        setGeofenceCenter({ lat, lng });
+        // Only process as geofence click if in placement mode
+        if (isGeofencePlacementMode) {
+          console.log('Map clicked for geofence at:', lat, lng);
 
-        // Always dispatch a custom event with the coordinates
-        // This will be caught by the useFilterLogic hook
-        const event = new CustomEvent('map-geofence-click', {
-          detail: { lat, lng },
-        });
-        document.dispatchEvent(event);
+          // Set the geofence center
+          setGeofenceCenter({ lat, lng });
 
-        // If geofence is already active, also fetch the aircraft data
-        if (isGeofenceActive) {
-          fetchAircraftForClickLocation(lat, lng);
+          // Dispatch custom event for useFilterLogic
+          const event = new CustomEvent('map-geofence-click', {
+            detail: { lat, lng },
+          });
+          document.dispatchEvent(event);
+
+          // Exit placement mode after setting location
+          setIsGeofencePlacementMode(false);
+
+          // If geofence is already active, also fetch the aircraft data
+          if (isGeofenceActive) {
+            fetchAircraftForClickLocation(lat, lng);
+          }
+        } else {
+          // Normal map click behavior
+          console.log('Normal map click at:', lat, lng);
         }
       },
     });
 
-    return null;
+    return (
+      <>
+        {showIndicator && (
+          <div className="geofence-mode-indicator">
+            Click anywhere on map to set geofence location
+          </div>
+        )}
+      </>
+    );
   };
 
   // The main component return statement should look like this:
@@ -379,6 +452,8 @@ const EnhancedReactBaseMap: React.FC<ReactBaseMapProps> = ({ onError }) => {
         <GeofenceCircle />
         <PopupFixer />
       </MapContainer>
+      {/* Place this after MapContainer so it appears on top */}
+      <PlacementModeControls />
       {/* Other components remain the same */}
       {/* ... */}
     </div>

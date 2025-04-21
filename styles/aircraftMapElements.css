@@ -912,3 +912,94 @@
   background-color: rgba(0, 0, 0, 0.8);
   z-index: 9;
 }
+
+/* Cursor for geofence placement mode */
+.leaflet-container.geofence-placement-mode {
+  cursor: crosshair !important;
+}
+
+/* Visual indicator for geofence placement mode */
+.geofence-mode-indicator {
+  position: fixed;
+  top: 70px;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: rgba(79, 70, 229, 0.9);
+  color: white;
+  padding: 4px 12px;
+  border-radius: 16px;
+  font-size: 12px;
+  font-weight: 500;
+  z-index: 1000;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  animation: fadeOut 5s forwards;
+  pointer-events: none;
+}
+
+@keyframes fadeOut {
+  0% {
+    opacity: 1;
+  }
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* Optional: Add a subtle indicator at the top of the screen */
+.leaflet-container.geofence-placement-mode::after {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(
+    to right,
+    transparent,
+    rgba(79, 70, 229, 0.7),
+    transparent
+  );
+  z-index: 1000;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.6;
+  }
+}
+
+/* Cursor for geofence placement mode */
+.leaflet-container.geofence-placement-mode {
+  cursor: crosshair !important;
+}
+
+/* Make sure the floating controls are above map elements */
+.fixed {
+  z-index: 1000;
+}
+
+/* For the floating notification/controls during placement mode */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -10px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+.fixed.top-20 {
+  animation: fadeIn 0.3s ease-out;
+}

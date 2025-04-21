@@ -1,9 +1,11 @@
 import React from 'react';
-import { MapPin } from 'lucide-react';
+import { MapPin, Crosshair } from 'lucide-react';
 import type { GeofenceState } from '../types/filters';
+import { useEnhancedMapContext } from '../context/EnhancedMapContext';
 
 interface GeofenceFilterProps extends GeofenceState {
   activeDropdown: string | null;
+  setActiveDropdown: (dropdown: string | null) => void;
   toggleDropdown: (type: string, event: React.MouseEvent) => void;
   dropdownRef: React.RefObject<HTMLDivElement>;
 }
@@ -19,11 +21,28 @@ const GeofenceFilter: React.FC<GeofenceFilterProps> = ({
   toggleGeofenceState,
   setGeofenceLocation,
   setGeofenceRadius,
+  setActiveDropdown,
   combinedLoading,
   activeDropdown,
   toggleDropdown,
   dropdownRef,
 }) => {
+  // Get the geofence placement mode state from context
+  const { isGeofencePlacementMode, setIsGeofencePlacementMode } =
+    useEnhancedMapContext();
+
+  // Toggle the geofence placement mode
+  const togglePlacementMode = () => {
+    setIsGeofencePlacementMode(!isGeofencePlacementMode);
+  };
+
+  // Function to enter placement mode and close dropdown
+  const enterPlacementMode = () => {
+    setIsGeofencePlacementMode(true);
+    // Close dropdown after entering placement mode
+    setActiveDropdown(null);
+  };
+
   return (
     <div ref={dropdownRef} className="relative">
       <button
@@ -35,7 +54,7 @@ const GeofenceFilter: React.FC<GeofenceFilterProps> = ({
               : 'bg-gray-50/30 hover:bg-gray-50 border-gray-200 text-gray-700 hover:border-gray-300'
         } transition-all duration-200`}
         onClick={(event) => toggleDropdown('location', event)}
-        disabled={combinedLoading}
+        disabled={combinedLoading || isGeofencePlacementMode} // Disable when in placement mode
       >
         <span className="flex items-center gap-2 font-medium">
           <MapPin
@@ -46,7 +65,9 @@ const GeofenceFilter: React.FC<GeofenceFilterProps> = ({
             ? geofenceLocation.length > 15
               ? geofenceLocation.substring(0, 15) + '...'
               : geofenceLocation
-            : 'Location'}
+            : isGeofencePlacementMode
+              ? 'Click on map...'
+              : 'Location'}
         </span>
         <svg
           xmlns="http://www.w3.org/2000/svg"
@@ -66,6 +87,7 @@ const GeofenceFilter: React.FC<GeofenceFilterProps> = ({
 
       {activeDropdown === 'location' && (
         <div className="absolute left-0 top-full mt-1 w-72 bg-white shadow-lg rounded-md border border-gray-200 z-50">
+          {/* Location search input */}
           <div className="p-3 border-b">
             <div className="flex gap-2 mb-3">
               <input
@@ -96,41 +118,23 @@ const GeofenceFilter: React.FC<GeofenceFilterProps> = ({
                   combinedLoading || (!geofenceLocation && !isGettingLocation)
                 }
               >
-                {combinedLoading ? (
-                  <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-                    <circle
-                      className="opacity-25"
-                      cx="12"
-                      cy="12"
-                      r="10"
-                      stroke="currentColor"
-                      strokeWidth="4"
-                    ></circle>
-                    <path
-                      className="opacity-75"
-                      fill="currentColor"
-                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                    ></path>
-                  </svg>
-                ) : (
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    className="h-5 w-5"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                    />
-                  </svg>
-                )}
+                {/* Search icon */}
               </button>
             </div>
 
+            {/* Add the placement mode button - this will close the dropdown */}
+            <button
+              onClick={enterPlacementMode}
+              className="w-full flex items-center justify-center py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors"
+            >
+              <Crosshair size={16} className="mr-2" />
+              Click on Map to Set Location
+            </button>
+
+            {/* Spacer */}
+            <div className="my-2"></div>
+
+            {/* Current location button - keep your existing button */}
             <button
               className={`w-full flex items-center justify-center py-2 border border-indigo-300 rounded-md text-indigo-700 bg-indigo-50 hover:bg-indigo-100 transition-colors ${
                 isGettingLocation ? 'opacity-75 cursor-not-allowed' : ''
@@ -169,6 +173,7 @@ const GeofenceFilter: React.FC<GeofenceFilterProps> = ({
             </button>
           </div>
 
+          {/* Radius slider */}
           <div className="p-3 border-b">
             <label className="text-sm font-medium text-gray-700 block mb-1">
               Radius: {geofenceRadius} km
@@ -189,6 +194,7 @@ const GeofenceFilter: React.FC<GeofenceFilterProps> = ({
             </div>
           </div>
 
+          {/* The enable button */}
           <div className="p-3 flex justify-between">
             <button
               className={`flex-1 py-2 rounded-md text-sm ${
@@ -197,6 +203,7 @@ const GeofenceFilter: React.FC<GeofenceFilterProps> = ({
                   : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
               }`}
               onClick={() => toggleGeofenceState(!isGeofenceActive)}
+              disabled={!geofenceCoordinates} // Disable if no coordinates yet
             >
               {isGeofenceActive ? 'Geofence Active' : 'Enable Geofence'}
             </button>
@@ -211,6 +218,7 @@ const GeofenceFilter: React.FC<GeofenceFilterProps> = ({
             )}
           </div>
 
+          {/* Active geofence info */}
           {isGeofenceActive && geofenceCoordinates && (
             <div className="p-3 bg-gray-50 text-xs text-gray-600 border-t">
               <div className="font-medium text-indigo-700 mb-1">

@@ -1174,5 +1174,15 @@ export function useFilterLogic() {
     clearAllFilters,
     applyCombinedFilters,
     getAircraftOwnerType,
+
+    refreshWithFilters: () => {
+      // Implement refresh logic here
+      if (typeof refreshPositions === 'function') {
+        refreshPositions().catch((error) => {
+          console.error('Error refreshing positions:', error);
+        });
+      }
+    },
+    setActiveDropdown, // Add this line if you have this function
   };
 }

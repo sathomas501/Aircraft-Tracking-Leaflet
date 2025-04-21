@@ -77,7 +77,7 @@ const RibbonAircraftSelector: React.FC<RibbonProps> = ({ manufacturers }) => {
     return (
       <div className="flex items-center gap-2 px-3">
         <ManualRefreshButton
-          onRefresh={filterLogic.refreshWithFilters}
+          onRefresh={async () => filterLogic.refreshWithFilters()}
           disabled={combinedLoading || localLoading || isRefreshing}
         />
         <RibbonClearFiltersButton onClear={clearAllFilters} />
@@ -234,6 +234,7 @@ const RibbonAircraftSelector: React.FC<RibbonProps> = ({ manufacturers }) => {
             setGeofenceRadius={setGeofenceRadius}
             combinedLoading={combinedLoading}
             activeDropdown={activeDropdown}
+            setActiveDropdown={filterLogic.setActiveDropdown}
             toggleDropdown={toggleDropdown}
             dropdownRef={dropdownRefs.location}
           />
