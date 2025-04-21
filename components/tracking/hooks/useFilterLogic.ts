@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import React from 'react';
 import { RegionCode } from '@/types/base';
 import type { ExtendedAircraft } from '@/types/base';
 import { useEnhancedMapContext } from '../context/EnhancedMapContext';
@@ -75,6 +76,7 @@ export function useFilterLogic() {
   );
   const [geofenceEnabled, setGeofenceEnabled] = useState(false);
   const [isGeofenceActive, setIsGeofenceActive] = useState(false);
+  const [isSearchReady, setIsSearchReady] = React.useState(false);
 
   // Region state
   const [activeRegion, setActiveRegion] = useState<RegionCode | string | null>(
@@ -128,6 +130,13 @@ export function useFilterLogic() {
   };
 
   // Effects
+
+  React.useEffect(() => {
+    if (geofenceCoordinates) {
+      setIsSearchReady(true);
+    }
+  }, [geofenceCoordinates]);
+
   useEffect(() => {
     if (isRateLimited && rateLimitTimer) {
       const timer = setTimeout(() => {
@@ -1184,5 +1193,9 @@ export function useFilterLogic() {
       }
     },
     setActiveDropdown, // Add this line if you have this function
+
+    setGeofenceCoordinates,
+    setGeofenceCenter,
+    updateGeofenceAircraft,
   };
 }

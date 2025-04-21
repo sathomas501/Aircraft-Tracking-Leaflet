@@ -87,3 +87,22 @@ export interface ModelFilterProps {
 export interface RibbonProps {
   manufacturers: Array<{ value: string; label: string }>;
 }
+
+interface FilterLogicReturnType {
+  // Existing properties...
+  filterMode: FilterMode | null;
+  activeDropdown: string | null;
+  selectedManufacturer: string | null;
+  selectedModel: string | null;
+  geofenceLocation: string;
+  geofenceRadius: number;
+  geofenceCoordinates: { lat: number; lng: number } | null;
+  // ... other existing properties
+
+  // Add these missing properties
+  setGeofenceCoordinates: (
+    coordinates: { lat: number; lng: number } | null
+  ) => void;
+  setGeofenceCenter: (coordinates: { lat: number; lng: number }) => void;
+  updateGeofenceAircraft: (aircraft: any[]) => void;
+}

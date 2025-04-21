@@ -26,6 +26,7 @@ import { enrichGeofenceAircraft } from '../../../lib/utils/geofenceEnricher';
 import { getAircraftNearLocation } from '../../../lib/services/geofencing';
 import AircraftSpinner from './components/AircraftSpinner';
 import PopupFixer from './components/PopupFixer';
+import GeofenceMapIntegration from '../map/components/GeofenceIntegration';
 
 // Map Events component to handle zoom changes
 const MapEvents: React.FC = () => {
@@ -99,6 +100,7 @@ const EnhancedReactBaseMap: React.FC<ReactBaseMapProps> = ({ onError }) => {
     zoomLevel,
     // Add these geofencing properties from context
     geofenceCenter,
+    geofenceCoordinates,
     geofenceRadius,
     isGeofenceActive,
   } = useEnhancedMapContext();
@@ -241,22 +243,7 @@ const EnhancedReactBaseMap: React.FC<ReactBaseMapProps> = ({ onError }) => {
 
     if (!isGeofencePlacementMode) return null;
 
-    return (
-      <div className="fixed top-20 left-1/2 transform -translate-x-1/2 z-50 flex flex-col items-center">
-        <div className="bg-indigo-600 text-white px-4 py-2 rounded-md shadow-lg flex items-center gap-2 mb-2">
-          <Crosshair size={16} />
-          <span>Click anywhere on map to set geofence location</span>
-        </div>
-
-        <button
-          onClick={() => setIsGeofencePlacementMode(true)}
-          className="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-md shadow-md hover:bg-gray-50 flex items-center gap-2"
-        >
-          <X size={16} />
-          Exit Placement Mode
-        </button>
-      </div>
-    );
+    return null;
   };
 
   // Helper function to calculate distance (in km) between two points
@@ -403,15 +390,7 @@ const EnhancedReactBaseMap: React.FC<ReactBaseMapProps> = ({ onError }) => {
       },
     });
 
-    return (
-      <>
-        {showIndicator && (
-          <div className="geofence-mode-indicator">
-            Click anywhere on map to set geofence location
-          </div>
-        )}
-      </>
-    );
+    return null;
   };
 
   // The main component return statement should look like this:
@@ -447,6 +426,11 @@ const EnhancedReactBaseMap: React.FC<ReactBaseMapProps> = ({ onError }) => {
             />
           ))}
         </AircraftTooltipProvider>
+        <GeofenceMapIntegration
+          isGeofenceActive={isGeofenceActive}
+          geofenceCoordinates={geofenceCoordinates}
+          geofenceRadius={geofenceRadius ?? 0}
+        />
         {/* Geofence components */}
         <MapClickHandler />
         <GeofenceCircle />

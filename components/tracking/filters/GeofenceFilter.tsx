@@ -1,13 +1,20 @@
-import React from 'react';
-import { MapPin, Crosshair } from 'lucide-react';
+import React, { useState } from 'react';
+import { MapPin } from 'lucide-react';
 import type { GeofenceState } from '../types/filters';
 import { useEnhancedMapContext } from '../context/EnhancedMapContext';
+import FloatingGeofencePanel from './FloatingGeofencePanel';
+import { getAircraftNearLocation } from '../../../lib/services/geofencing';
 
 interface GeofenceFilterProps extends GeofenceState {
   activeDropdown: string | null;
   setActiveDropdown: (dropdown: string | null) => void;
   toggleDropdown: (type: string, event: React.MouseEvent) => void;
   dropdownRef: React.RefObject<HTMLDivElement>;
+  setGeofenceCoordinates: (
+    coordinates: { lat: number; lng: number } | null
+  ) => void;
+  setGeofenceCenter: (coordinates: { lat: number; lng: number }) => void;
+  updateGeofenceAircraft: (aircraft: any[]) => void;
 }
 
 const GeofenceFilter: React.FC<GeofenceFilterProps> = ({
@@ -21,26 +28,128 @@ const GeofenceFilter: React.FC<GeofenceFilterProps> = ({
   toggleGeofenceState,
   setGeofenceLocation,
   setGeofenceRadius,
+  setGeofenceCoordinates,
+  setGeofenceCenter,
   setActiveDropdown,
   combinedLoading,
   activeDropdown,
   toggleDropdown,
   dropdownRef,
+  updateGeofenceAircraft,
 }) => {
-  // Get the geofence placement mode state from context
+  // Get context and state
   const { isGeofencePlacementMode, setIsGeofencePlacementMode } =
     useEnhancedMapContext();
+  const [showFloatingPanel, setShowFloatingPanel] = useState(false);
+  const [tempCoordinates, setTempCoordinates] = useState<{
+    lat: number;
+    lng: number;
+  } | null>(null);
+  const [isSearching, setIsSearching] = useState(false);
 
-  // Toggle the geofence placement mode
-  const togglePlacementMode = () => {
-    setIsGeofencePlacementMode(!isGeofencePlacementMode);
+  // Handle opening the floating panel
+  const openFloatingPanel = () => {
+    setShowFloatingPanel(true);
+    setIsGeofencePlacementMode(true); // Enter placement mode
+    setActiveDropdown(null); // Close the dropdown
   };
 
-  // Function to enter placement mode and close dropdown
-  const enterPlacementMode = () => {
-    setIsGeofencePlacementMode(true);
-    // Close dropdown after entering placement mode
-    setActiveDropdown(null);
+  // Handle closing the floating panel
+  const closeFloatingPanel = () => {
+    setShowFloatingPanel(false);
+    setIsGeofencePlacementMode(false);
+    setTempCoordinates(null); // Clear temporary coordinates
+  };
+
+  // Handle panel search
+  const handlePanelSearch = async (lat: number, lng: number) => {
+    setIsSearching(true);
+    try {
+      // Get reverse geocoding for the location name
+      const locationName = await getLocationNameFromCoordinates(lat, lng);
+
+      // Update the location name state
+      if (locationName) {
+        setGeofenceLocation(locationName);
+      } else {
+        // Fallback to coordinates if no name is found
+        setGeofenceLocation(`${lat.toFixed(4)}, ${lng.toFixed(4)}`);
+      }
+
+      // Set coordinates - this is the line causing the error
+      // Use the function from props directly
+      if (setGeofenceCoordinates) {
+        setGeofenceCoordinates({ lat, lng });
+      }
+
+      // Update center coordinates
+      if (setGeofenceCenter) {
+        setGeofenceCenter({ lat, lng });
+      }
+
+      // Process the geofence search using the existing function
+      await fetchAircraftForClickLocation(lat, lng);
+
+      // Activate geofence if not already active
+      if (!isGeofenceActive) {
+        toggleGeofenceState(true);
+      }
+    } catch (error) {
+      console.error('Error searching from panel:', error);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  // Function to get and process aircraft data
+  const fetchAircraftForClickLocation = async (lat: number, lng: number) => {
+    try {
+      console.log('Fetching aircraft near clicked location:', lat, lng);
+
+      // Call the existing function from your geofencing.ts
+      const fetchedAircraft = await getAircraftNearLocation(
+        lat,
+        lng,
+        geofenceRadius || 25
+      );
+
+      // Process the aircraft data
+      if (fetchedAircraft.length === 0) {
+        console.log('No aircraft found near clicked location');
+        return;
+      }
+
+      // Update the context with the new aircraft - add null check
+      if (typeof updateGeofenceAircraft === 'function') {
+        updateGeofenceAircraft(fetchedAircraft);
+      } else {
+        console.warn(
+          'updateGeofenceAircraft is not available or not a function'
+        );
+      }
+
+      console.log(
+        `Found ${fetchedAircraft.length} aircraft near clicked location`
+      );
+    } catch (error) {
+      console.error('Error fetching aircraft for clicked location:', error);
+    }
+  };
+
+  // Get location name from coordinates using reverse geocoding
+  const getLocationNameFromCoordinates = async (lat: number, lng: number) => {
+    try {
+      // Format coordinates to string with 4 decimal places
+      const locationName = `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+
+      // In a real implementation, you would use Mapbox or another service for reverse geocoding
+      // You could implement a full reverse geocoding service here if needed
+
+      return locationName;
+    } catch (error) {
+      console.error('Error getting location name:', error);
+      return null;
+    }
   };
 
   return (
@@ -54,7 +163,7 @@ const GeofenceFilter: React.FC<GeofenceFilterProps> = ({
               : 'bg-gray-50/30 hover:bg-gray-50 border-gray-200 text-gray-700 hover:border-gray-300'
         } transition-all duration-200`}
         onClick={(event) => toggleDropdown('location', event)}
-        disabled={combinedLoading || isGeofencePlacementMode} // Disable when in placement mode
+        disabled={combinedLoading || showFloatingPanel}
       >
         <span className="flex items-center gap-2 font-medium">
           <MapPin
@@ -65,8 +174,8 @@ const GeofenceFilter: React.FC<GeofenceFilterProps> = ({
             ? geofenceLocation.length > 15
               ? geofenceLocation.substring(0, 15) + '...'
               : geofenceLocation
-            : isGeofencePlacementMode
-              ? 'Click on map...'
+            : showFloatingPanel
+              ? 'Placing geofence...'
               : 'Location'}
         </span>
         <svg
@@ -117,24 +226,56 @@ const GeofenceFilter: React.FC<GeofenceFilterProps> = ({
                 disabled={
                   combinedLoading || (!geofenceLocation && !isGettingLocation)
                 }
+                title="Search"
               >
-                {/* Search icon */}
+                {combinedLoading ? (
+                  <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+                    <circle
+                      className="opacity-25"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                    ></circle>
+                    <path
+                      className="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                    ></path>
+                  </svg>
+                ) : (
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="h-5 w-5"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                    />
+                  </svg>
+                )}
               </button>
             </div>
 
-            {/* Add the placement mode button - this will close the dropdown */}
+            {/* Replace the placement mode button with one that opens the floating panel */}
             <button
-              onClick={enterPlacementMode}
+              onClick={openFloatingPanel}
               className="w-full flex items-center justify-center py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors"
             >
-              <Crosshair size={16} className="mr-2" />
+              <MapPin size={16} className="mr-2" />
               Click on Map to Set Location
             </button>
 
             {/* Spacer */}
             <div className="my-2"></div>
 
-            {/* Current location button - keep your existing button */}
+            {/* Current location button - keep existing button */}
             <button
               className={`w-full flex items-center justify-center py-2 border border-indigo-300 rounded-md text-indigo-700 bg-indigo-50 hover:bg-indigo-100 transition-colors ${
                 isGettingLocation ? 'opacity-75 cursor-not-allowed' : ''
@@ -193,45 +334,21 @@ const GeofenceFilter: React.FC<GeofenceFilterProps> = ({
               <span>100 km</span>
             </div>
           </div>
-
-          {/* The enable button */}
-          <div className="p-3 flex justify-between">
-            <button
-              className={`flex-1 py-2 rounded-md text-sm ${
-                isGeofenceActive
-                  ? 'bg-blue-500 text-white'
-                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-              }`}
-              onClick={() => toggleGeofenceState(!isGeofenceActive)}
-              disabled={!geofenceCoordinates} // Disable if no coordinates yet
-            >
-              {isGeofenceActive ? 'Geofence Active' : 'Enable Geofence'}
-            </button>
-
-            {isGeofenceActive && (
-              <button
-                onClick={() => toggleGeofenceState(false)}
-                className="ml-2 px-3 py-2 border border-red-200 text-red-600 rounded-md text-sm font-medium hover:bg-red-50"
-              >
-                Clear
-              </button>
-            )}
-          </div>
-
-          {/* Active geofence info */}
-          {isGeofenceActive && geofenceCoordinates && (
-            <div className="p-3 bg-gray-50 text-xs text-gray-600 border-t">
-              <div className="font-medium text-indigo-700 mb-1">
-                Geofence Active
-              </div>
-              <div>
-                Coordinates: {geofenceCoordinates.lat.toFixed(4)},{' '}
-                {geofenceCoordinates.lng.toFixed(4)}
-              </div>
-              <div>Radius: {geofenceRadius} km</div>
-            </div>
-          )}
         </div>
+      )}
+
+      {/* Render the floating panel when active */}
+      {showFloatingPanel && (
+        <FloatingGeofencePanel
+          isOpen={showFloatingPanel}
+          onClose={closeFloatingPanel}
+          geofenceRadius={geofenceRadius}
+          setGeofenceRadius={setGeofenceRadius}
+          onSearch={handlePanelSearch}
+          isSearching={isSearching}
+          coordinates={tempCoordinates}
+          setCoordinates={setTempCoordinates}
+        />
       )}
     </div>
   );

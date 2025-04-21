@@ -7,7 +7,6 @@ import GeofenceFilter from './filters/GeofenceFilter';
 import OwnerFilter from './filters/OwnerFilter';
 import RegionFilter from './filters/RegionFilter';
 import SearchRibbonSpinner from './map/components/SearchRibbonSpinner';
-import { RibbonRefreshButton } from './map/components/RefreshButtonComponent';
 import { RibbonClearFiltersButton } from './map/components/ribbon-clear';
 import { useEnhancedMapContext } from './context/EnhancedMapContext';
 import type { RibbonProps } from './types/filters';
@@ -52,6 +51,9 @@ const RibbonAircraftSelector: React.FC<RibbonProps> = ({ manufacturers }) => {
     setManufacturerSearchTerm,
     setGeofenceLocation,
     setGeofenceRadius,
+    setGeofenceCoordinates,
+    setGeofenceCenter,
+    updateGeofenceAircraft,
     toggleGeofenceState,
     clearAllFilters,
   } = filterLogic;
@@ -232,6 +234,9 @@ const RibbonAircraftSelector: React.FC<RibbonProps> = ({ manufacturers }) => {
             toggleGeofenceState={toggleGeofenceState}
             setGeofenceLocation={setGeofenceLocation}
             setGeofenceRadius={setGeofenceRadius}
+            setGeofenceCoordinates={setGeofenceCoordinates}
+            setGeofenceCenter={setGeofenceCenter}
+            updateGeofenceAircraft={updateGeofenceAircraft}
             combinedLoading={combinedLoading}
             activeDropdown={activeDropdown}
             setActiveDropdown={filterLogic.setActiveDropdown}
