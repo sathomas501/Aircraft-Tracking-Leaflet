@@ -9,6 +9,7 @@ import {
   searchLocationWithMapbox,
   getAircraftNearSearchedLocation,
 } from '@/lib/services/geofencing';
+import getLocationNameFromCoordinates from '@/lib/services/geofencing';
 import { adaptGeofenceAircraft } from '@/lib/utils/geofenceAdapter';
 import { enrichGeofenceAircraft } from '@/lib/utils/geofenceEnricher';
 import { useGeolocation } from '../hooks/useGeolocation';
@@ -17,6 +18,8 @@ import {
   getBoundsByRegion,
   getZoomLevelForRegion,
 } from '../../../config/map';
+
+type MapGeofenceClickEvent = CustomEvent<{ lat: number; lng: number }>;
 
 export type FilterMode =
   | 'manufacturer'
@@ -187,36 +190,59 @@ export function useFilterLogic() {
 
   // Effect to handle map click for geofence
   useEffect(() => {
-    // Handler for map click events
-    const handleMapGeofenceClick = (event: any) => {
-      const { lat, lng } = event.detail;
-      console.log(
-        `useFilterLogic received map click at: ${lat.toFixed(6)}, ${lng.toFixed(6)}`
-      );
+    const handleMapGeofenceClick = async (event: Event) => {
+      try {
+        // Cast the event to the proper type
+        const customEvent = event as CustomEvent<{ lat: number; lng: number }>;
+        const { lat, lng } = customEvent.detail;
 
-      // Update the geofence coordinates
-      setGeofenceCoordinates({ lat, lng });
+        // First update coordinates immediately
+        setGeofenceCoordinates({ lat, lng });
 
-      // Update the location display with formatted coordinates
-      setGeofenceLocation(`${lat.toFixed(6)}, ${lng.toFixed(6)}`);
+        // Then start an async operation to get the location name
+        console.log(`Getting location name for: ${lat}, ${lng}`);
 
-      // Open the location dropdown if it's not already open
-      if (activeDropdown !== 'location') {
-        setActiveDropdown('location');
+        // Temporarily show coordinates while fetching the name
+        setGeofenceLocation(`${lat.toFixed(6)}, ${lng.toFixed(6)}`);
+
+        // Get the friendly name asynchronously
+        const locationName = await getLocationNameFromCoordinates(lat, lng);
+        console.log(`Got location name: ${locationName}`);
+
+        // Update with the friendly name once we have it
+        if (locationName !== null) {
+          setGeofenceLocation(locationName);
+        }
+
+        // Open the location dropdown if needed
+        if (activeDropdown !== 'location') {
+          setActiveDropdown('location');
+        }
+      } catch (error) {
+        console.error('Error handling map click:', error);
+        // Keep the coordinates display if there was an error
       }
     };
 
-    // Add the event listener
-    document.addEventListener('map-geofence-click', handleMapGeofenceClick);
+    // Add the event listener - use the standard event listener pattern
+    document.addEventListener(
+      'map-geofence-click',
+      handleMapGeofenceClick as EventListener
+    );
 
     // Clean up
     return () => {
       document.removeEventListener(
         'map-geofence-click',
-        handleMapGeofenceClick
+        handleMapGeofenceClick as EventListener
       );
     };
-  }, []); // Empty dependency array means this runs once on mount
+  }, [
+    setGeofenceLocation,
+    setGeofenceCoordinates,
+    setActiveDropdown,
+    activeDropdown,
+  ]);
 
   // Main methods
   const toggleDropdown = (dropdown: string, event: React.MouseEvent) => {

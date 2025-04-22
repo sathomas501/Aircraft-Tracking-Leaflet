@@ -1,8 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Search, MapPin } from 'lucide-react';
-// Note: You'll need to install this package with:
-// npm install react-draggable
 import Draggable from 'react-draggable';
+import getLocationNameFromCoordinates from '../../../lib/services/geofencing';
+
+interface Coordinates {
+  lat: number;
+  lng: number;
+}
 
 interface FloatingGeofencePanelProps {
   isOpen: boolean;
@@ -12,8 +16,8 @@ interface FloatingGeofencePanelProps {
   initialPosition?: { x: number; y: number };
   onSearch: (lat: number, lng: number) => void;
   isSearching: boolean;
-  coordinates: { lat: number; lng: number } | null;
-  setCoordinates: (coords: { lat: number; lng: number } | null) => void;
+  coordinates: Coordinates | null;
+  setCoordinates: (coords: Coordinates | null) => void;
 }
 
 const FloatingGeofencePanel: React.FC<FloatingGeofencePanelProps> = ({
@@ -21,7 +25,7 @@ const FloatingGeofencePanel: React.FC<FloatingGeofencePanelProps> = ({
   onClose,
   geofenceRadius,
   setGeofenceRadius,
-  initialPosition = { x: 100, y: 100 },
+  initialPosition,
   onSearch,
   isSearching,
   coordinates,
@@ -29,29 +33,87 @@ const FloatingGeofencePanel: React.FC<FloatingGeofencePanelProps> = ({
 }) => {
   const [position, setPosition] = useState(initialPosition);
   const nodeRef = useRef(null);
+  const [locationName, setLocationName] = useState<string | null>(null);
+  const [isLoadingLocation, setIsLoadingLocation] = useState(false);
+
+  // Fetch location name whenever coordinates change
+
+  // Add a reference to store the previous coordinates to avoid unnecessary API calls
+  const prevCoordinatesRef = useRef<{ lat: number; lng: number } | null>(null);
+
+  // Modify your location name effect to use the ref
+  useEffect(() => {
+    // Only proceed if we have coordinates
+    if (!coordinates) return;
+
+    // Check if these are the same coordinates as before
+    const isSameCoordinates =
+      prevCoordinatesRef.current?.lat === coordinates.lat &&
+      prevCoordinatesRef.current?.lng === coordinates.lng;
+
+    // If these are the same coordinates and we already have a location name or are loading,
+    // don't make another API call
+    if (isSameCoordinates && (locationName || isLoadingLocation)) {
+      return;
+    }
+
+    // Update the reference with current coordinates
+    prevCoordinatesRef.current = coordinates;
+
+    // Proceed with API call
+    setIsLoadingLocation(true);
+
+    getLocationNameFromCoordinates(coordinates.lat, coordinates.lng)
+      .then((name) => {
+        setLocationName(name);
+      })
+      .catch((error) => {
+        console.error('Error fetching location name:', error);
+      })
+      .finally(() => {
+        setIsLoadingLocation(false);
+      });
+
+    // Don't include locationName in dependencies to avoid loops
+  }, [coordinates]);
 
   // Auto-search when coordinates change, with improved throttling and debouncing
+
+  // Use a reference for the last search coordinates
+  const lastSearchRef = useRef<{ lat: number; lng: number } | null>(null);
+
+  // Auto-search when coordinates change
   useEffect(() => {
     let searchTimeout: NodeJS.Timeout | null = null;
 
-    if (coordinates && !isSearching) {
-      // Add a single search that won't repeat
-      searchTimeout = setTimeout(() => {
-        // Only trigger once and only if panel is still open and coordinates haven't changed
-        if (isOpen && coordinates && !isSearching) {
-          // Set a flag to prevent multiple API calls
-          onSearch(coordinates.lat, coordinates.lng);
-        }
-      }, 1500); // Increased to 1.5 seconds to reduce API call frequency
-    }
+    // Only proceed if we have coordinates, aren't searching, and panel is open
+    if (!coordinates || isSearching || !isOpen) return;
 
-    // Cleanup function to prevent memory leaks and cancel pending searches
+    // Check if we've already searched these coordinates
+    const isSameCoordinates =
+      lastSearchRef.current?.lat === coordinates.lat &&
+      lastSearchRef.current?.lng === coordinates.lng;
+
+    // Skip if we've already searched these exact coordinates
+    if (isSameCoordinates) return;
+
+    // Schedule a search
+    searchTimeout = setTimeout(() => {
+      // Double-check that conditions are still valid when timeout fires
+      if (isOpen && coordinates && !isSearching) {
+        // Update reference before search
+        lastSearchRef.current = coordinates;
+        onSearch(coordinates.lat, coordinates.lng);
+      }
+    }, 1500);
+
+    // Cleanup function
     return () => {
       if (searchTimeout) {
         clearTimeout(searchTimeout);
       }
     };
-  }, [coordinates?.lat, coordinates?.lng]); // Only re-run when coordinates actually change
+  }, [coordinates, isSearching, isOpen, onSearch]);
 
   // Enable map click mode when panel is opened
   useEffect(() => {
@@ -91,6 +153,9 @@ const FloatingGeofencePanel: React.FC<FloatingGeofencePanelProps> = ({
   // Handle search button click
   const handleSearch = () => {
     if (coordinates) {
+      // Don't search again if already searching
+      if (isSearching) return;
+
       onSearch(coordinates.lat, coordinates.lng);
     }
   };
@@ -106,7 +171,7 @@ const FloatingGeofencePanel: React.FC<FloatingGeofencePanelProps> = ({
     >
       <div
         ref={nodeRef}
-        className="absolute z-50 bg-white rounded-lg shadow-lg border border-gray-200 w-80"
+        className="absolute z-50 bg-white rounded-lg shadow-lg border border-gray-200 w-80 geofence-floating-panel"
         style={{
           position: 'absolute',
           top: 0,
@@ -142,6 +207,14 @@ const FloatingGeofencePanel: React.FC<FloatingGeofencePanelProps> = ({
                 Selected Location:
               </div>
               <div className="text-gray-600">
+                {isLoadingLocation ? (
+                  <span>Loading location name...</span>
+                ) : (
+                  locationName ||
+                  `${coordinates.lat.toFixed(6)}, ${coordinates.lng.toFixed(6)}`
+                )}
+              </div>
+              <div className="text-xs text-gray-500 mt-1">
                 {coordinates.lat.toFixed(6)}, {coordinates.lng.toFixed(6)}
               </div>
             </div>

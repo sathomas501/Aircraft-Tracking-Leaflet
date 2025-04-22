@@ -32,6 +32,43 @@ const GeofenceMapIntegration: React.FC<GeofenceMapIntegrationProps> = ({
     shadowSize: [41, 41],
   });
 
+  // In your GeofenceMapIntegration component
+  useEffect(() => {
+    // More selective approach to capture only specific clicks
+    const captureFilterClicks = (e: MouseEvent) => {
+      if (isGeofencePlacementMode) {
+        // Don't interfere with map container clicks at all
+        if (
+          e.target instanceof Element &&
+          e.target.closest('.leaflet-container')
+        ) {
+          // Do nothing - let the map click handler work normally
+          return;
+        }
+
+        // Don't interfere with the panel itself
+        if (
+          e.target instanceof Element &&
+          e.target.closest('.geofence-floating-panel')
+        ) {
+          // Do nothing - let panel clicks work normally
+          return;
+        }
+
+        // Only for clicks outside map and panel, prevent default behavior
+        e.stopPropagation();
+        e.preventDefault();
+      }
+    };
+
+    // Add listener in the capturing phase (true is important)
+    document.addEventListener('click', captureFilterClicks, true);
+
+    return () => {
+      document.removeEventListener('click', captureFilterClicks, true);
+    };
+  }, [isGeofencePlacementMode]);
+
   // Listen for geofence placement mode changes
   useEffect(() => {
     const handlePlacementModeChange = (e: CustomEvent) => {
@@ -73,43 +110,48 @@ const GeofenceMapIntegration: React.FC<GeofenceMapIntegrationProps> = ({
   // Need to debounce map click events to prevent multiple rapid clicks
   const [lastClickTime, setLastClickTime] = useState(0);
 
-  // Map event handler for clicks with debouncing and improved prevention
+  // Setup event capturing for all map elements
+  useEffect(() => {
+    // Function to capture and stop all click events when in placement mode
+    const captureClicks = (e: MouseEvent) => {
+      if (isGeofencePlacementMode) {
+        // Don't interfere with clicks on the panel itself
+        const panelElement = document.querySelector('.geofence-floating-panel');
+        if (panelElement && panelElement.contains(e.target as Node)) {
+          return;
+        }
+
+        // Don't interfere with clicks on the map itself - these should be handled by the map click handler
+        const mapElement = document.querySelector('.leaflet-container');
+        if (mapElement && mapElement.contains(e.target as Node)) {
+          return;
+        }
+
+        // Only prevent clicks on non-map, non-panel elements
+        e.stopPropagation();
+        e.preventDefault();
+        e.stopImmediatePropagation();
+      }
+    };
+
+    // Add capturing event listener to catch events before they reach other handlers
+    document.addEventListener('click', captureClicks, true);
+
+    return () => {
+      document.removeEventListener('click', captureClicks, true);
+    };
+  }, [isGeofencePlacementMode]);
+
   const map = useMapEvents({
     click: (e) => {
-      const now = Date.now();
-      // Only process clicks that are at least 1 second apart
-      if (isGeofencePlacementMode && now - lastClickTime > 1000) {
+      if (isGeofencePlacementMode) {
         const { lat, lng } = e.latlng;
 
-        // Update last click time
-        setLastClickTime(now);
-
-        // Immediately show a preview of the geofence on the map
-        setPreviewCoordinates({ lat, lng });
-
-        // Dispatch custom event for the floating panel
+        // Dispatch a custom event with the coordinates
         const event = new CustomEvent('map-geofence-click', {
           detail: { lat, lng },
         });
         document.dispatchEvent(event);
-
-        // Log the click for debugging
-        console.log('Geofence placement click at:', lat, lng);
-
-        // More aggressive event prevention
-        if (e.originalEvent) {
-          e.originalEvent.stopPropagation();
-          e.originalEvent.preventDefault();
-          e.originalEvent.stopImmediatePropagation(); // Add this to prevent all other handlers
-
-          // Cancel any pending click events
-          if (e.originalEvent.cancelable) {
-            e.originalEvent.cancelBubble = true;
-          }
-        }
-
-        // Return false to prevent default behavior
-        return false;
       }
     },
   });

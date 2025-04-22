@@ -11,6 +11,7 @@ import { RibbonClearFiltersButton } from './map/components/ribbon-clear';
 import { useEnhancedMapContext } from './context/EnhancedMapContext';
 import type { RibbonProps } from './types/filters';
 import ManualRefreshButton from './map/components/ManualRefreshButton';
+import { motion, AnimatePresence } from 'framer-motion';
 
 const RibbonAircraftSelector: React.FC<RibbonProps> = ({ manufacturers }) => {
   // Get the aircraft state from context

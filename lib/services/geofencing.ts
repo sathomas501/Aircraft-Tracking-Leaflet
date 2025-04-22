@@ -1,6 +1,6 @@
 // lib/services/geofencing.ts
 import { adaptGeofenceAircraft } from '../utils/geofenceAdapter';
-import type { ExtendedAircraft } from '../../types/base';
+import type { ExtendedAircraft, Feature } from '../../types/base';
 
 /**
  * Interface for geofencing parameters
@@ -604,6 +604,79 @@ export async function getAircraftNearPostalCode(
 }
 
 /**
+ * Gets a human-readable location name from coordinates using Mapbox reverse geocoding
+ *
+ * @param lat - Latitude (decimal degrees)
+ * @param lng - Longitude (decimal degrees)
+ * @returns Promise resolving to a location name or coordinates string if not found
+ */
+const getLocationNameFromCoordinates = async (
+  lat: number,
+  lng: number
+): Promise<string | null> => {
+  try {
+    // Validate coordinates
+    if (isNaN(lat) || isNaN(lng)) {
+      console.error('Invalid coordinates:', lat, lng);
+      return `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+    }
+
+    // VERY IMPORTANT: Format coordinates correctly for Mapbox
+    // Longitude first, no space after comma
+    const coordsQuery = `${lng},${lat}`;
+
+    // Use the exact same query format that worked in your REST tests
+    const url = `/api/proxy/mapbox-geocode?query=${encodeURIComponent(coordsQuery)}`;
+    console.log(`Making geocoding request: ${url}`);
+
+    const response = await fetch(url);
+
+    if (!response.ok) {
+      throw new Error(`Geocoding API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    console.log('API response features:', data.features?.length || 0);
+
+    // Check if we got results
+    if (data.features && data.features.length > 0) {
+      // Try to extract city and region
+      const feature = data.features[0];
+
+      // For debugging
+      console.log('Feature found:', feature.place_name);
+
+      if (feature.context) {
+        const placeItem = feature.context.find((item: any) =>
+          item.id.startsWith('place.')
+        );
+
+        const regionItem = feature.context.find((item: any) =>
+          item.id.startsWith('region.')
+        );
+
+        if (placeItem && regionItem) {
+          return `${placeItem.text}, ${regionItem.text}`;
+        } else if (placeItem) {
+          return placeItem.text;
+        } else if (regionItem) {
+          return regionItem.text;
+        }
+      }
+
+      // If no context items matched, return the place_name or text
+      return feature.place_name || feature.text;
+    }
+
+    // Fallback to coordinates
+    return `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+  } catch (error) {
+    console.error('Error getting location name:', error);
+    return `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+  }
+};
+
+/**
  * Get aircraft near a specific location
  *
  * @param lat Latitude
@@ -669,3 +742,5 @@ export function calculateDistance(
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return EARTH_RADIUS * c;
 }
+
+export default getLocationNameFromCoordinates;

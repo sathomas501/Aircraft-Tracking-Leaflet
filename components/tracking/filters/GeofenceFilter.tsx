@@ -1,9 +1,12 @@
-import React, { useState } from 'react';
+// Description: This component handles the geofence filter functionality, including location search, radius adjustment, and aircraft data fetching.
+// It also manages the floating panel for geofence placement on the map.
+import React, { useState, useEffect } from 'react';
 import { MapPin } from 'lucide-react';
 import type { GeofenceState } from '../types/filters';
 import { useEnhancedMapContext } from '../context/EnhancedMapContext';
 import FloatingGeofencePanel from './FloatingGeofencePanel';
 import { getAircraftNearLocation } from '../../../lib/services/geofencing';
+import getLocationNameFromCoordinates from '../../../lib/services/geofencing';
 
 interface GeofenceFilterProps extends GeofenceState {
   activeDropdown: string | null;
@@ -15,6 +18,10 @@ interface GeofenceFilterProps extends GeofenceState {
   ) => void;
   setGeofenceCenter: (coordinates: { lat: number; lng: number }) => void;
   updateGeofenceAircraft: (aircraft: any[]) => void;
+  isGeofenceActive: boolean;
+  geofenceLocation: string;
+  isGeofencePlacementMode: boolean;
+  coordinates?: { lat: number; lng: number };
 }
 
 const GeofenceFilter: React.FC<GeofenceFilterProps> = ({
@@ -36,9 +43,10 @@ const GeofenceFilter: React.FC<GeofenceFilterProps> = ({
   toggleDropdown,
   dropdownRef,
   updateGeofenceAircraft,
+  coordinates,
 }) => {
   // Get context and state
-  const { isGeofencePlacementMode, setIsGeofencePlacementMode } =
+  const { isGeofencePlacementMode, setIsGeofencePlacementMode, mapInstance } =
     useEnhancedMapContext();
   const [showFloatingPanel, setShowFloatingPanel] = useState(false);
   const [tempCoordinates, setTempCoordinates] = useState<{
@@ -46,6 +54,8 @@ const GeofenceFilter: React.FC<GeofenceFilterProps> = ({
     lng: number;
   } | null>(null);
   const [isSearching, setIsSearching] = useState(false);
+  const [locationName, setLocationName] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
 
   // Handle opening the floating panel
   const openFloatingPanel = () => {
@@ -65,10 +75,10 @@ const GeofenceFilter: React.FC<GeofenceFilterProps> = ({
   const handlePanelSearch = async (lat: number, lng: number) => {
     setIsSearching(true);
     try {
-      // Get reverse geocoding for the location name
+      // Update the geofence location name
       const locationName = await getLocationNameFromCoordinates(lat, lng);
 
-      // Update the location name state
+      // Set the location name
       if (locationName) {
         setGeofenceLocation(locationName);
       } else {
@@ -76,23 +86,35 @@ const GeofenceFilter: React.FC<GeofenceFilterProps> = ({
         setGeofenceLocation(`${lat.toFixed(4)}, ${lng.toFixed(4)}`);
       }
 
-      // Set coordinates - this is the line causing the error
-      // Use the function from props directly
+      // Set coordinates using the same functions from processGeofenceSearch
       if (setGeofenceCoordinates) {
         setGeofenceCoordinates({ lat, lng });
       }
 
-      // Update center coordinates
       if (setGeofenceCenter) {
         setGeofenceCenter({ lat, lng });
       }
 
-      // Process the geofence search using the existing function
+      // Get aircraft data near this location
       await fetchAircraftForClickLocation(lat, lng);
 
       // Activate geofence if not already active
       if (!isGeofenceActive) {
         toggleGeofenceState(true);
+      }
+
+      // Center the map on this location
+      if (mapInstance && typeof mapInstance.setView === 'function') {
+        // Get current zoom level
+        const currentZoom = mapInstance.getZoom();
+        // Use appropriate zoom level based on current view
+        const targetZoom = currentZoom <= 7 ? 9 : currentZoom;
+
+        // Set view to the coordinates
+        mapInstance.setView([lat, lng], targetZoom);
+
+        // Ensure map is updated
+        mapInstance.invalidateSize();
       }
     } catch (error) {
       console.error('Error searching from panel:', error);
@@ -136,21 +158,71 @@ const GeofenceFilter: React.FC<GeofenceFilterProps> = ({
     }
   };
 
-  // Get location name from coordinates using reverse geocoding
-  const getLocationNameFromCoordinates = async (lat: number, lng: number) => {
-    try {
-      // Format coordinates to string with 4 decimal places
-      const locationName = `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+  useEffect(() => {
+    if (coordinates && !isGeofenceActive && !isGeofencePlacementMode) {
+      const fetchLocationName = async () => {
+        try {
+          // Make sure to pass both lat and lng as separate arguments
+          // or according to how your function is defined
+          const name = await getLocationNameFromCoordinates(
+            coordinates.lat,
+            coordinates.lng
+          );
+          setLocationName(name);
+        } catch (error) {
+          console.error('Error fetching location name:', error);
+          setLocationName(null);
+        }
+      };
 
-      // In a real implementation, you would use Mapbox or another service for reverse geocoding
-      // You could implement a full reverse geocoding service here if needed
-
-      return locationName;
-    } catch (error) {
-      console.error('Error getting location name:', error);
-      return null;
+      fetchLocationName();
     }
-  };
+  }, [coordinates, isGeofenceActive, isGeofencePlacementMode]);
+
+  useEffect(() => {
+    // Only fetch location name if we have coordinates and not in special states
+    if (coordinates && !isGeofenceActive && !isGeofencePlacementMode) {
+      setIsLoading(true);
+
+      const fetchLocationName = async () => {
+        try {
+          const name = await getLocationNameFromCoordinates(
+            coordinates.lat,
+            coordinates.lng
+          );
+          setLocationName(name);
+        } catch (error) {
+          console.error('Error fetching location name:', error);
+          setLocationName(null);
+        } finally {
+          setIsLoading(false);
+        }
+      };
+
+      fetchLocationName();
+    }
+  }, [coordinates, isGeofenceActive, isGeofencePlacementMode]);
+
+  // Listen for the clear all filters event
+  useEffect(() => {
+    const handleClearAllFilters = () => {
+      // Close the floating panel when filters are cleared
+      if (showFloatingPanel) {
+        closeFloatingPanel();
+      }
+    };
+
+    // Add event listener for the clear all filters event
+    document.addEventListener('ribbon-filters-cleared', handleClearAllFilters);
+
+    // Clean up
+    return () => {
+      document.removeEventListener(
+        'ribbon-filters-cleared',
+        handleClearAllFilters
+      );
+    };
+  }, [showFloatingPanel, closeFloatingPanel]);
 
   return (
     <div ref={dropdownRef} className="relative">
@@ -163,7 +235,7 @@ const GeofenceFilter: React.FC<GeofenceFilterProps> = ({
               : 'bg-gray-50/30 hover:bg-gray-50 border-gray-200 text-gray-700 hover:border-gray-300'
         } transition-all duration-200`}
         onClick={(event) => toggleDropdown('location', event)}
-        disabled={combinedLoading || showFloatingPanel}
+        disabled={combinedLoading || isGeofencePlacementMode}
       >
         <span className="flex items-center gap-2 font-medium">
           <MapPin
@@ -171,12 +243,14 @@ const GeofenceFilter: React.FC<GeofenceFilterProps> = ({
             className={isGeofenceActive ? 'text-indigo-500' : 'text-gray-500'}
           />
           {isGeofenceActive && geofenceLocation
-            ? geofenceLocation.length > 15
-              ? geofenceLocation.substring(0, 15) + '...'
+            ? geofenceLocation.length > 20
+              ? geofenceLocation.substring(0, 20) + '...'
               : geofenceLocation
-            : showFloatingPanel
-              ? 'Placing geofence...'
-              : 'Location'}
+            : isGeofencePlacementMode
+              ? 'Click on map...'
+              : isLoading
+                ? 'Loading location...'
+                : locationName || 'Location'}
         </span>
         <svg
           xmlns="http://www.w3.org/2000/svg"

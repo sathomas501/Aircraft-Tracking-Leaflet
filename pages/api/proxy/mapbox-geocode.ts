@@ -13,31 +13,57 @@ export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
+  // Log the full request details
+  console.log('Mapbox Geocoding Request:');
+  console.log('- Method:', req.method);
+  console.log('- Query params:', JSON.stringify(req.query));
+  console.log('- Headers:', JSON.stringify(req.headers));
+
   // Only allow GET requests
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { zip, country } = req.query;
-  const postalCode = Array.isArray(zip) ? zip[0] : zip;
-  const countryCode = Array.isArray(country) ? country[0] : country || 'us'; // Default to US if not specified
-
   try {
     // Get query parameters
     const { query, limit = 1, types } = req.query;
 
-    // Validate required parameters
+    // Validate and log the query
     if (!query || typeof query !== 'string') {
+      console.error('Missing or invalid query parameter:', query);
       return res.status(400).json({
         error: 'Missing or invalid query parameter',
       });
     }
 
-    // Convert limit to number with validation
-    const parsedLimit = typeof limit === 'string' ? parseInt(limit, 10) : 1;
+    console.log('Processing reverse geocoding query:', query);
+
+    // For reverse geocoding, try to detect and parse coordinates
+    let isReverseGeocode = false;
+    let coordinates = null;
+
+    // Check if the query looks like coordinates (contains a comma and numbers)
+    if (query.includes(',')) {
+      const parts = query.split(',').map((part) => part.trim());
+      if (
+        parts.length === 2 &&
+        !isNaN(parseFloat(parts[0])) &&
+        !isNaN(parseFloat(parts[1]))
+      ) {
+        isReverseGeocode = true;
+        coordinates = {
+          lng: parseFloat(parts[0]),
+          lat: parseFloat(parts[1]),
+        };
+        console.log(
+          'Detected reverse geocoding request with coordinates:',
+          coordinates
+        );
+      }
+    }
 
     // Create a cache key that includes all parameters
-    const cacheKey = `${query}_${parsedLimit}_${types || 'default'}`;
+    const cacheKey = `${query}_${limit}_${types || 'default'}`;
 
     // Check if we have this query in cache
     if (locationCache[cacheKey]) {
@@ -49,7 +75,6 @@ export default async function handler(
     }
 
     // Get Mapbox access token from environment variables
-    // Use existing MAPBOX_API_KEY if available, fall back to MAPBOX_ACCESS_TOKEN
     const MAPBOX_ACCESS_TOKEN =
       process.env.MAPBOX_API_KEY || process.env.MAPBOX_ACCESS_TOKEN;
 
@@ -61,30 +86,33 @@ export default async function handler(
     }
 
     // Construct Mapbox API URL
-    // Documentation: https://docs.mapbox.com/api/search/geocoding/
     const encodedQuery = encodeURIComponent(query);
     const mapboxUrl = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodedQuery}.json`;
+    console.log('Mapbox API URL:', mapboxUrl);
 
     // Set up query parameters for Mapbox
     const params = new URLSearchParams({
       access_token: MAPBOX_ACCESS_TOKEN,
-      limit: parsedLimit.toString(),
-      // Remove the country restriction or make it dynamic
-      // country: 'us', // This was restricting to US results
+      limit: typeof limit === 'string' ? limit : '1',
     });
-
-    // Optionally add country parameter if provided by the user
-    if (countryCode) {
-      params.append('country', countryCode);
-    }
 
     // Add types parameter if provided
     if (types && typeof types === 'string') {
       params.append('types', types);
+      console.log('Types parameter:', types);
     } else {
       // Default types if not specified
       params.append('types', 'place,postcode,address,poi,neighborhood,region');
+      console.log('Using default types');
     }
+
+    // Log the final request URL (with token masked)
+    const paramsString = params.toString();
+    const maskedParams = paramsString.replace(
+      /access_token=([^&]+)/,
+      'access_token=MASKED'
+    );
+    console.log(`Final Mapbox request: ${mapboxUrl}?${maskedParams}`);
 
     // Create an AbortController for timeout
     const controller = new AbortController();
@@ -107,24 +135,43 @@ export default async function handler(
         console.error('Mapbox API error:', response.status, errorText);
         return res.status(response.status).json({
           error: `Mapbox API error: ${response.status}`,
+          details: errorText,
         });
       }
 
       // Get JSON response from Mapbox
       const data = await response.json();
 
+      // Log the response status and basic structure
+      console.log('Mapbox API response status:', response.status);
+      console.log('Mapbox API response type:', data.type);
+      console.log('Features count:', data.features?.length || 0);
+
+      // If no features were returned, log more details about the query
+      if (!data.features || data.features.length === 0) {
+        console.log('No features found for query:', query);
+        console.log('Raw query string:', query);
+        if (isReverseGeocode) {
+          console.log('Parsed as coordinates:', coordinates);
+        }
+      } else {
+        // Log basic info about the first feature
+        const firstFeature = data.features[0];
+        console.log('First feature:');
+        console.log('- id:', firstFeature.id);
+        console.log('- type:', firstFeature.type);
+        console.log('- place_type:', firstFeature.place_type);
+        console.log('- place_name:', firstFeature.place_name);
+      }
+
       // Cache the results
       locationCache[cacheKey] = data;
-
-      // Debug the response
-      console.log(
-        `Mapbox API returned ${data.features?.length || 0} features for query "${query}"`
-      );
 
       // Return the Mapbox response
       return res.status(200).json(data);
     } catch (fetchError) {
       clearTimeout(timeoutId);
+      console.error('Fetch error:', fetchError);
       throw fetchError;
     }
   } catch (error) {

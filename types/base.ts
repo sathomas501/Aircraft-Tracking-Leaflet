@@ -359,3 +359,24 @@ export enum RegionCode {
   Africa = 5,
   Oceania = 6,
 }
+
+export interface Feature {
+  id: string;
+  type: string;
+  place_type: string[];
+  relevance: number;
+  properties: Record<string, any>;
+  text: string;
+  place_name: string;
+  center: [number, number];
+  geometry: {
+    type: string;
+    coordinates: [number, number];
+  };
+  context?: Array<{
+    id: string;
+    text: string;
+    [key: string]: any;
+  }>;
+  [key: string]: any;
+}
