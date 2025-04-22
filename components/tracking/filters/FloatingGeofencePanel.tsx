@@ -8,6 +8,11 @@ interface Coordinates {
   lng: number;
 }
 
+interface FormatCityCountryResult {
+  city: string;
+  country: string;
+}
+
 interface FloatingGeofencePanelProps {
   isOpen: boolean;
   onClose: () => void;
@@ -18,6 +23,8 @@ interface FloatingGeofencePanelProps {
   isSearching: boolean;
   coordinates: Coordinates | null;
   setCoordinates: (coords: Coordinates | null) => void;
+  isGeofenceActive: boolean;
+  isGeofencePlacementMode: boolean;
 }
 
 const FloatingGeofencePanel: React.FC<FloatingGeofencePanelProps> = ({
@@ -30,11 +37,14 @@ const FloatingGeofencePanel: React.FC<FloatingGeofencePanelProps> = ({
   isSearching,
   coordinates,
   setCoordinates,
+  isGeofenceActive,
+  isGeofencePlacementMode,
 }) => {
   const [position, setPosition] = useState(initialPosition);
   const nodeRef = useRef(null);
   const [locationName, setLocationName] = useState<string | null>(null);
   const [isLoadingLocation, setIsLoadingLocation] = useState(false);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
 
   // Fetch location name whenever coordinates change
 
@@ -115,6 +125,59 @@ const FloatingGeofencePanel: React.FC<FloatingGeofencePanelProps> = ({
     };
   }, [coordinates, isSearching, isOpen, onSearch]);
 
+  useEffect(() => {
+    // Only fetch location name if we have coordinates and not in special states
+    if (coordinates && !isGeofenceActive && !isGeofencePlacementMode) {
+      setIsLoading(true);
+
+      const fetchLocationName = async () => {
+        try {
+          const name = await getLocationNameFromCoordinates(
+            coordinates.lat,
+            coordinates.lng
+          );
+          setLocationName(name);
+        } catch (error) {
+          console.error('Error fetching location name:', error);
+          setLocationName(null);
+        } finally {
+          setIsLoading(false);
+        }
+      };
+
+      fetchLocationName();
+    }
+  }, [coordinates, isGeofenceActive, isGeofencePlacementMode]);
+
+  // Helper function to extract just city and country
+
+  const formatCityCountry = (locationString: string | null): string => {
+    if (!locationString) return '';
+
+    // Split by commas
+    const parts: string[] = locationString
+      .split(',')
+      .map((part) => part.trim());
+
+    // If we have city, country (or more parts)
+    if (parts.length >= 2) {
+      // Try to find the country (usually the last part)
+      const country: string = parts[parts.length - 1];
+
+      // For city, use the first meaningful part
+      let city: string = parts[0];
+
+      // Skip redundant parts like province/city name duplication (Madrid, Madrid)
+      if (parts.length >= 3 && parts[0] === parts[1]) {
+        city = parts[0];
+      }
+
+      return `${city}, ${country}`;
+    }
+
+    return locationString;
+  };
+
   // Enable map click mode when panel is opened
   useEffect(() => {
     if (isOpen) {
@@ -178,12 +241,8 @@ const FloatingGeofencePanel: React.FC<FloatingGeofencePanelProps> = ({
           left: 0,
         }}
       >
-        {/* Header/Handle for dragging */}
+        {/* Header/Handle for dragging - with centered title */}
         <div className="handle px-4 py-3 bg-indigo-600 text-white rounded-t-lg flex items-center justify-between cursor-move">
-          <div className="flex items-center">
-            <MapPin size={16} className="mr-2" />
-            <span className="font-medium">Geofence Placement</span>
-          </div>
           <button
             onClick={onClose}
             className="text-white hover:bg-indigo-700 rounded-full p-1"
@@ -191,37 +250,41 @@ const FloatingGeofencePanel: React.FC<FloatingGeofencePanelProps> = ({
           >
             <X size={16} />
           </button>
+          <div className="flex items-center justify-center flex-grow mx-auto">
+            <span className="font-medium text-center">
+              Search Pin Placement
+            </span>
+          </div>
+          <div className="w-4"></div> {/* Empty div for balancing the layout */}
         </div>
 
         {/* Body */}
         <div className="p-4">
-          {/* Instructions */}
-          <div className="mb-4 text-sm text-gray-600">
-            Click anywhere on the map to place the geofence center
+          {/* Location display at the top */}
+          <div className="mb-4">
+            <div className="text-center text-sm font-medium text-gray-700 mb-1">
+              Selected Location:
+            </div>
+            {coordinates && (
+              <div className="p-2 bg-gray-50 rounded border border-gray-200 text-center">
+                <div className="text-gray-700 font-bold">
+                  {isLoadingLocation ? (
+                    <span>Loading location name...</span>
+                  ) : locationName ? (
+                    formatCityCountry(locationName)
+                  ) : (
+                    `${coordinates.lat.toFixed(6)}, ${coordinates.lng.toFixed(6)}`
+                  )}
+                </div>
+                <div className="text-xs text-gray-500 mt-1">
+                  {coordinates.lat.toFixed(6)}, {coordinates.lng.toFixed(6)}
+                </div>
+              </div>
+            )}
           </div>
 
-          {/* Coordinates display */}
-          {coordinates && (
-            <div className="mb-4 p-2 bg-gray-50 rounded border border-gray-200 text-sm">
-              <div className="font-medium text-gray-700 mb-1">
-                Selected Location:
-              </div>
-              <div className="text-gray-600">
-                {isLoadingLocation ? (
-                  <span>Loading location name...</span>
-                ) : (
-                  locationName ||
-                  `${coordinates.lat.toFixed(6)}, ${coordinates.lng.toFixed(6)}`
-                )}
-              </div>
-              <div className="text-xs text-gray-500 mt-1">
-                {coordinates.lat.toFixed(6)}, {coordinates.lng.toFixed(6)}
-              </div>
-            </div>
-          )}
-
           {/* Radius slider */}
-          <div className="mb-4">
+          <div className="mb-6">
             <label className="text-sm font-medium text-gray-700 block mb-1">
               Radius: {geofenceRadius} km
             </label>
@@ -241,9 +304,16 @@ const FloatingGeofencePanel: React.FC<FloatingGeofencePanelProps> = ({
             </div>
           </div>
 
+          {/* Instructions moved down near the button */}
+          <div className="mb-3 text-sm text-gray-600 text-center">
+            Click anywhere on the map to place a search pin
+          </div>
+
+          {/* Search button */}
           {/* Search button */}
           <button
-            onClick={handleSearch}
+            type="button"
+            onClick={handleSearch} // Use your existing handleSearch function
             disabled={!coordinates || isSearching}
             className={`w-full py-2 px-4 flex items-center justify-center gap-2 rounded-md ${
               !coordinates || isSearching

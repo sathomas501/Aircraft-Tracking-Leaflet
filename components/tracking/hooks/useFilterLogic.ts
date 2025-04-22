@@ -1192,6 +1192,7 @@ export function useFilterLogic() {
     isRateLimited,
     selectedRegion,
     isRefreshing,
+    isGeofencePlacementMode: false, // Initialize with a default value
 
     // Methods
     toggleDropdown,

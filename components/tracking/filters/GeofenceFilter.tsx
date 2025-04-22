@@ -1,12 +1,13 @@
 // Description: This component handles the geofence filter functionality, including location search, radius adjustment, and aircraft data fetching.
 // It also manages the floating panel for geofence placement on the map.
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { MapPin } from 'lucide-react';
 import type { GeofenceState } from '../types/filters';
 import { useEnhancedMapContext } from '../context/EnhancedMapContext';
 import FloatingGeofencePanel from './FloatingGeofencePanel';
 import { getAircraftNearLocation } from '../../../lib/services/geofencing';
 import getLocationNameFromCoordinates from '../../../lib/services/geofencing';
+import { getFlagImageUrl } from '../../../utils/getFlagImage';
 
 interface GeofenceFilterProps extends GeofenceState {
   activeDropdown: string | null;
@@ -56,6 +57,9 @@ const GeofenceFilter: React.FC<GeofenceFilterProps> = ({
   const [isSearching, setIsSearching] = useState(false);
   const [locationName, setLocationName] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
+
+  const prevCoordinatesRef = useRef<{ lat: number; lng: number } | null>(null);
+  const [isLoadingLocation, setIsLoadingLocation] = useState(false);
 
   // Handle opening the floating panel
   const openFloatingPanel = () => {
@@ -158,6 +162,65 @@ const GeofenceFilter: React.FC<GeofenceFilterProps> = ({
     }
   };
 
+  // Enhanced function to extract just city and country or just country
+  interface FormatCityCountryOptions {
+    locationString: string;
+    countryOnly?: boolean;
+  }
+
+  const formatCityCountry = (
+    locationString: FormatCityCountryOptions['locationString'],
+    countryOnly: FormatCityCountryOptions['countryOnly'] = false
+  ): string => {
+    if (!locationString) return '';
+
+    // Split by commas
+    const parts = locationString.split(',').map((part) => part.trim());
+
+    // If we only want the country
+    if (countryOnly && parts.length >= 1) {
+      // Return the last part (usually the country)
+      return parts[parts.length - 1];
+    }
+
+    // For city, country format
+    if (parts.length >= 2) {
+      // Get country (usually the last part)
+      const country = parts[parts.length - 1];
+
+      // For city, use the first meaningful part
+      let city = parts[0];
+
+      // Skip redundant parts like province/city name duplication (Madrid, Madrid)
+      if (parts.length >= 3 && parts[0] === parts[1]) {
+        city = parts[0];
+      }
+
+      return `${city}, ${country}`;
+    }
+
+    return locationString;
+  };
+
+  const country = formatCityCountry(locationName || '', true);
+  const flagUrl = getFlagImageUrl(country);
+
+  const renderFlagAndName = (countryName: string) => {
+    const flagUrl = getFlagImageUrl(countryName);
+    return (
+      <span className="flex items-center gap-2">
+        {flagUrl && (
+          <img
+            src={flagUrl}
+            alt={`${countryName} flag`}
+            className="w-5 h-3 rounded-sm"
+          />
+        )}
+        {countryName}
+      </span>
+    );
+  };
+
   useEffect(() => {
     if (coordinates && !isGeofenceActive && !isGeofencePlacementMode) {
       const fetchLocationName = async () => {
@@ -203,6 +266,34 @@ const GeofenceFilter: React.FC<GeofenceFilterProps> = ({
     }
   }, [coordinates, isGeofenceActive, isGeofencePlacementMode]);
 
+  // In your location name effect
+  useEffect(() => {
+    if (!coordinates) return;
+
+    const isSameCoordinates =
+      prevCoordinatesRef.current?.lat === coordinates.lat &&
+      prevCoordinatesRef.current?.lng === coordinates.lng;
+
+    if (isSameCoordinates && (locationName || isLoadingLocation)) {
+      return;
+    }
+
+    prevCoordinatesRef.current = coordinates;
+
+    setIsLoadingLocation(true);
+
+    getLocationNameFromCoordinates(coordinates.lat, coordinates.lng)
+      .then((name) => {
+        setLocationName(name);
+      })
+      .catch((error) => {
+        console.error('Error fetching location name:', error);
+      })
+      .finally(() => {
+        setIsLoadingLocation(false);
+      });
+  }, [coordinates]);
+
   // Listen for the clear all filters event
   useEffect(() => {
     const handleClearAllFilters = () => {
@@ -243,15 +334,16 @@ const GeofenceFilter: React.FC<GeofenceFilterProps> = ({
             className={isGeofenceActive ? 'text-indigo-500' : 'text-gray-500'}
           />
           {isGeofenceActive && geofenceLocation
-            ? geofenceLocation.length > 20
-              ? geofenceLocation.substring(0, 20) + '...'
-              : geofenceLocation
+            ? renderFlagAndName(formatCityCountry(geofenceLocation, true))
             : isGeofencePlacementMode
               ? 'Click on map...'
               : isLoading
                 ? 'Loading location...'
-                : locationName || 'Location'}
+                : locationName
+                  ? renderFlagAndName(formatCityCountry(locationName, true))
+                  : 'Location'}
         </span>
+
         <svg
           xmlns="http://www.w3.org/2000/svg"
           className={`h-4 w-4 transition-transform ${activeDropdown === 'location' ? 'transform rotate-180' : ''}`}
@@ -422,6 +514,8 @@ const GeofenceFilter: React.FC<GeofenceFilterProps> = ({
           isSearching={isSearching}
           coordinates={tempCoordinates}
           setCoordinates={setTempCoordinates}
+          isGeofenceActive={isGeofenceActive}
+          isGeofencePlacementMode={isGeofencePlacementMode}
         />
       )}
     </div>

@@ -243,6 +243,7 @@ const RibbonAircraftSelector: React.FC<RibbonProps> = ({ manufacturers }) => {
             setActiveDropdown={filterLogic.setActiveDropdown}
             toggleDropdown={toggleDropdown}
             dropdownRef={dropdownRefs.location}
+            isGeofencePlacementMode={filterLogic.isGeofencePlacementMode}
           />
 
           {/* Owner Type Dropdown */}
