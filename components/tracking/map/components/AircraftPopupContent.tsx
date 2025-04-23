@@ -1,7 +1,7 @@
 // components/tracking/map/components/AircraftPopupContent.tsx
 import React, { useState } from 'react';
 import type { ExtendedAircraft, Aircraft } from '@/types/base';
-
+import { getFlagImageUrl } from '../../../../utils/getFlagImage'; // Adjust the import path as necessary
 interface AircraftPopupContentProps {
   aircraft: ExtendedAircraft;
   onSelectAircraft: (icao24: string) => void;
@@ -194,6 +194,7 @@ const AircraftPopupContent: React.FC<AircraftPopupContentProps> = ({
   const readableType = getReadableAircraftType(aircraft);
   const ownerTypeValue = aircraft.TYPE_REGISTRANT || aircraft.ownerType;
   console.log('Owner type value:', ownerTypeValue, typeof ownerTypeValue);
+  const flagUrl = getFlagImageUrl(aircraft.COUNTRY || '');
 
   // Ensure it's always passed as a number to getOwnerTypeLabel
   // Don't parse if it's not a valid number string
@@ -253,11 +254,14 @@ const AircraftPopupContent: React.FC<AircraftPopupContentProps> = ({
               </button>
 
               {/* Country flag/identifier next to the button */}
-              {aircraft.COUNTRY && (
-                <span className="ml-2 px-2 py-0.5 bg-gray-100 text-xs font-medium rounded">
-                  {aircraft.COUNTRY}
-                </span>
+              {flagUrl && (
+                <img
+                  src={flagUrl}
+                  alt={`${aircraft.COUNTRY} flag`}
+                  className="w-4 h-3 rounded-sm"
+                />
               )}
+              <span className="font-bold">{aircraft.COUNTRY}</span>
             </div>
 
             <button
@@ -310,9 +314,17 @@ const AircraftPopupContent: React.FC<AircraftPopupContentProps> = ({
             </button>
 
             {/* Country flag/identifier in panel mode */}
+
             {aircraft.COUNTRY && (
-              <span className="ml-2 px-2 py-0.5 bg-gray-100 text-xs rounded">
-                <span className="font-bold">{aircraft.COUNTRY}</span>
+              <span className="ml-2 flex items-center gap-1 px-2 py-0.5 bg-gray-100 text-xs font-medium rounded">
+                {getFlagImageUrl(aircraft.COUNTRY) && (
+                  <img
+                    src={getFlagImageUrl(aircraft.COUNTRY) || undefined}
+                    alt={`${aircraft.COUNTRY} flag`}
+                    className="w-4 h-3 rounded-sm"
+                  />
+                )}
+                {aircraft.COUNTRY}
               </span>
             )}
           </div>

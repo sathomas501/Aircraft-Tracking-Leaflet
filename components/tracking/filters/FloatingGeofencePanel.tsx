@@ -67,6 +67,10 @@ const FloatingGeofencePanel: React.FC<FloatingGeofencePanelProps> = ({
       return;
     }
 
+    // Near the top of your component
+    console.log('onSearch prop:', onSearch);
+    console.log('onSearch is function?', typeof onSearch === 'function');
+
     // Update the reference with current coordinates
     prevCoordinatesRef.current = coordinates;
 
@@ -215,15 +219,32 @@ const FloatingGeofencePanel: React.FC<FloatingGeofencePanelProps> = ({
 
   // Handle search button click
   const handleSearch = () => {
-    if (coordinates) {
-      // Don't search again if already searching
-      if (isSearching) return;
+    console.log('handleSearch function called');
+    console.log('coordinates:', coordinates);
+    console.log('isSearching:', isSearching);
 
+    if (!coordinates) {
+      console.log('No coordinates available');
+      return;
+    }
+
+    if (isSearching) {
+      console.log('Already searching, skipping');
+      return;
+    }
+
+    console.log(
+      'About to call onSearch with:',
+      coordinates.lat,
+      coordinates.lng
+    );
+    try {
       onSearch(coordinates.lat, coordinates.lng);
+      console.log('onSearch called successfully');
+    } catch (error) {
+      console.error('Error calling onSearch:', error);
     }
   };
-
-  if (!isOpen) return null;
 
   return (
     <Draggable

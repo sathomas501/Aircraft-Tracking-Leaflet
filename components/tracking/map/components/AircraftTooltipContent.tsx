@@ -1,6 +1,7 @@
 // components/tracking/map/components/AircraftTooltipContent.tsx
 import React from 'react';
 import type { ExtendedAircraft, Aircraft } from '@/types/base';
+import { getFlagImageUrl } from '../../../../utils/getFlagImage'; // Adjust the import path as necessary
 
 interface AircraftTooltipContentProps {
   aircraft: ExtendedAircraft;
@@ -216,7 +217,16 @@ const AircraftTooltipContent: React.FC<AircraftTooltipContentProps> = ({
           {aircraft.COUNTRY && (
             <div className="aircraft-data-full">
               <span className="data-label">Country:</span>
-              <span className="data-value">{aircraft.COUNTRY}</span>
+              <span className="data-value flex items-center gap-2">
+                {getFlagImageUrl(aircraft.COUNTRY) && (
+                  <img
+                    src={getFlagImageUrl(aircraft.COUNTRY) ?? undefined}
+                    alt={`${aircraft.COUNTRY} flag`}
+                    className="w-5 h-3 rounded-sm"
+                  />
+                )}
+                {aircraft.COUNTRY}
+              </span>
             </div>
           )}
 
