@@ -6,7 +6,7 @@ import type { GeofenceState } from '../types/filters';
 import { useEnhancedMapContext } from '../context/EnhancedMapContext';
 import FloatingGeofencePanel from './FloatingGeofencePanel';
 import { getAircraftNearLocation } from '../../../lib/services/geofencing';
-import getLocationNameFromCoordinates from '../../../lib/services/geofencing';
+import { MapboxService } from '../../../lib/services/MapboxService';
 import { getFlagImageUrl } from '../../../utils/getFlagImage';
 
 interface GeofenceFilterProps extends GeofenceState {
@@ -80,7 +80,10 @@ const GeofenceFilter: React.FC<GeofenceFilterProps> = ({
     setIsSearching(true);
     try {
       // Update the geofence location name
-      const locationName = await getLocationNameFromCoordinates(lat, lng);
+      const locationName = await MapboxService.getLocationNameFromCoordinates(
+        lat,
+        lng
+      );
 
       // Set the location name
       if (locationName) {
@@ -227,7 +230,7 @@ const GeofenceFilter: React.FC<GeofenceFilterProps> = ({
         try {
           // Make sure to pass both lat and lng as separate arguments
           // or according to how your function is defined
-          const name = await getLocationNameFromCoordinates(
+          const name = await MapboxService.getLocationNameFromCoordinates(
             coordinates.lat,
             coordinates.lng
           );
@@ -249,7 +252,7 @@ const GeofenceFilter: React.FC<GeofenceFilterProps> = ({
 
       const fetchLocationName = async () => {
         try {
-          const name = await getLocationNameFromCoordinates(
+          const name = await MapboxService.getLocationNameFromCoordinates(
             coordinates.lat,
             coordinates.lng
           );
@@ -282,7 +285,10 @@ const GeofenceFilter: React.FC<GeofenceFilterProps> = ({
 
     setIsLoadingLocation(true);
 
-    getLocationNameFromCoordinates(coordinates.lat, coordinates.lng)
+    MapboxService.getLocationNameFromCoordinates(
+      coordinates.lat,
+      coordinates.lng
+    )
       .then((name) => {
         setLocationName(name);
       })

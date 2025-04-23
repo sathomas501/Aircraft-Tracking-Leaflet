@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Search, MapPin } from 'lucide-react';
 import Draggable from 'react-draggable';
-import getLocationNameFromCoordinates from '../../../lib/services/geofencing';
+import { MapboxService } from '../../../lib/services/MapboxService';
 
 interface Coordinates {
   lat: number;
@@ -77,7 +77,10 @@ const FloatingGeofencePanel: React.FC<FloatingGeofencePanelProps> = ({
     // Proceed with API call
     setIsLoadingLocation(true);
 
-    getLocationNameFromCoordinates(coordinates.lat, coordinates.lng)
+    MapboxService.getLocationNameFromCoordinates(
+      coordinates.lat,
+      coordinates.lng
+    )
       .then((name) => {
         setLocationName(name);
       })
@@ -136,7 +139,7 @@ const FloatingGeofencePanel: React.FC<FloatingGeofencePanelProps> = ({
 
       const fetchLocationName = async () => {
         try {
-          const name = await getLocationNameFromCoordinates(
+          const name = await MapboxService.getLocationNameFromCoordinates(
             coordinates.lat,
             coordinates.lng
           );
