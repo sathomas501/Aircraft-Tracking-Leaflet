@@ -10,6 +10,7 @@ import { ToastContainer, toast } from 'react-toastify';
 import { Toaster } from 'react-hot-toast';
 import { EnhancedUIProvider } from '@/components/tracking/context/EnhancedUIContext';
 import { EnhancedMapProvider } from '@/components/tracking/context/EnhancedMapContext';
+import { LocationProvider } from '@/components/tracking/context/LocationContex';
 import { DataPersistenceProvider } from '../components/tracking/persistence/DataPersistenceManager';
 
 function MyApp({ Component, pageProps }: AppProps) {
@@ -40,20 +41,24 @@ export default function App({ Component, pageProps }: AppProps) {
           manufacturers={[]} // Provide your manufacturers or get them dynamically
           onError={(msg) => toast.error(msg)}
         >
-          <DataPersistenceProvider>
-            <ToastContainer
-              position="top-right"
-              autoClose={5000}
-              hideProgressBar={false}
-              newestOnTop={true}
-              closeOnClick
-              rtl={false}
-              pauseOnFocusLoss
-              draggable
-              pauseOnHover
-            />
-            <Component {...pageProps} />
-          </DataPersistenceProvider>
+          <LocationProvider>
+            {' '}
+            {/* ✅ Add LocationProvider here */}
+            <DataPersistenceProvider>
+              <ToastContainer
+                position="top-right"
+                autoClose={5000}
+                hideProgressBar={false}
+                newestOnTop={true}
+                closeOnClick
+                rtl={false}
+                pauseOnFocusLoss
+                draggable
+                pauseOnHover
+              />
+              <Component {...pageProps} />
+            </DataPersistenceProvider>
+          </LocationProvider>
         </EnhancedMapProvider>
       </EnhancedUIProvider>
     </QueryClientProvider>

@@ -1,6 +1,7 @@
 // lib/services/geofencing.ts
 import { adaptGeofenceAircraft } from '../utils/geofenceAdapter';
-import type { ExtendedAircraft, Feature } from '../../types/base';
+import type { ExtendedAircraft } from '../../types/base';
+import { MapboxService } from './MapboxService';
 
 /**
  * Interface for geofencing parameters
@@ -10,133 +11,6 @@ export interface GeofenceParams {
   lamax: number; // Upper latitude bound (northern border)
   lomin: number; // Lower longitude bound (western border)
   lomax: number; // Upper longitude bound (eastern border)
-}
-
-/**
- * Interfaces for Mapbox geocoding responses
- */
-interface MapboxFeature {
-  id: string;
-  type: string;
-  place_type: string[];
-  relevance: number;
-  properties: {
-    [key: string]: any;
-  };
-  text: string;
-  place_name: string;
-  center: [number, number]; // [longitude, latitude]
-  geometry: {
-    type: string;
-    coordinates: [number, number]; // [longitude, latitude]
-  };
-  bbox?: [number, number, number, number]; // [west, south, east, north]
-  context?: Array<{
-    id: string;
-    text: string;
-  }>;
-}
-
-interface MapboxResponse {
-  type: string;
-  query: string[];
-  features: MapboxFeature[];
-  attribution: string;
-}
-
-/**
- * Search for a location using Mapbox geocoding API
- *
- * @param query Location search query (e.g., "San Francisco", "123 Main St")
- * @param limit Maximum number of results to return (default: 1)
- * @param types Optional comma-separated list of place types to search
- * @returns Promise resolving to an array of coordinates {lat, lng, name, bbox}
- */
-export async function searchLocationWithMapbox(
-  query: string,
-  limit: number = 1,
-  types?: string,
-  countryCode?: string
-): Promise<
-  Array<{
-    lat: number;
-    lng: number;
-    name: string;
-    bbox?: [number, number, number, number]; // west, south, east, north
-  }>
-> {
-  try {
-    console.log(`Searching for location: "${query}" via Mapbox`);
-
-    // Build the query string
-    const params = new URLSearchParams({
-      query: query,
-      limit: limit.toString(),
-    });
-
-    // Add types if provided
-    if (types) {
-      params.append('types', types);
-    }
-
-    // Add country restriction if provided
-    if (countryCode) {
-      params.append('country', countryCode);
-    }
-
-    // Make request to your proxy endpoint
-    const response = await fetch(
-      `/api/proxy/mapbox-geocode?${params.toString()}`,
-      {
-        headers: {
-          'Cache-Control': 'max-age=86400', // Cache for 24 hours
-        },
-      }
-    );
-
-    if (!response.ok) {
-      throw new Error(`Mapbox geocoding API error: ${response.status}`);
-    }
-
-    const data: MapboxResponse = await response.json();
-
-    // Check if we got valid results
-    if (!data.features || data.features.length === 0) {
-      console.warn(`No results found for query: "${query}"`);
-      return [];
-    }
-
-    // Transform Mapbox features to our standard format
-    const locations = data.features.map((feature) => {
-      // Mapbox returns coordinates as [longitude, latitude]
-      const [lng, lat] = feature.center;
-
-      // Validate coordinates
-      if (!validateCoordinates(lat, lng)) {
-        console.warn(
-          `Location "${feature.place_name}" has coordinates outside US bounds: ${lat}, ${lng}`
-        );
-      }
-
-      return {
-        lat,
-        lng,
-        name: feature.place_name,
-        // If bbox exists, return it in [west, south, east, north] format
-        bbox: feature.bbox,
-      };
-    });
-
-    console.log(`Found ${locations.length} locations for query "${query}"`);
-    return locations;
-  } catch (error) {
-    console.error(`Error searching for location "${query}":`, error);
-    throw new Error(
-      `Failed to search for location "${query}": ${
-        error instanceof Error ? error.message : 'Unknown error'
-      }`
-    );
-  }
 }
 
 /**
@@ -153,7 +27,10 @@ export async function createGeofenceFromPostalCode(
   radiusKm: number = 25
 ): Promise<GeofenceParams | null> {
   try {
-    const coordinates = await postalCodeToCoordinates(postalCode, countryCode);
+    const coordinates = await MapboxService.postalCodeToCoordinates(
+      postalCode,
+      countryCode
+    );
 
     // Double-check coordinates are valid
     if (
@@ -210,7 +87,7 @@ export async function getAircraftNearSearchedLocation(
 
     // Try using Mapbox for global address search
     try {
-      const locations = await searchLocationWithMapbox(
+      const locations = await MapboxService.searchLocationWithMapbox(
         query,
         1,
         'place,postcode,address,poi,neighborhood,region,locality'
@@ -283,7 +160,7 @@ export async function getLocationSuggestions(
     }
 
     // Get location results with a higher limit for better suggestions
-    const locations = await searchLocationWithMapbox(
+    const locations = await MapboxService.searchLocationWithMapbox(
       query,
       Math.max(5, limit),
       // Include these specific types for better suggestions
@@ -323,7 +200,7 @@ export async function getCoordinatesFromQuery(
     }
 
     // Use Mapbox for general global addresses (most robust)
-    const locations = await searchLocationWithMapbox(
+    const locations = await MapboxService.searchLocationWithMapbox(
       query,
       1,
       'place,postcode,address,poi,neighborhood,region,locality'
@@ -370,67 +247,6 @@ function validateCoordinates(lat: number, lng: number): boolean {
   }
 
   return isValid;
-}
-
-/**
- * Converts a Postal code to latitude and longitude coordinates
- *
- * @returns Promise that resolves to {lat: number, lng: number} or null if not found
- */
-export async function postalCodeToCoordinates(
-  postalCode: string,
-  countryCode: string = 'us'
-): Promise<{ lat: number; lng: number } | null> {
-  try {
-    console.log(
-      `Fetching coordinates for Postal code: ${postalCode} in ${countryCode}`
-    );
-
-    // Add country code to query parameters
-    const response = await fetch(
-      `/api/proxy/geocode?zip=${postalCode}&country=${countryCode}`,
-      {
-        headers: {
-          'Cache-Control': 'no-cache, no-store', // Prevent caching
-        },
-      }
-    );
-
-    // Better error handling with response details
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`Geocoding API error (${response.status}): ${errorText}`);
-      return null; // Return null instead of throwing to allow fallbacks
-    }
-
-    const data = await response.json();
-
-    // Check if we got valid results
-    if (
-      data.result?.addressMatches &&
-      data.result.addressMatches.length > 0 &&
-      data.result.addressMatches[0].coordinates
-    ) {
-      const coordinates = data.result.addressMatches[0].coordinates;
-      const lat = coordinates.y;
-      const lng = coordinates.x;
-
-      return {
-        lat,
-        lng,
-      };
-    }
-
-    // If no matches found
-    console.warn(`No coordinates found for Postal code ${postalCode}`);
-    return null;
-  } catch (error) {
-    console.error(
-      `Error converting Postal code ${postalCode} to coordinates:`,
-      error
-    );
-    return null; // Return null to allow fallbacks
-  }
 }
 
 /**
@@ -604,79 +420,6 @@ export async function getAircraftNearPostalCode(
 }
 
 /**
- * Gets a human-readable location name from coordinates using Mapbox reverse geocoding
- *
- * @param lat - Latitude (decimal degrees)
- * @param lng - Longitude (decimal degrees)
- * @returns Promise resolving to a location name or coordinates string if not found
- */
-const getLocationNameFromCoordinates = async (
-  lat: number,
-  lng: number
-): Promise<string | null> => {
-  try {
-    // Validate coordinates
-    if (isNaN(lat) || isNaN(lng)) {
-      console.error('Invalid coordinates:', lat, lng);
-      return `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
-    }
-
-    // VERY IMPORTANT: Format coordinates correctly for Mapbox
-    // Longitude first, no space after comma
-    const coordsQuery = `${lng},${lat}`;
-
-    // Use the exact same query format that worked in your REST tests
-    const url = `/api/proxy/mapbox-geocode?query=${encodeURIComponent(coordsQuery)}`;
-    console.log(`Making geocoding request: ${url}`);
-
-    const response = await fetch(url);
-
-    if (!response.ok) {
-      throw new Error(`Geocoding API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    console.log('API response features:', data.features?.length || 0);
-
-    // Check if we got results
-    if (data.features && data.features.length > 0) {
-      // Try to extract city and region
-      const feature = data.features[0];
-
-      // For debugging
-      console.log('Feature found:', feature.place_name);
-
-      if (feature.context) {
-        const placeItem = feature.context.find((item: any) =>
-          item.id.startsWith('place.')
-        );
-
-        const regionItem = feature.context.find((item: any) =>
-          item.id.startsWith('region.')
-        );
-
-        if (placeItem && regionItem) {
-          return `${placeItem.text}, ${regionItem.text}`;
-        } else if (placeItem) {
-          return placeItem.text;
-        } else if (regionItem) {
-          return regionItem.text;
-        }
-      }
-
-      // If no context items matched, return the place_name or text
-      return feature.place_name || feature.text;
-    }
-
-    // Fallback to coordinates
-    return `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
-  } catch (error) {
-    console.error('Error getting location name:', error);
-    return `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
-  }
-};
-
-/**
  * Get aircraft near a specific location
  *
  * @param lat Latitude
@@ -742,5 +485,3 @@ export function calculateDistance(
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return EARTH_RADIUS * c;
 }
-
-export default getLocationNameFromCoordinates;
