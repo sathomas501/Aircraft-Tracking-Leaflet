@@ -1,0 +1,144 @@
+{
+  "info": {
+    "_postman_id": "6ed60f04-8a75-4a21-8d12-91d43e2c6f89",
+    "name": "Mapbox Geocoding Tests",
+    "description": "Tests for troubleshooting Mapbox Geocoding API issues",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Test Your Local API Endpoint",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:3001/api/proxy/mapbox-geocode?query=-3.5434090265133493,40.44694705960048&types=place,locality,neighborhood,address,region,country",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "3001",
+          "path": ["api", "proxy", "mapbox-geocode"],
+          "query": [
+            {
+              "key": "query",
+              "value": "-3.5434090265133493,40.44694705960048"
+            },
+            {
+              "key": "types",
+              "value": "place,locality,neighborhood,address,region,country"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Test Direct Mapbox API",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "https://api.mapbox.com/geocoding/v5/mapbox.places/-3.5434090265133493,40.44694705960048.json?access_token={{mapbox_token}}&types=place,locality,neighborhood,address,region,country",
+          "protocol": "https",
+          "host": ["api", "mapbox", "com"],
+          "path": [
+            "geocoding",
+            "v5",
+            "mapbox.places",
+            "-3.5434090265133493,40.44694705960048.json"
+          ],
+          "query": [
+            {
+              "key": "access_token",
+              "value": "{{mapbox_token}}"
+            },
+            {
+              "key": "types",
+              "value": "place,locality,neighborhood,address,region,country"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Test Madrid City Center",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "https://api.mapbox.com/geocoding/v5/mapbox.places/-3.7038,40.4168.json?access_token={{mapbox_token}}&types=place,locality,neighborhood,address",
+          "protocol": "https",
+          "host": ["api", "mapbox", "com"],
+          "path": ["geocoding", "v5", "mapbox.places", "-3.7038,40.4168.json"],
+          "query": [
+            {
+              "key": "access_token",
+              "value": "{{mapbox_token}}"
+            },
+            {
+              "key": "types",
+              "value": "place,locality,neighborhood,address"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Test With Known Working Coordinates",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "https://api.mapbox.com/geocoding/v5/mapbox.places/-3.894825,40.313043.json?access_token={{mapbox_token}}&types=place,locality,neighborhood,address,region,country",
+          "protocol": "https",
+          "host": ["api", "mapbox", "com"],
+          "path": [
+            "geocoding",
+            "v5",
+            "mapbox.places",
+            "-3.894825,40.313043.json"
+          ],
+          "query": [
+            {
+              "key": "access_token",
+              "value": "{{mapbox_token}}"
+            },
+            {
+              "key": "types",
+              "value": "place,locality,neighborhood,address,region,country"
+            }
+          ]
+        }
+      },
+      "response": []
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [""]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "pm.test(\"Status code is 200\", function () {",
+          "    pm.response.to.have.status(200);",
+          "});"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "mapbox_token",
+      "value": "YOUR_MAPBOX_ACCESS_TOKEN",
+      "type": "string"
+    }
+  ]
+}

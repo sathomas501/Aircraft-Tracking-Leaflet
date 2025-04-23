@@ -1,0 +1,19 @@
+# Mapbox Geocoding Tests
+# Save this as mapbox-tests.http in your project
+# Install the "REST Client" extension by Huachao Mao to use this file
+
+@baseUrl = http://localhost:3001
+@mapboxBaseUrl = https://api.mapbox.com
+@mapboxToken = pk.eyJ1IjoiZmF0Ym95NTAxIiwiYSI6ImNtOTJ3bXhrZDBndW8ybG9vNXZ0OGs4dzQifQ.el5f5ws50Lbmtzr6hp-Syw
+
+### Test your local API endpoint with the failing coordinates
+GET {{baseUrl}}/api/proxy/mapbox-geocode?query=-3.5434090265133493,40.44694705960048&types=place,locality,neighborhood,address,region,country
+
+### Test direct Mapbox API with the failing coordinates
+GET {{mapboxBaseUrl}}/geocoding/v5/mapbox.places/-3.5434090265133493,40.44694705960048.json?access_token={{mapboxToken}}&types=place,locality,neighborhood,address,region,country
+
+### Test with Madrid city center coordinates
+GET {{mapboxBaseUrl}}/geocoding/v5/mapbox.places/-3.7038,40.4168.json?access_token={{mapboxToken}}&types=place,locality,neighborhood,address,region,country
+
+### Test with known working coordinates (that previously showed features)
+GET {{mapboxBaseUrl}}/geocoding/v5/mapbox.places/-3.894825,40.313043.json?access_token={{mapboxToken}}&types=place,locality,neighborhood,address,region,country
