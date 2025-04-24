@@ -16,7 +16,7 @@ interface FloatingGeofencePanelProps {
   setGeofenceRadius: (radius: number) => void;
   onSearch: (lat: number, lng: number) => void;
   panelPosition: null | { x: number; y: number };
-  setPanelPosition: (position: { x: number; y: number }) => void;
+
   setShowPanel: (show: boolean) => void;
   isSearching: boolean;
   coordinates: Coordinates | null;
@@ -39,7 +39,7 @@ const FloatingGeofencePanel: React.FC<FloatingGeofencePanelProps> = ({
   locationName,
   isLoadingLocation,
   panelPosition,
-  setPanelPosition,
+
   setShowPanel,
   onSearch,
   onReset,
@@ -65,12 +65,7 @@ const FloatingGeofencePanel: React.FC<FloatingGeofencePanelProps> = ({
   };
 
   return (
-    <Draggable
-      nodeRef={nodeRef}
-      handle=".handle"
-      position={panelPosition || undefined}
-      onStop={(e, data) => setPanelPosition({ x: data.x, y: data.y })}
-    >
+    <Draggable nodeRef={nodeRef} handle=".handle">
       <div
         ref={nodeRef}
         className="absolute z-50 bg-white rounded-lg shadow-lg border border-gray-200 w-80 geofence-floating-panel"
@@ -151,12 +146,7 @@ const FloatingGeofencePanel: React.FC<FloatingGeofencePanelProps> = ({
               type="button"
               onClick={(e) => {
                 e.preventDefault();
-                e.stopPropagation();
-                if (!coordinates || isSearching) return;
-                // Use onSearch for the search functionality
-                if (coordinates) {
-                  onSearch(coordinates.lat, coordinates.lng);
-                }
+                processGeofenceSearch();
               }}
               disabled={!coordinates || isSearching}
               className={`flex-1 py-2 px-4 flex items-center justify-center gap-2 rounded-md ${

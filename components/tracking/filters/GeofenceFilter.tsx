@@ -364,7 +364,6 @@ const GeofenceFilter: React.FC<GeofenceFilterProps> = ({
           isLoadingLocation={isLoadingLocation}
           onReset={resetPanel}
           panelPosition={panelPosition ?? null}
-          setPanelPosition={setPanelPosition}
           setShowPanel={setShowPanel}
         />
       )}
