@@ -4,14 +4,13 @@ import { RegionCode } from '@/types/base';
 import type { ExtendedAircraft } from '@/types/base';
 import { useEnhancedMapContext } from '../context/EnhancedMapContext';
 import openSkyTrackingService from '@/lib/services/openSkyTrackingService';
-import {
-  getAircraftNearLocation,
-  searchLocationWithMapbox,
-  getAircraftNearSearchedLocation,
-} from '@/lib/services/geofencing';
-import getLocationNameFromCoordinates from '@/lib/services/geofencing';
+import { MapboxService } from '../../../lib/services/MapboxService';
 import { adaptGeofenceAircraft } from '@/lib/utils/geofenceAdapter';
 import { enrichGeofenceAircraft } from '@/lib/utils/geofenceEnricher';
+import {
+  getAircraftNearLocation,
+  getAircraftNearSearchedLocation,
+} from '../../../lib/services/geofencing';
 import { useGeolocation } from '../hooks/useGeolocation';
 import {
   MAP_CONFIG,
@@ -206,7 +205,10 @@ export function useFilterLogic() {
         setGeofenceLocation(`${lat.toFixed(6)}, ${lng.toFixed(6)}`);
 
         // Get the friendly name asynchronously
-        const locationName = await getLocationNameFromCoordinates(lat, lng);
+        const locationName = await MapboxService.getLocationNameFromCoordinates(
+          lat,
+          lng
+        );
         console.log(`Got location name: ${locationName}`);
 
         // Update with the friendly name once we have it
@@ -714,7 +716,10 @@ export function useFilterLogic() {
       // Get coordinates for the map
       let locations: { lat: number; lng: number; name: string }[];
       try {
-        locations = await searchLocationWithMapbox(geofenceLocation, 1);
+        locations = await MapboxService.searchLocationWithMapbox(
+          geofenceLocation,
+          1
+        );
       } catch (error) {
         console.error('Error searching location with Mapbox:', error);
         // Continue with aircraft data if available
