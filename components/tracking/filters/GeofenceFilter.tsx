@@ -165,49 +165,6 @@ const GeofenceFilter: React.FC<GeofenceFilterProps> = ({
     }
   };
 
-  // Enhanced function to extract just city and country or just country
-  interface FormatCityCountryOptions {
-    locationString: string;
-    countryOnly?: boolean;
-  }
-
-  const formatCityCountry = (
-    locationString: FormatCityCountryOptions['locationString'],
-    countryOnly: FormatCityCountryOptions['countryOnly'] = false
-  ): string => {
-    if (!locationString) return '';
-
-    // Split by commas
-    const parts = locationString.split(',').map((part) => part.trim());
-
-    // If we only want the country
-    if (countryOnly && parts.length >= 1) {
-      // Return the last part (usually the country)
-      return parts[parts.length - 1];
-    }
-
-    // For city, country format
-    if (parts.length >= 2) {
-      // Get country (usually the last part)
-      const country = parts[parts.length - 1];
-
-      // For city, use the first meaningful part
-      let city = parts[0];
-
-      // Skip redundant parts like province/city name duplication (Madrid, Madrid)
-      if (parts.length >= 3 && parts[0] === parts[1]) {
-        city = parts[0];
-      }
-
-      return `${city}, ${country}`;
-    }
-
-    return locationString;
-  };
-
-  const country = formatCityCountry(locationName || '', true);
-  const flagUrl = getFlagImageUrl(country);
-
   const renderFlagAndName = (countryName: string) => {
     const flagUrl = getFlagImageUrl(countryName);
     return (
@@ -340,13 +297,17 @@ const GeofenceFilter: React.FC<GeofenceFilterProps> = ({
             className={isGeofenceActive ? 'text-indigo-500' : 'text-gray-500'}
           />
           {isGeofenceActive && geofenceLocation
-            ? renderFlagAndName(formatCityCountry(geofenceLocation, true))
+            ? renderFlagAndName(
+                MapboxService.formatCityCountry(geofenceLocation, true)
+              )
             : isGeofencePlacementMode
               ? 'Click on map...'
               : isLoading
                 ? 'Loading location...'
                 : locationName
-                  ? renderFlagAndName(formatCityCountry(locationName, true))
+                  ? renderFlagAndName(
+                      MapboxService.formatCityCountry(locationName, true)
+                    )
                   : 'Location'}
         </span>
 

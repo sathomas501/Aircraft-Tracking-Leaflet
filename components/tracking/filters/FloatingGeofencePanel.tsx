@@ -25,6 +25,10 @@ interface FloatingGeofencePanelProps {
   setCoordinates: (coords: Coordinates | null) => void;
   isGeofenceActive: boolean;
   isGeofencePlacementMode: boolean;
+  clearSearchResults?: () => void;
+  setSearchTitle?: (title: string) => void;
+  setIsSearching?: (isSearching: boolean) => void;
+  clearMarkers?: () => void;
 }
 
 const FloatingGeofencePanel: React.FC<FloatingGeofencePanelProps> = ({
@@ -38,6 +42,10 @@ const FloatingGeofencePanel: React.FC<FloatingGeofencePanelProps> = ({
   coordinates,
   setCoordinates,
   isGeofenceActive,
+  clearMarkers,
+  clearSearchResults,
+  setSearchTitle,
+  setIsSearching,
   isGeofencePlacementMode,
 }) => {
   const [position, setPosition] = useState(initialPosition);
@@ -156,35 +164,6 @@ const FloatingGeofencePanel: React.FC<FloatingGeofencePanelProps> = ({
     }
   }, [coordinates, isGeofenceActive, isGeofencePlacementMode]);
 
-  // Helper function to extract just city and country
-
-  const formatCityCountry = (locationString: string | null): string => {
-    if (!locationString) return '';
-
-    // Split by commas
-    const parts: string[] = locationString
-      .split(',')
-      .map((part) => part.trim());
-
-    // If we have city, country (or more parts)
-    if (parts.length >= 2) {
-      // Try to find the country (usually the last part)
-      const country: string = parts[parts.length - 1];
-
-      // For city, use the first meaningful part
-      let city: string = parts[0];
-
-      // Skip redundant parts like province/city name duplication (Madrid, Madrid)
-      if (parts.length >= 3 && parts[0] === parts[1]) {
-        city = parts[0];
-      }
-
-      return `${city}, ${country}`;
-    }
-
-    return locationString;
-  };
-
   // Enable map click mode when panel is opened
   useEffect(() => {
     if (isOpen) {
@@ -220,33 +199,60 @@ const FloatingGeofencePanel: React.FC<FloatingGeofencePanelProps> = ({
     }
   }, [isOpen, setCoordinates]);
 
-  // Handle search button click
+  // Triggered when the user clicks the search button
   const handleSearch = () => {
     console.log('handleSearch function called');
     console.log('coordinates:', coordinates);
     console.log('isSearching:', isSearching);
 
+    // Guard clause: Coordinates must be present
     if (!coordinates) {
-      console.log('No coordinates available');
+      console.warn('No coordinates available for search.');
       return;
     }
 
+    // Guard clause: Prevent duplicate search requests
     if (isSearching) {
-      console.log('Already searching, skipping');
+      console.info('Search already in progress, skipping new request.');
       return;
     }
 
-    console.log(
-      'About to call onSearch with:',
-      coordinates.lat,
-      coordinates.lng
-    );
+    const { lat, lng } = coordinates;
+    console.log(`Attempting search with lat: ${lat}, lng: ${lng}`);
+
     try {
-      onSearch(coordinates.lat, coordinates.lng);
-      console.log('onSearch called successfully');
+      onSearch(lat, lng); // Perform the search
+      console.log('Search function executed successfully.');
     } catch (error) {
-      console.error('Error calling onSearch:', error);
+      console.error('Search function failed:', error);
     }
+  };
+
+  const handleSearchReset = () => {
+    console.log('Resetting search state');
+
+    // 1. Reset state variables
+    setCoordinates(null);
+    if (setIsSearching) {
+      setIsSearching(false);
+    }
+
+    // 2. Clear search results or markers from map/UI
+    if (typeof clearMarkers === 'function') clearMarkers();
+    if (typeof clearSearchResults === 'function') clearSearchResults();
+
+    // 3. Reset ribbon search title
+    if (typeof setSearchTitle === 'function') setSearchTitle('');
+
+    // Clear location name/title
+    setLocationName(null);
+
+    // Reset coordinates and search state
+    setCoordinates(null);
+    setIsLoading(false);
+
+    // 4. Log or notify user
+    console.log('Search state fully cleared. Awaiting new search input.');
   };
 
   return (
@@ -295,7 +301,7 @@ const FloatingGeofencePanel: React.FC<FloatingGeofencePanelProps> = ({
                   {isLoadingLocation ? (
                     <span>Loading location name...</span>
                   ) : locationName ? (
-                    formatCityCountry(locationName)
+                    MapboxService.formatCityCountry(locationName, true)
                   ) : (
                     `${coordinates.lat.toFixed(6)}, ${coordinates.lng.toFixed(6)}`
                   )}
@@ -334,43 +340,56 @@ const FloatingGeofencePanel: React.FC<FloatingGeofencePanelProps> = ({
           </div>
 
           {/* Search button */}
-          {/* Search button */}
-          <button
-            type="button"
-            onClick={handleSearch} // Use your existing handleSearch function
-            disabled={!coordinates || isSearching}
-            className={`w-full py-2 px-4 flex items-center justify-center gap-2 rounded-md ${
-              !coordinates || isSearching
-                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                : 'bg-indigo-600 text-white hover:bg-indigo-700'
-            } transition-colors`}
-          >
-            {isSearching ? (
-              <>
-                <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-                  <circle
-                    className="opacity-25"
-                    cx="12"
-                    cy="12"
-                    r="10"
-                    stroke="currentColor"
-                    strokeWidth="4"
-                  ></circle>
-                  <path
-                    className="opacity-75"
-                    fill="currentColor"
-                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                  ></path>
-                </svg>
-                Searching...
-              </>
-            ) : (
-              <>
-                <Search size={16} />
-                Search Aircraft
-              </>
-            )}
-          </button>
+          <div className="flex gap-2 w-full">
+            <div className="flex gap-2 w-full">
+              {/* Search Button */}
+              <button
+                type="button"
+                onClick={handleSearch}
+                disabled={!coordinates || isSearching}
+                className={`flex-1 py-2 px-4 flex items-center justify-center gap-2 rounded-md ${
+                  !coordinates || isSearching
+                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                    : 'bg-indigo-600 text-white hover:bg-indigo-700'
+                } transition-colors`}
+              >
+                {isSearching ? (
+                  <>
+                    <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+                      <circle
+                        className="opacity-25"
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        stroke="currentColor"
+                        strokeWidth="4"
+                      ></circle>
+                      <path
+                        className="opacity-75"
+                        fill="currentColor"
+                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                      ></path>
+                    </svg>
+                    Searching...
+                  </>
+                ) : (
+                  <>
+                    <Search size={16} />
+                    Search Aircraft
+                  </>
+                )}
+              </button>
+
+              {/* Reset Button */}
+              <button
+                type="button"
+                onClick={handleSearchReset}
+                className="flex-1 py-2 px-4 flex items-center justify-center gap-2 rounded-md bg-red-500 text-white hover:bg-red-600 transition-colors"
+              >
+                Reset
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </Draggable>

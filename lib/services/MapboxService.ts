@@ -29,12 +29,17 @@ export interface GeofenceParams {
 }
 
 export class MapboxService {
-  static formatCityCountry(locationString: string | null): string {
+  static formatCityCountry(
+    locationString: string | null,
+    isDetailed: boolean
+  ): string {
     if (!locationString) return '';
-    const parts = locationString.split(',').map((p) => p.trim());
+    const parts: string[] = locationString
+      .split(',')
+      .map((p: string) => p.trim());
     if (parts.length >= 2) {
-      const country = parts[parts.length - 1];
-      let city = parts[0];
+      const country: string = parts[parts.length - 1];
+      let city: string = parts[0];
       if (parts.length >= 3 && parts[0] === parts[1]) city = parts[0];
       return `${city}, ${country}`;
     }
