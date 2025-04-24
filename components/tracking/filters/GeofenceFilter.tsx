@@ -1,170 +1,115 @@
-// Description: This component handles the geofence filter functionality, including location search, radius adjustment, and aircraft data fetching.
-// It also manages the floating panel for geofence placement on the map.
-import React, { useState, useEffect, useRef } from 'react';
+// components/GeofenceFilter.tsx
+import React from 'react';
+import { useEffect } from 'react';
 import { MapPin } from 'lucide-react';
-import type { GeofenceState } from '../types/filters';
 import { useEnhancedMapContext } from '../context/EnhancedMapContext';
 import FloatingGeofencePanel from './FloatingGeofencePanel';
-import { getAircraftNearLocation } from '../../../lib/services/geofencing';
+import { useFilterLogic } from '../hooks/useFilterLogic';
+import { useGeofencePanel } from '../hooks/useGeofencePanel';
+import { useGeolocationServices } from '../hooks/useGeolocationServices';
 import { MapboxService } from '../../../lib/services/MapboxService';
 import { getFlagImageUrl } from '../../../utils/getFlagImage';
 
-interface GeofenceFilterProps extends GeofenceState {
+interface GeofenceFilterProps {
   activeDropdown: string | null;
   setActiveDropdown: (dropdown: string | null) => void;
   toggleDropdown: (type: string, event: React.MouseEvent) => void;
   dropdownRef: React.RefObject<HTMLDivElement>;
-  setGeofenceCoordinates: (
-    coordinates: { lat: number; lng: number } | null
-  ) => void;
-  setGeofenceCenter: (coordinates: { lat: number; lng: number }) => void;
-  updateGeofenceAircraft: (aircraft: any[]) => void;
-  isGeofenceActive: boolean;
-  geofenceLocation: string;
-  isGeofencePlacementMode: boolean;
-  coordinates?: { lat: number; lng: number };
 }
 
 const GeofenceFilter: React.FC<GeofenceFilterProps> = ({
-  geofenceLocation,
-  geofenceRadius,
-  isGettingLocation,
-  isGeofenceActive,
-  geofenceCoordinates,
-  getUserLocation,
-  processGeofenceSearch,
-  toggleGeofenceState,
-  setGeofenceLocation,
-  setGeofenceRadius,
-  setGeofenceCoordinates,
-  setGeofenceCenter,
-  setActiveDropdown,
-  combinedLoading,
   activeDropdown,
+  setActiveDropdown,
   toggleDropdown,
   dropdownRef,
-  updateGeofenceAircraft,
-  coordinates,
 }) => {
-  // Get context and state
-  const { isGeofencePlacementMode, setIsGeofencePlacementMode, mapInstance } =
-    useEnhancedMapContext();
-  const [showFloatingPanel, setShowFloatingPanel] = useState(false);
-  const [tempCoordinates, setTempCoordinates] = useState<{
-    lat: number;
-    lng: number;
-  } | null>(null);
-  const [isSearching, setIsSearching] = useState(false);
-  const [locationName, setLocationName] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
+  // Get map context
+  const { mapInstance } = useEnhancedMapContext();
 
-  const prevCoordinatesRef = useRef<{ lat: number; lng: number } | null>(null);
-  const [isLoadingLocation, setIsLoadingLocation] = useState(false);
+  // Get filter logic from the main hook
 
-  // Handle opening the floating panel
-  const openFloatingPanel = () => {
-    setShowFloatingPanel(true);
-    setIsGeofencePlacementMode(true); // Enter placement mode
-    setActiveDropdown(null); // Close the dropdown
-  };
+  const {
+    geofenceLocation,
+    geofenceRadius,
+    isGettingLocation,
+    isGeofenceActive,
+    geofenceCoordinates,
+    combinedLoading,
+    processGeofenceSearch,
+    toggleGeofenceState,
+    setGeofenceLocation,
+    setGeofenceRadius,
+    setGeofenceCoordinates,
+    setGeofenceCenter,
+    updateGeofenceAircraft,
+    setIsGettingLocation,
+  } = useFilterLogic();
 
-  // Handle closing the floating panel
-  const closeFloatingPanel = () => {
-    setShowFloatingPanel(false);
-    setIsGeofencePlacementMode(false);
-    setTempCoordinates(null); // Clear temporary coordinates
-  };
+  // Use the geolocation services hook for browser geolocation
+  const geolocationServices = useGeolocationServices();
 
-  // Handle panel search
-  const handlePanelSearch = async (lat: number, lng: number) => {
-    setIsSearching(true);
+  // Use the panel hook for managing the floating panel
+  const panelLogic = useGeofencePanel({
+    geofenceRadius,
+    setGeofenceLocation,
+    setGeofenceCoordinates,
+    processGeofenceSearch,
+    setGeofenceCenter,
+    updateGeofenceAircraft,
+    isGeofenceActive,
+    toggleGeofenceState,
+    setActiveDropdown,
+    mapInstance,
+  });
+
+  const {
+    showPanel,
+    panelPosition,
+    tempCoordinates,
+    isSearching,
+    locationName,
+    isLoadingLocation,
+    openPanel,
+    closePanel,
+    resetPanel,
+    setShowPanel,
+    setPanelPosition,
+    handlePanelSearch,
+  } = panelLogic;
+
+  // Implement getUserLocation using geolocationServices
+  const getUserLocation = async () => {
+    if (combinedLoading) return;
+
+    setGeofenceLocation('Getting your location...');
+    setIsGettingLocation(true);
+
     try {
-      // Update the geofence location name
-      const locationName = await MapboxService.getLocationNameFromCoordinates(
-        lat,
-        lng
-      );
+      const position = await geolocationServices.getCurrentPosition();
 
-      // Set the location name
-      if (locationName) {
-        setGeofenceLocation(locationName);
-      } else {
-        // Fallback to coordinates if no name is found
-        setGeofenceLocation(`${lat.toFixed(4)}, ${lng.toFixed(4)}`);
-      }
+      const lat = position.coords.latitude;
+      const lng = position.coords.longitude;
 
-      // Set coordinates using the same functions from processGeofenceSearch
-      if (setGeofenceCoordinates) {
-        setGeofenceCoordinates({ lat, lng });
-      }
+      // Update coordinates
+      setGeofenceCoordinates({ lat, lng });
+      setGeofenceCenter({ lat, lng });
 
-      if (setGeofenceCenter) {
-        setGeofenceCenter({ lat, lng });
-      }
+      // Update location text
+      setGeofenceLocation(`${lat.toFixed(6)}, ${lng.toFixed(6)}`);
 
-      // Get aircraft data near this location
-      await fetchAircraftForClickLocation(lat, lng);
-
-      // Activate geofence if not already active
-      if (!isGeofenceActive) {
-        toggleGeofenceState(true);
-      }
-
-      // Center the map on this location
-      if (mapInstance && typeof mapInstance.setView === 'function') {
-        // Get current zoom level
-        const currentZoom = mapInstance.getZoom();
-        // Use appropriate zoom level based on current view
-        const targetZoom = currentZoom <= 7 ? 9 : currentZoom;
-
-        // Set view to the coordinates
-        mapInstance.setView([lat, lng], targetZoom);
-
-        // Ensure map is updated
-        mapInstance.invalidateSize();
-      }
+      // Automatically start a search with these coordinates
+      handlePanelSearch(lat, lng);
     } catch (error) {
-      console.error('Error searching from panel:', error);
+      console.error('Error getting location:', error);
+      alert(
+        'Could not get your location. Please make sure location services are enabled.'
+      );
     } finally {
-      setIsSearching(false);
+      setIsGettingLocation(false);
     }
   };
 
-  // Function to get and process aircraft data
-  const fetchAircraftForClickLocation = async (lat: number, lng: number) => {
-    try {
-      console.log('Fetching aircraft near clicked location:', lat, lng);
-
-      // Call the existing function from your geofencing.ts
-      const fetchedAircraft = await getAircraftNearLocation(
-        lat,
-        lng,
-        geofenceRadius || 25
-      );
-
-      // Process the aircraft data
-      if (fetchedAircraft.length === 0) {
-        console.log('No aircraft found near clicked location');
-        return;
-      }
-
-      // Update the context with the new aircraft - add null check
-      if (typeof updateGeofenceAircraft === 'function') {
-        updateGeofenceAircraft(fetchedAircraft);
-      } else {
-        console.warn(
-          'updateGeofenceAircraft is not available or not a function'
-        );
-      }
-
-      console.log(
-        `Found ${fetchedAircraft.length} aircraft near clicked location`
-      );
-    } catch (error) {
-      console.error('Error fetching aircraft for clicked location:', error);
-    }
-  };
-
+  // Helper function to render flag with location name
   const renderFlagAndName = (countryName: string) => {
     const flagUrl = getFlagImageUrl(countryName);
     return (
@@ -182,127 +127,56 @@ const GeofenceFilter: React.FC<GeofenceFilterProps> = ({
   };
 
   useEffect(() => {
-    if (coordinates && !isGeofenceActive && !isGeofencePlacementMode) {
-      const fetchLocationName = async () => {
-        try {
-          // Make sure to pass both lat and lng as separate arguments
-          // or according to how your function is defined
-          const name = await MapboxService.getLocationNameFromCoordinates(
-            coordinates.lat,
-            coordinates.lng
-          );
-          setLocationName(name);
-        } catch (error) {
-          console.error('Error fetching location name:', error);
-          setLocationName(null);
-        }
-      };
-
-      fetchLocationName();
+    if (showPanel) {
+      // Keep dropdown closed while panel is open
+      setActiveDropdown(null);
     }
-  }, [coordinates, isGeofenceActive, isGeofencePlacementMode]);
+  }, [showPanel, setActiveDropdown]);
 
   useEffect(() => {
-    // Only fetch location name if we have coordinates and not in special states
-    if (coordinates && !isGeofenceActive && !isGeofencePlacementMode) {
-      setIsLoading(true);
-
-      const fetchLocationName = async () => {
-        try {
-          const name = await MapboxService.getLocationNameFromCoordinates(
-            coordinates.lat,
-            coordinates.lng
-          );
-          setLocationName(name);
-        } catch (error) {
-          console.error('Error fetching location name:', error);
-          setLocationName(null);
-        } finally {
-          setIsLoading(false);
-        }
-      };
-
-      fetchLocationName();
+    if (isSearching) {
+      // Ensure the panel stays open during search
+      panelLogic.setShowPanel(true);
     }
-  }, [coordinates, isGeofenceActive, isGeofencePlacementMode]);
-
-  // In your location name effect
-  useEffect(() => {
-    if (!coordinates) return;
-
-    const isSameCoordinates =
-      prevCoordinatesRef.current?.lat === coordinates.lat &&
-      prevCoordinatesRef.current?.lng === coordinates.lng;
-
-    if (isSameCoordinates && (locationName || isLoadingLocation)) {
-      return;
-    }
-
-    prevCoordinatesRef.current = coordinates;
-
-    setIsLoadingLocation(true);
-
-    MapboxService.getLocationNameFromCoordinates(
-      coordinates.lat,
-      coordinates.lng
-    )
-      .then((name) => {
-        setLocationName(name);
-      })
-      .catch((error) => {
-        console.error('Error fetching location name:', error);
-      })
-      .finally(() => {
-        setIsLoadingLocation(false);
-      });
-  }, [coordinates]);
-
-  // Listen for the clear all filters event
-  useEffect(() => {
-    const handleClearAllFilters = () => {
-      // Close the floating panel when filters are cleared
-      if (showFloatingPanel) {
-        closeFloatingPanel();
-      }
-    };
-
-    // Add event listener for the clear all filters event
-    document.addEventListener('ribbon-filters-cleared', handleClearAllFilters);
-
-    // Clean up
-    return () => {
-      document.removeEventListener(
-        'ribbon-filters-cleared',
-        handleClearAllFilters
-      );
-    };
-  }, [showFloatingPanel, closeFloatingPanel]);
+  }, [isSearching]);
 
   return (
     <div ref={dropdownRef} className="relative">
+      {/* Ribbon filter button */}
       <button
         className={`px-4 py-2 flex items-center justify-between gap-2 rounded-lg border ${
-          activeDropdown === 'location'
-            ? 'bg-indigo-100 text-indigo-700 border-indigo-300 shadow-sm'
-            : isGeofenceActive
-              ? 'bg-indigo-50/70 text-indigo-600 border-indigo-200'
-              : 'bg-gray-50/30 hover:bg-gray-50 border-gray-200 text-gray-700 hover:border-gray-300'
+          showPanel
+            ? 'bg-gray-100 text-gray-400 border-gray-300 cursor-not-allowed' // Always grayed out when panel is open
+            : activeDropdown === 'location'
+              ? 'bg-indigo-100 text-indigo-700 border-indigo-300 shadow-sm'
+              : isGeofenceActive
+                ? 'bg-indigo-50/70 text-indigo-600 border-indigo-200'
+                : 'bg-gray-50/30 hover:bg-gray-50 border-gray-200 text-gray-700 hover:border-gray-300'
         } transition-all duration-200`}
-        onClick={(event) => toggleDropdown('location', event)}
-        disabled={combinedLoading || isGeofencePlacementMode}
+        // Add a onClick handler that does nothing when panel is open
+        onClick={(event) =>
+          showPanel ? event.preventDefault() : toggleDropdown('location', event)
+        }
+        disabled={combinedLoading || showPanel}
       >
         <span className="flex items-center gap-2 font-medium">
           <MapPin
             size={16}
-            className={isGeofenceActive ? 'text-indigo-500' : 'text-gray-500'}
+            className={
+              showPanel
+                ? 'text-gray-400' // Gray out icon when panel is open
+                : isGeofenceActive
+                  ? 'text-indigo-500'
+                  : 'text-gray-500'
+            }
           />
           {isGeofenceActive && geofenceLocation
             ? renderFlagAndName(
                 MapboxService.formatCityCountry(geofenceLocation, true)
               )
-            : isGeofencePlacementMode
-              ? 'Click on map...'
-              : isLoading
+            : showPanel
+              ? 'Placing pin...' // Update text to indicate panel state
+              : isLoadingLocation
                 ? 'Loading location...'
                 : locationName
                   ? renderFlagAndName(
@@ -327,7 +201,8 @@ const GeofenceFilter: React.FC<GeofenceFilterProps> = ({
         </svg>
       </button>
 
-      {activeDropdown === 'location' && (
+      {/* Dropdown menu */}
+      {activeDropdown === 'location' && !showPanel && (
         <div className="absolute left-0 top-full mt-1 w-72 bg-white shadow-lg rounded-md border border-gray-200 z-50">
           {/* Location search input */}
           <div className="p-3 border-b">
@@ -355,7 +230,10 @@ const GeofenceFilter: React.FC<GeofenceFilterProps> = ({
                     ? 'bg-gray-400 cursor-not-allowed'
                     : 'bg-indigo-600 hover:bg-indigo-700'
                 }`}
-                onClick={processGeofenceSearch}
+                onClick={(e) => {
+                  e.preventDefault();
+                  processGeofenceSearch();
+                }}
                 disabled={
                   combinedLoading || (!geofenceLocation && !isGettingLocation)
                 }
@@ -396,9 +274,9 @@ const GeofenceFilter: React.FC<GeofenceFilterProps> = ({
               </button>
             </div>
 
-            {/* Replace the placement mode button with one that opens the floating panel */}
+            {/* Map placement button */}
             <button
-              onClick={openFloatingPanel}
+              onClick={openPanel}
               className="w-full flex items-center justify-center py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors"
             >
               <MapPin size={16} className="mr-2" />
@@ -408,7 +286,7 @@ const GeofenceFilter: React.FC<GeofenceFilterProps> = ({
             {/* Spacer */}
             <div className="my-2"></div>
 
-            {/* Current location button - keep existing button */}
+            {/* Current location button */}
             <button
               className={`w-full flex items-center justify-center py-2 border border-indigo-300 rounded-md text-indigo-700 bg-indigo-50 hover:bg-indigo-100 transition-colors ${
                 isGettingLocation ? 'opacity-75 cursor-not-allowed' : ''
@@ -470,19 +348,24 @@ const GeofenceFilter: React.FC<GeofenceFilterProps> = ({
         </div>
       )}
 
-      {/* Render the floating panel when active */}
-      {showFloatingPanel && (
+      {/* Floating panel */}
+      {showPanel && (
         <FloatingGeofencePanel
-          isOpen={showFloatingPanel}
-          onClose={closeFloatingPanel}
+          isOpen={showPanel}
+          onClose={closePanel}
           geofenceRadius={geofenceRadius}
           setGeofenceRadius={setGeofenceRadius}
           onSearch={handlePanelSearch}
+          processGeofenceSearch={processGeofenceSearch}
           isSearching={isSearching}
           coordinates={tempCoordinates}
-          setCoordinates={setTempCoordinates}
-          isGeofenceActive={isGeofenceActive}
-          isGeofencePlacementMode={isGeofencePlacementMode}
+          setCoordinates={panelLogic.setTempCoordinates}
+          locationName={locationName}
+          isLoadingLocation={isLoadingLocation}
+          onReset={resetPanel}
+          panelPosition={panelPosition ?? null}
+          setPanelPosition={setPanelPosition}
+          setShowPanel={setShowPanel}
         />
       )}
     </div>

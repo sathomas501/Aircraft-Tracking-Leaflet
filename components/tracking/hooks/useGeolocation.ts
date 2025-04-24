@@ -1,80 +1,49 @@
-// hooks/useGeolocation.ts
-import { useState, useEffect, useCallback } from 'react';
+// useGeofenceLocation.ts - Simplified hook that just tracks location name for coordinates
+import { useState, useEffect, useRef } from 'react';
+import { MapboxService } from '../../../lib/services/MapboxService';
 
-interface GeolocationState {
-  latitude: number | null;
-  longitude: number | null;
-  error: string | null;
-  loading: boolean;
+interface Coordinates {
+  lat: number;
+  lng: number;
 }
 
-export const useGeolocation = () => {
-  const [latitude, setLatitude] = useState<number | null>(null);
-  const [longitude, setLongitude] = useState<number | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+export function useGeolocation(coordinates: Coordinates | null) {
+  const [locationName, setLocationName] = useState<string | null>(null);
+  const [isLoadingLocation, setIsLoadingLocation] = useState(false);
+  const prevCoordinatesRef = useRef<Coordinates | null>(null);
 
-  const requestLocation = useCallback(() => {
-    setLoading(true);
-    setError(null);
+  useEffect(() => {
+    // Skip if no coordinates
+    if (!coordinates) return;
 
-    if (!navigator.geolocation) {
-      setError('Geolocation is not supported by your browser');
-      setLoading(false);
+    // Skip if same coordinates and we already have data or are loading
+    const isSameCoordinates =
+      prevCoordinatesRef.current?.lat === coordinates.lat &&
+      prevCoordinatesRef.current?.lng === coordinates.lng;
+
+    if (isSameCoordinates && (locationName || isLoadingLocation)) {
       return;
     }
 
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        setLatitude(position.coords.latitude);
-        setLongitude(position.coords.longitude);
-        setLoading(false);
-      },
-      (error) => {
-        setError(error.message);
-        setLoading(false);
-      },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-    );
-  }, []);
+    // Update reference and start loading
+    prevCoordinatesRef.current = coordinates;
+    setIsLoadingLocation(true);
 
-  // New method that returns a promise
-  const getCurrentPosition = useCallback((): Promise<GeolocationPosition> => {
-    return new Promise((resolve, reject) => {
-      setLoading(true);
-      setError(null);
+    // Fetch location name
+    MapboxService.getLocationNameFromCoordinates(
+      coordinates.lat,
+      coordinates.lng
+    )
+      .then((name) => {
+        setLocationName(name);
+      })
+      .catch((error) => {
+        console.error('Error fetching location name:', error);
+      })
+      .finally(() => {
+        setIsLoadingLocation(false);
+      });
+  }, [coordinates, locationName, isLoadingLocation]);
 
-      if (!navigator.geolocation) {
-        const error = new Error('Geolocation is not supported by your browser');
-        setError(error.message);
-        setLoading(false);
-        reject(error);
-        return;
-      }
-
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          setLatitude(position.coords.latitude);
-          setLongitude(position.coords.longitude);
-          setLoading(false);
-          resolve(position);
-        },
-        (error) => {
-          setError(error.message);
-          setLoading(false);
-          reject(error);
-        },
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-      );
-    });
-  }, []);
-
-  return {
-    latitude,
-    longitude,
-    error,
-    loading,
-    requestLocation,
-    getCurrentPosition,
-  };
-};
+  return { locationName, isLoadingLocation };
+}
