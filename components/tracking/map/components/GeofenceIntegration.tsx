@@ -22,14 +22,15 @@ const GeofenceMapIntegration: React.FC<GeofenceMapIntegrationProps> = ({
     lng: number;
   } | null>(null);
 
-  // Standard marker icon (you can replace with your own)
   const geofenceIcon = new L.Icon({
-    iconUrl: '/images/marker-icon.png', // Default Leaflet marker or your custom icon
+    iconUrl: '/images/marker-icon.png', // Check this path
     iconSize: [25, 41],
-    iconAnchor: [12, 41],
+    iconAnchor: [12, 41], // Make sure to add this line
     popupAnchor: [1, -34],
     shadowUrl: '/images/marker-shadow.png',
     shadowSize: [41, 41],
+    // Make sure to add a proper tooltip for accessibility
+    tooltipAnchor: [16, -28],
   });
 
   // In your GeofenceMapIntegration component

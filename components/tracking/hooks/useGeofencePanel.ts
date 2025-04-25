@@ -146,7 +146,37 @@ export function useGeofencePanel(options: GeofencePanelOptions) {
     // Reset UI flags
     setIsSearching(false);
     setLocalLoading(false);
-    setShowPanel(true); // optional: keep open if needed
+
+    // Explicitly keep the panel open for new interactions
+    setShowPanel(true);
+
+    // Zoom out the map to show more area
+    if (mapInstance) {
+      // For Leaflet maps
+      if (
+        typeof mapInstance.getZoom === 'function' &&
+        typeof mapInstance.setZoom === 'function'
+      ) {
+        const currentZoom = mapInstance.getZoom();
+        const newZoom = Math.max(currentZoom - 4, 5); // Zoom out by 4 levels, but not beyond level 5
+        mapInstance.setZoom(newZoom);
+      }
+      // For Mapbox maps
+      else if (
+        typeof mapInstance.getZoom === 'function' &&
+        typeof mapInstance.zoomTo === 'function'
+      ) {
+        const currentZoom = mapInstance.getZoom();
+        const newZoom = Math.max(currentZoom - 4, 5);
+        mapInstance.zoomTo(newZoom, { duration: 500 }); // 500ms animation
+      }
+    }
+
+    // Notify the map that we're still in geofence placement mode
+    const event = new CustomEvent('enable-geofence-placement', {
+      detail: { active: true },
+    });
+    document.dispatchEvent(event);
   }, [
     setTempCoordinates,
     setCoordinates,

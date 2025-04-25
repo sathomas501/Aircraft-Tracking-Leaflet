@@ -52,38 +52,18 @@ const FloatingGeofencePanel: React.FC<FloatingGeofencePanelProps> = ({
   flagUrl, // Optional flag URL prop
 }) => {
   const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [countryName, setCountryName] = useState<string | null>(null);
   const nodeRef = useRef(null);
+  const { label, isLoading } = useFormattedCityCountry(geofenceLocation, true);
 
-  // Simple handler for search button
-  const handleSearch: React.MouseEventHandler<HTMLButtonElement> = (
-    event
-  ): void => {
-    event.preventDefault();
-    event.stopPropagation();
-
-    if (!coordinates || isSearching) return;
-
-    if (coordinates) {
-      onSearch(coordinates.lat, coordinates.lng);
+  // The reset button directly calls the onReset prop
+  // This function is passed from the parent component
+  // and handles clearing coordinates, location data, etc.
+  const handleReset = () => {
+    if (onReset) {
+      onReset(); // Call the provided onReset function
     }
   };
-
-  const [countryName, setCountryName] = useState<string | null>(null);
-
-  // Then modify your useEffect to update this state when location changes
-  useEffect(() => {
-    // When geofenceLocation or locationName changes, extract the country
-    if (isGeofenceActive && geofenceLocation) {
-      const locationString = `${geofenceLocation.lat}, ${geofenceLocation.lng}`;
-      const country = MapboxService.extractCountry(locationString);
-      setCountryName(country);
-    } else if (locationName) {
-      const country = MapboxService.extractCountry(locationName);
-      setCountryName(country);
-    } else {
-      setCountryName(null);
-    }
-  }, [isGeofenceActive, geofenceLocation, locationName]);
 
   // Helper function to render flag with location name
   function renderFlagAndName(label: string | null) {
@@ -107,16 +87,20 @@ const FloatingGeofencePanel: React.FC<FloatingGeofencePanelProps> = ({
     );
   }
 
-  // The reset button directly calls the onReset prop
-  // This function is passed from the parent component
-  // and handles clearing coordinates, location data, etc.
-  const handleReset = () => {
-    if (onReset) {
-      onReset(); // Call the provided onReset function
+  // Then modify your useEffect to update this state when location changes
+  useEffect(() => {
+    // When geofenceLocation or locationName changes, extract the country
+    if (isGeofenceActive && geofenceLocation) {
+      const locationString = `${geofenceLocation.lat}, ${geofenceLocation.lng}`;
+      const country = MapboxService.extractCountry(locationString);
+      setCountryName(country);
+    } else if (locationName) {
+      const country = MapboxService.extractCountry(locationName);
+      setCountryName(country);
+    } else {
+      setCountryName(null);
     }
-  };
-
-  const { label, isLoading } = useFormattedCityCountry(geofenceLocation, true);
+  }, [isGeofenceActive, geofenceLocation, locationName]);
 
   return (
     <Draggable nodeRef={nodeRef} handle=".handle">

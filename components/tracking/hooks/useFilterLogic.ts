@@ -1134,6 +1134,9 @@ export function useFilterLogic() {
       clearGeofenceData();
     }
 
+    // Add this line to clear locationName
+    setLocationName(null); // or setLocationName('') depending on how you handle empty states
+
     // 5. Reset owner filters to select all
     setOwnerFilters([...allOwnerTypes]);
 
