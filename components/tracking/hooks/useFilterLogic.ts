@@ -88,6 +88,7 @@ export function useFilterLogic() {
 
   // Geofence state
   const [isGettingLocation, setIsGettingLocation] = useState(false);
+  const [locationName, setLocationName] = useState<string | null>(null);
   const [geofenceLocation, setGeofenceLocation] = useState<string>('');
   const [geofenceRadius, setGeofenceRadius] = useState<number>(25);
   const [geofenceCoordinates, setGeofenceCoordinates] = useState<{
@@ -1246,6 +1247,7 @@ export function useFilterLogic() {
     setGeofenceRadius,
     toggleGeofenceState,
     clearAllFilters,
+    setLocationName,
     applyCombinedFilters,
     getAircraftOwnerType,
     setGeofenceCoordinates,

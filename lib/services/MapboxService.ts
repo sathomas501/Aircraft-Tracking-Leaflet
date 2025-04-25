@@ -14,11 +14,22 @@ interface MapboxFeature {
   context?: Array<{ id: string; text: string }>;
 }
 
+interface Coordinates {
+  lat: number;
+  lng: number;
+}
+
 interface MapboxResponse {
   type: string;
   query: string[];
   features: MapboxFeature[];
   attribution: string;
+}
+
+export interface CountryInfo {
+  name: string; // Full country name
+  code: string; // ISO 3166-1 alpha-2 code (e.g., "US")
+  flagUrl: string; // URL to flag image
 }
 
 export interface GeofenceParams {
@@ -29,24 +40,90 @@ export interface GeofenceParams {
 }
 
 export class MapboxService {
-  static formatCityCountry(
-    locationString: string | null,
+  static async reverseGeocode(
+    lat: number,
+    lng: number
+  ): Promise<MapboxFeature | null> {
+    try {
+      const response = await fetch(
+        `/api/proxy/mapbox-reverse-geocode?lat=${lat}&lng=${lng}`,
+        {
+          headers: { 'Cache-Control': 'max-age=86400' },
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`Reverse geocoding API error: ${response.status}`);
+      }
+
+      const data: MapboxResponse = await response.json();
+      return data.features?.[0] || null;
+    } catch (error) {
+      console.error(`Reverse geocoding failed:`, error);
+      return null;
+    }
+  }
+
+  static async formatCityCountry(
+    input: string | Coordinates | null,
     isDetailed: boolean
-  ): string {
+  ): Promise<string> {
+    if (!input) return '';
+
+    let locationString: string | null = null;
+
+    // Handle Coordinates input (reverse geocode)
+    if (typeof input === 'object' && 'lat' in input && 'lng' in input) {
+      // Use your reverse geocoding logic here
+      const feature = await MapboxService.reverseGeocode(input.lat, input.lng);
+      locationString = feature?.place_name || null;
+    } else {
+      locationString = input;
+    }
+
     if (!locationString) return '';
+
     const parts: string[] = locationString
       .split(',')
       .map((p: string) => p.trim());
+
     if (parts.length >= 2) {
       const country: string = parts[parts.length - 1];
       let city: string = parts[0];
       if (parts.length >= 3 && parts[0] === parts[1]) city = parts[0];
       return `${city}, ${country}`;
     }
+
     return locationString;
   }
 
-  extractCountryFromFeature = (feature: MapboxFeature): string => {
+  static normalizeCountryFromMapboxFeature(
+    feature: MapboxFeature
+  ): CountryInfo | null {
+    if (!feature) return null;
+
+    // Try to get country code from properties (most reliable when available)
+    let countryCode =
+      feature.properties?.short_code || feature.properties?.country_code;
+
+    // Clean up and standardize if exists
+    if (countryCode) {
+      countryCode = countryCode.toUpperCase();
+      // Sometimes returns "us-tx" format - extract just country part
+      countryCode = countryCode.split('-')[0];
+    }
+
+    // If we still don't have a code, return null
+    if (!countryCode) return null;
+
+    return {
+      name: '',
+      code: countryCode,
+      flagUrl: `https://flagcdn.com/w40/${countryCode.toLowerCase()}.png`,
+    };
+  }
+
+  static extractCountryFromFeature = (feature: MapboxFeature): string => {
     if (!feature) return '';
 
     const countryContext = feature.context?.find((c) =>

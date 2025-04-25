@@ -1,8 +1,10 @@
 // FloatingGeofencePanel.tsx - Simplified to be purely presentational
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { X, Search } from 'lucide-react';
 import Draggable from 'react-draggable';
 import { MapboxService } from '../../../lib/services/MapboxService';
+import { getFlagImageUrl } from '../../../utils/getFlagImage';
+import { useFormattedCityCountry } from '../hooks/useFormattedCityCountry';
 
 interface Coordinates {
   lat: number;
@@ -16,6 +18,8 @@ interface FloatingGeofencePanelProps {
   setGeofenceRadius: (radius: number) => void;
   onSearch: (lat: number, lng: number) => void;
   panelPosition: null | { x: number; y: number };
+  isGeofenceActive: boolean;
+  geofenceLocation: Coordinates | null;
 
   setShowPanel: (show: boolean) => void;
   isSearching: boolean;
@@ -25,6 +29,7 @@ interface FloatingGeofencePanelProps {
   isLoadingLocation: boolean;
   processGeofenceSearch: (fromPanel?: boolean) => void;
   onReset: () => void;
+  flagUrl?: string | null; // Optional flag URL prop
 }
 
 const FloatingGeofencePanel: React.FC<FloatingGeofencePanelProps> = ({
@@ -33,6 +38,8 @@ const FloatingGeofencePanel: React.FC<FloatingGeofencePanelProps> = ({
   geofenceRadius,
   setGeofenceRadius,
   processGeofenceSearch,
+  isGeofenceActive,
+  geofenceLocation,
   isSearching,
   coordinates,
   setCoordinates,
@@ -42,6 +49,7 @@ const FloatingGeofencePanel: React.FC<FloatingGeofencePanelProps> = ({
   setShowPanel,
   onSearch,
   onReset, // Destructure the onReset prop
+  flagUrl, // Optional flag URL prop
 }) => {
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const nodeRef = useRef(null);
@@ -60,6 +68,45 @@ const FloatingGeofencePanel: React.FC<FloatingGeofencePanelProps> = ({
     }
   };
 
+  const [countryName, setCountryName] = useState<string | null>(null);
+
+  // Then modify your useEffect to update this state when location changes
+  useEffect(() => {
+    // When geofenceLocation or locationName changes, extract the country
+    if (isGeofenceActive && geofenceLocation) {
+      const locationString = `${geofenceLocation.lat}, ${geofenceLocation.lng}`;
+      const country = MapboxService.extractCountry(locationString);
+      setCountryName(country);
+    } else if (locationName) {
+      const country = MapboxService.extractCountry(locationName);
+      setCountryName(country);
+    } else {
+      setCountryName(null);
+    }
+  }, [isGeofenceActive, geofenceLocation, locationName]);
+
+  // Helper function to render flag with location name
+  function renderFlagAndName(label: string | null) {
+    if (!label) return null;
+
+    const country = label.split(', ').pop() || '';
+    const flagUrl = getFlagImageUrl(country);
+
+    return (
+      <div className="inline-flex items-center gap-2">
+        {flagUrl && (
+          <img
+            src={flagUrl}
+            alt={`${country} flag`}
+            className="w-4 h-3 object-cover rounded-sm shadow-sm"
+            onError={(e) => (e.currentTarget.style.display = 'none')}
+          />
+        )}
+        <span>{label}</span>
+      </div>
+    );
+  }
+
   // The reset button directly calls the onReset prop
   // This function is passed from the parent component
   // and handles clearing coordinates, location data, etc.
@@ -68,6 +115,8 @@ const FloatingGeofencePanel: React.FC<FloatingGeofencePanelProps> = ({
       onReset(); // Call the provided onReset function
     }
   };
+
+  const { label, isLoading } = useFormattedCityCountry(geofenceLocation, true);
 
   return (
     <Draggable nodeRef={nodeRef} handle=".handle">
@@ -102,13 +151,11 @@ const FloatingGeofencePanel: React.FC<FloatingGeofencePanelProps> = ({
             </div>
             {coordinates && (
               <div className="p-2 bg-gray-50 rounded border border-gray-200 text-center">
-                <div className="text-gray-700 font-bold">
+                <div className="text-gray-700 font-bold flex items-center justify-center gap-2">
                   {isLoadingLocation ? (
                     <span>Loading location name...</span>
-                  ) : locationName ? (
-                    MapboxService.formatCityCountry(locationName, true)
                   ) : (
-                    `${coordinates.lat.toFixed(6)}, ${coordinates.lng.toFixed(6)}`
+                    renderFlagAndName(label)
                   )}
                 </div>
                 <div className="text-xs text-gray-500 mt-1">

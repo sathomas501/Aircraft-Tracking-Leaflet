@@ -1,6 +1,6 @@
 // components/GeofenceFilter.tsx
 import React from 'react';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { MapPin } from 'lucide-react';
 import { useEnhancedMapContext } from '../context/EnhancedMapContext';
 import FloatingGeofencePanel from './FloatingGeofencePanel';
@@ -8,6 +8,8 @@ import { useFilterLogic } from '../hooks/useFilterLogic';
 import { useGeofencePanel } from '../hooks/useGeofencePanel';
 import { useGeolocationServices } from '../hooks/useGeolocationServices';
 import { MapboxService } from '../../../lib/services/MapboxService';
+import { useLocationFlag } from '../hooks/useLocationFlag';
+import { useFormattedCityCountry } from '../hooks/useFormattedCityCountry';
 import { getFlagImageUrl } from '../../../utils/getFlagImage';
 
 interface GeofenceFilterProps {
@@ -51,6 +53,7 @@ const GeofenceFilter: React.FC<GeofenceFilterProps> = ({
     isGeofenceActive,
     geofenceCoordinates,
     combinedLoading,
+    setLocationName,
     processGeofenceSearch,
     toggleGeofenceState,
     setGeofenceLocation,
@@ -126,21 +129,85 @@ const GeofenceFilter: React.FC<GeofenceFilterProps> = ({
     }
   };
 
-  // Helper function to render flag with location name
-  const renderFlagAndName = (countryName: string) => {
-    const flagUrl = getFlagImageUrl(countryName);
+  const [mapboxFeature, setMapboxFeature] = useState<MapboxFeature | null>(
+    null
+  );
+
+  const [countryName, setCountryName] = useState<string | null>(null);
+
+  // Then modify your useEffect to update this state when location changes
+  useEffect(() => {
+    // When geofenceLocation or locationName changes, extract the country
+    if (isGeofenceActive && geofenceLocation) {
+      const country = MapboxService.extractCountry(geofenceLocation);
+      setCountryName(country);
+    } else if (locationName) {
+      const country = MapboxService.extractCountry(locationName);
+      setCountryName(country);
+    } else {
+      setCountryName(null);
+    }
+  }, [isGeofenceActive, geofenceLocation, locationName]);
+
+  // Update how you use the hook to include the country name
+  const { flagUrl, isLoading: isFlagLoading } = useLocationFlag({
+    mapboxFeature,
+    locationName,
+    countryName, // Add this parameter
+  });
+
+  function renderFlagAndName(label: string | null) {
+    if (!label) return null;
+
+    const country = label.split(', ').pop() || '';
+    const flagUrl = getFlagImageUrl(country);
+
     return (
-      <span className="flex items-center gap-2">
+      <div className="inline-flex items-center gap-2">
         {flagUrl && (
           <img
             src={flagUrl}
-            alt={`${countryName} flag`}
-            className="w-5 h-3 rounded-sm"
+            alt={`${country} flag`}
+            className="w-4 h-3 object-cover rounded-sm shadow-sm"
+            onError={(e) => (e.currentTarget.style.display = 'none')}
           />
         )}
-        {countryName}
-      </span>
+        <span>{label}</span>
+      </div>
     );
+  }
+
+  // When you get location data from Mapbox, store the feature
+  interface MapClickEvent {
+    lngLat: {
+      lng: number;
+      lat: number;
+    };
+  }
+
+  interface MapboxFeature {
+    place_name?: string;
+  }
+
+  const handleMapClick = async (event: MapClickEvent) => {
+    const { lng, lat } = event.lngLat;
+
+    const response = await fetch(
+      `/api/proxy/mapbox-geocode?query=${lng},${lat}`
+    );
+    const data: { features?: MapboxFeature[] } = await response.json();
+    const feature = data.features?.[0];
+
+    // Store the feature
+    setMapboxFeature(feature || null);
+
+    // Update location name
+    if (feature) {
+      const name =
+        feature.place_name ||
+        (await MapboxService.getLocationNameFromCoordinates(lat, lng));
+      setLocationName(name);
+    }
   };
 
   useEffect(() => {
@@ -149,6 +216,8 @@ const GeofenceFilter: React.FC<GeofenceFilterProps> = ({
       panelLogic.setShowPanel(true);
     }
   }, [isSearching]);
+
+  const { label, isLoading } = useFormattedCityCountry(geofenceLocation, true);
 
   return (
     <div ref={dropdownRef} className="relative">
@@ -178,18 +247,15 @@ const GeofenceFilter: React.FC<GeofenceFilterProps> = ({
                   : 'text-gray-500'
             }
           />
+
           {isGeofenceActive && geofenceLocation
-            ? renderFlagAndName(
-                MapboxService.formatCityCountry(geofenceLocation, true)
-              )
+            ? renderFlagAndName(label)
             : showPanel
-              ? 'Placing pin...' // Update text to indicate panel state
+              ? 'Placing pin...'
               : isLoadingLocation
                 ? 'Loading location...'
                 : locationName
-                  ? renderFlagAndName(
-                      MapboxService.formatCityCountry(locationName, true)
-                    )
+                  ? renderFlagAndName(label)
                   : 'Location'}
         </span>
 
@@ -366,6 +432,10 @@ const GeofenceFilter: React.FC<GeofenceFilterProps> = ({
           setGeofenceRadius={setGeofenceRadius}
           onSearch={handlePanelSearch}
           processGeofenceSearch={processGeofenceSearch}
+          isGeofenceActive={isGeofenceActive}
+          geofenceLocation={
+            geofenceCoordinates || { lat: 0, lng: 0 } // Provide default coordinates if null
+          }
           isSearching={isSearching}
           coordinates={tempCoordinates}
           setCoordinates={panelLogic.setTempCoordinates}
@@ -374,6 +444,7 @@ const GeofenceFilter: React.FC<GeofenceFilterProps> = ({
           onReset={resetPanel}
           panelPosition={panelPosition ?? null}
           setShowPanel={setShowPanel}
+          flagUrl={flagUrl} // Add this prop
         />
       )}
     </div>

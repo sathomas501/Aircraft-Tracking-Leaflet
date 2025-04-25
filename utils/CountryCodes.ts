@@ -86,6 +86,8 @@ export const countryNameToCode: Record<string, string> = {
   Jordan: 'JO',
   Kazakhstan: 'KZ',
   Kenya: 'KE',
+  'Kingdom of Denmark': 'DK',
+  'Kingdom of Norway': 'NO',
   Kiribati: 'KI',
   Kuwait: 'KW',
   Kyrgyzstan: 'KG',

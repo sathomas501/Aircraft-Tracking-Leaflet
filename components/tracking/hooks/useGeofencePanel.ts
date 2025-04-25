@@ -317,6 +317,7 @@ export function useGeofencePanel(options: GeofencePanelOptions) {
     tempCoordinates,
     isSearching,
     locationName,
+    setLocationName,
     isLoadingLocation,
     setTempCoordinates,
     setPanelPosition,
