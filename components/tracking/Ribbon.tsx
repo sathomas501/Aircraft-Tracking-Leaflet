@@ -1,6 +1,5 @@
 import React from 'react';
 import { useFilterLogic } from './hooks/useFilterLogic';
-import FilterDropdown from './filters/FilterDropdown';
 import ManufacturerFilter from './filters/ManufacturerFilter';
 import ModelFilter from './filters/ModelFilter';
 import GeofenceFilter from './filters/GeofenceFilter';
@@ -11,7 +10,7 @@ import { RibbonClearFiltersButton } from './map/components/ribbon-clear';
 import { useEnhancedMapContext } from './context/EnhancedMapContext';
 import type { RibbonProps } from './types/filters';
 import ManualRefreshButton from './map/components/ManualRefreshButton';
-import { motion, AnimatePresence } from 'framer-motion';
+import StandaloneFilterDropdown from './filters/FilterDropdown';
 
 const RibbonAircraftSelector: React.FC<RibbonProps> = ({ manufacturers }) => {
   // Get the aircraft state from context
@@ -173,13 +172,11 @@ const RibbonAircraftSelector: React.FC<RibbonProps> = ({ manufacturers }) => {
           </div>
 
           {/* Filter Mode Dropdown */}
-          <FilterDropdown
-            toggleFilterMode={toggleFilterMode}
+          <StandaloneFilterDropdown
+            currentFilterMode={filterMode}
+            onFilterModeChange={toggleFilterMode}
             selectedManufacturer={selectedManufacturer}
             isGeofenceActive={isGeofenceActive}
-            filterMode={filterMode}
-            activeDropdown={activeDropdown}
-            toggleDropdown={toggleDropdown}
           />
 
           {/* Divider */}
