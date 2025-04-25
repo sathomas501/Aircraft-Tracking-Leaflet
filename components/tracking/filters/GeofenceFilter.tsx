@@ -14,6 +14,22 @@ interface GeofenceFilterProps {
   activeDropdown: string | null;
   setActiveDropdown: (dropdown: string | null) => void;
   toggleDropdown: (type: string, event: React.MouseEvent) => void;
+  geofenceLocation: string;
+  geofenceRadius: number;
+  isGettingLocation: boolean;
+  isGeofenceActive: boolean;
+  geofenceCoordinates: { lat: number; lng: number } | null;
+  combinedLoading: boolean;
+  getUserLocation: () => Promise<void>;
+  setGeofenceCoordinates: (coordinates: { lat: number; lng: number }) => void;
+  setGeofenceCenter: (coordinates: { lat: number; lng: number }) => void;
+  updateGeofenceAircraft: (aircraft: any[]) => void;
+  setIsGettingLocation: (isGetting: boolean) => void;
+  isGeofencePlacementMode: boolean;
+  setGeofenceRadius: (radius: number) => void;
+  processGeofenceSearch: () => void;
+  toggleGeofenceState: (active: boolean) => void;
+  setGeofenceLocation: (location: string) => void;
   dropdownRef: React.RefObject<HTMLDivElement>;
 }
 
@@ -60,6 +76,8 @@ const GeofenceFilter: React.FC<GeofenceFilterProps> = ({
     toggleGeofenceState,
     setActiveDropdown,
     mapInstance,
+    setCoordinates: () => {}, // Provide a default or actual implementation
+    setShowPanel: () => {}, // Provide a default or actual implementation
   });
 
   const {
@@ -73,7 +91,6 @@ const GeofenceFilter: React.FC<GeofenceFilterProps> = ({
     closePanel,
     resetPanel,
     setShowPanel,
-    setPanelPosition,
     handlePanelSearch,
   } = panelLogic;
 
@@ -127,13 +144,6 @@ const GeofenceFilter: React.FC<GeofenceFilterProps> = ({
   };
 
   useEffect(() => {
-    if (showPanel) {
-      // Keep dropdown closed while panel is open
-      setActiveDropdown(null);
-    }
-  }, [showPanel, setActiveDropdown]);
-
-  useEffect(() => {
     if (isSearching) {
       // Ensure the panel stays open during search
       panelLogic.setShowPanel(true);
@@ -154,10 +164,8 @@ const GeofenceFilter: React.FC<GeofenceFilterProps> = ({
                 : 'bg-gray-50/30 hover:bg-gray-50 border-gray-200 text-gray-700 hover:border-gray-300'
         } transition-all duration-200`}
         // Add a onClick handler that does nothing when panel is open
-        onClick={(event) =>
-          showPanel ? event.preventDefault() : toggleDropdown('location', event)
-        }
-        disabled={combinedLoading || showPanel}
+        onClick={(event) => toggleDropdown('location', event)}
+        disabled={combinedLoading}
       >
         <span className="flex items-center gap-2 font-medium">
           <MapPin
@@ -232,6 +240,7 @@ const GeofenceFilter: React.FC<GeofenceFilterProps> = ({
                 }`}
                 onClick={(e) => {
                   e.preventDefault();
+                  openPanel();
                   processGeofenceSearch();
                 }}
                 disabled={

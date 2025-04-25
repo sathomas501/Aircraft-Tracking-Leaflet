@@ -39,12 +39,10 @@ const FloatingGeofencePanel: React.FC<FloatingGeofencePanelProps> = ({
   locationName,
   isLoadingLocation,
   panelPosition,
-
   setShowPanel,
   onSearch,
-  onReset,
+  onReset, // Destructure the onReset prop
 }) => {
-  // Only maintain UI-specific state in the component
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const nodeRef = useRef(null);
 
@@ -57,10 +55,17 @@ const FloatingGeofencePanel: React.FC<FloatingGeofencePanelProps> = ({
 
     if (!coordinates || isSearching) return;
 
-    // Use onSearch instead of processGeofenceSearch
-    // This will call handlePanelSearch in useGeofencePanel
     if (coordinates) {
       onSearch(coordinates.lat, coordinates.lng);
+    }
+  };
+
+  // The reset button directly calls the onReset prop
+  // This function is passed from the parent component
+  // and handles clearing coordinates, location data, etc.
+  const handleReset = () => {
+    if (onReset) {
+      onReset(); // Call the provided onReset function
     }
   };
 
@@ -146,7 +151,7 @@ const FloatingGeofencePanel: React.FC<FloatingGeofencePanelProps> = ({
               type="button"
               onClick={(e) => {
                 e.preventDefault();
-                processGeofenceSearch();
+                processGeofenceSearch(true); // Pass true to indicate search is from panel
               }}
               disabled={!coordinates || isSearching}
               className={`flex-1 py-2 px-4 flex items-center justify-center gap-2 rounded-md ${
@@ -185,7 +190,7 @@ const FloatingGeofencePanel: React.FC<FloatingGeofencePanelProps> = ({
             {/* Reset Button */}
             <button
               type="button"
-              onClick={onReset}
+              onClick={handleReset} // ✅ Now uses your custom handler
               className="flex-1 py-2 px-4 flex items-center justify-center gap-2 rounded-md bg-red-500 text-white hover:bg-red-600 transition-colors"
             >
               Reset

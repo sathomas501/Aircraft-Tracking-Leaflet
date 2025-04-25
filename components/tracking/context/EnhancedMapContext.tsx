@@ -64,6 +64,7 @@ interface EnhancedMapContextType {
   selectManufacturer: (MANUFACTURER: string | null) => Promise<void>;
   selectModel: (MODEL: string | null) => void;
   reset: () => Promise<void>;
+  refreshPanel: () => void;
   refreshPositions: () => Promise<void>;
   fullRefresh: () => Promise<void>;
   clearCache: () => void;
@@ -126,6 +127,8 @@ const EnhancedMapContext = createContext<EnhancedMapContextType>({
 
   selectManufacturer: async () => {},
   selectModel: () => {},
+  refreshPanel: () => {},
+  // Reset function to clear all selections and data
   reset: async () => {},
   refreshPositions: async () => {},
   fullRefresh: async () => {},
@@ -788,6 +791,9 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
     selectManufacturer,
     selectModel,
     reset,
+    refreshPanel: () => {
+      console.warn('refreshPanel is not implemented yet.');
+    },
     refreshPositions,
     fullRefresh,
     clearCache,

@@ -18,6 +18,10 @@ interface GeofencePanelOptions {
   processGeofenceSearch: () => void;
   toggleGeofenceState: (active: boolean) => void;
   setActiveDropdown: (dropdown: string | null) => void;
+  clearGeofenceData?: () => void;
+  setCoordinates: (coordinates: Coordinates | null) => void;
+  setShowPanel: (show: boolean) => void;
+
   mapInstance: any;
 }
 
@@ -31,7 +35,9 @@ export function useGeofencePanel(options: GeofencePanelOptions) {
     updateGeofenceAircraft,
     isGeofenceActive,
     toggleGeofenceState,
+    clearGeofenceData,
     setActiveDropdown,
+    setCoordinates,
     mapInstance,
   } = options;
 
@@ -50,6 +56,8 @@ export function useGeofencePanel(options: GeofencePanelOptions) {
   const [isSearching, setIsSearching] = useState(false);
   const [locationName, setLocationName] = useState<string | null>(null);
   const [isLoadingLocation, setIsLoadingLocation] = useState(false);
+  const [isLocalLoading, setLocalLoading] = useState(false); // Local loading state for geofence search
+  const [activeDropdown] = useState<string | null>(null); // Active dropdown state
   // Default position for the panel - right side of screen
 
   // Panel control methods
@@ -86,10 +94,73 @@ export function useGeofencePanel(options: GeofencePanelOptions) {
     document.dispatchEvent(event);
   }, []);
 
+  // In your GeofenceFilter.tsx component
+  const handleReset = () => {
+    // Clear geofence data
+    setGeofenceCoordinates(null);
+    setGeofenceLocation('');
+
+    // Reset geofence state
+    if (isGeofenceActive) {
+      toggleGeofenceState(false);
+    }
+
+    // Clear aircraft data if needed
+    if (clearGeofenceData) {
+      clearGeofenceData();
+    }
+
+    // Reset loading states
+    setLocalLoading(false);
+
+    // Keep dropdown open if needed
+    if (activeDropdown === 'geofence') {
+      // Don't close dropdown
+    } else {
+      setActiveDropdown(null);
+    }
+  };
+
   const resetPanel = useCallback(() => {
+    // Clear UI state
     setTempCoordinates(null);
+    setCoordinates(null);
     setLocationName(null);
-  }, []);
+
+    // Clear geofence system state
+    setGeofenceCoordinates(null);
+    setGeofenceLocation('');
+    setLocationName(null); // optional fallback
+    setGeofenceCenter?.({ lat: 0, lng: 0 }); // Reset to default coordinates
+
+    // Clear any data drawn on the map
+    if (clearGeofenceData) {
+      clearGeofenceData();
+    }
+
+    // Deactivate geofence
+    if (isGeofenceActive) {
+      toggleGeofenceState(false);
+    }
+
+    // Reset UI flags
+    setIsSearching(false);
+    setLocalLoading(false);
+    setShowPanel(true); // optional: keep open if needed
+  }, [
+    setTempCoordinates,
+    setCoordinates,
+    setLocationName,
+    setGeofenceCoordinates,
+    setGeofenceLocation,
+    setGeofenceCenter,
+    clearGeofenceData,
+    isGeofenceActive,
+    toggleGeofenceState,
+    setIsSearching,
+    setLocalLoading,
+    setShowPanel,
+  ]);
 
   // Make sure any panel action keeps the dropdown closed
   useEffect(() => {

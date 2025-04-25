@@ -61,6 +61,7 @@ export function useFilterLogic() {
     mapInstance,
     updateAircraftData,
     clearGeofenceData,
+    refreshPanel,
     updateGeofenceAircraft,
     blockManufacturerApiCalls,
     setBlockManufacturerApiCalls,
@@ -403,12 +404,10 @@ export function useFilterLogic() {
       }
 
       // Close dropdown after search
-      
-       if (!fromPanel) {
-      setActiveDropdown(null);
-       }
 
-
+      if (!fromPanel) {
+        setActiveDropdown(null);
+      }
     } catch (error: any) {
       console.error('Error in geofence search:', error);
       if (error.message?.includes('rate limit') || error.status === 429) {
@@ -1141,6 +1140,9 @@ export function useFilterLogic() {
     setActiveRegion(null);
     setSelectedRegion(RegionCode.GLOBAL);
 
+    setGeofenceLocation(''); // ✅ ← this clears the ribbon display
+    setGeofenceRadius(25); // or whatever your default is
+
     // Clear region outline from map
     if (regionOutline) {
       try {
@@ -1213,6 +1215,7 @@ export function useFilterLogic() {
     selectedManufacturer,
     selectedModel,
     geofenceLocation,
+
     geofenceRadius,
     isGeofenceActive,
     geofenceCoordinates,
