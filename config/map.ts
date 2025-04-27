@@ -8,19 +8,20 @@ export const MAP_CONFIG = {
 
   // Keep North America bounds but add definitions for other regions
   NORTH_AMERICA_BOUNDS: [
-    [7.0, -180.0], // Southwest (includes Hawaii and southern Central America)
-    [72.0, -50.0], // Northeast (includes most of Canada, excludes far northern territories)
-  ] as LatLngBoundsExpression,
+  [5.0, -170.0],  // Southwest (includes Hawaii and southern Central America)
+  [75.0, -50.0]   // Northeast (includes most of Canada, includes far northern territories)
+] as LatLngBoundsExpression,
 
   REGION_ZOOM_LEVELS: {
-    GLOBAL: 3,
-    North_America: 4,
-    South_America: 4,
-    Europe: 4,
-    Asia: 4,
-    Africa: 4,
-    Oceania: 4,
-  },
+  GLOBAL: 2,             // Decreased from 3 to 2 for better global view
+  North_America: 3,      // Decreased from 4 to 3 to show the full continent
+  South_America: 3,      // Decreased from 4 to 3
+  Europe: 4,             // Keep as is
+  Asia: 3,               // Decreased from 4 to 3 due to Asia's large size
+  Africa: 3,             // Decreased from 4 to 3
+  Oceania: 3,            // Decreased from 4 to 3
+},
+
 
   // Add other regional bounds
   SOUTH_AMERICA_BOUNDS: [
@@ -34,9 +35,9 @@ export const MAP_CONFIG = {
   ] as LatLngBoundsExpression,
 
   ASIA_BOUNDS: [
-    [-10.0, 60.0],
-    [60.0, 150.0],
-  ] as LatLngBoundsExpression,
+  [-10.0, 40.0],  // Southwest (expanded westward to include more of Middle East)
+  [65.0, 150.0]   // Northeast (slightly expanded northward)
+] as LatLngBoundsExpression,
 
   AFRICA_BOUNDS: [
     [-35.0, -20.0],
@@ -163,46 +164,74 @@ export const getLeafletCRS = () => {
 export const getBoundsByRegion = (
   region: RegionCode | string
 ): LatLngBoundsExpression => {
-  // Check if the region is a string (backward compatibility)
-  if (typeof region === 'string') {
-    // Handle legacy string-based regions for backward compatibility
-    switch (region) {
-      case 'North America':
-        return MAP_CONFIG.NORTH_AMERICA_BOUNDS;
-      case 'Europe':
-        return MAP_CONFIG.EUROPE_BOUNDS;
-      case 'Asia':
-        return MAP_CONFIG.ASIA_BOUNDS;
-      case 'Africa':
-        return MAP_CONFIG.AFRICA_BOUNDS;
-      case 'Oceania':
-        return MAP_CONFIG.OCEANIA_BOUNDS;
-      case 'South America':
-        return MAP_CONFIG.SOUTH_AMERICA_BOUNDS;
-      case 'Global':
-      default:
-        return MAP_CONFIG.GLOBAL_BOUNDS;
-    }
-  }
-
-  // Handle numeric regions
-  switch (region) {
+  let bounds: LatLngBoundsExpression;
+  
+  // Handle numeric regions (convert to number if it's a string number)
+  const regionCode = typeof region === 'string' && !isNaN(Number(region)) 
+    ? Number(region) 
+    : region;
+    
+  console.log(`Getting bounds for region: ${regionCode} (${typeof regionCode})`);
+  
+  switch (Number(regionCode)) {
     case RegionCode.North_America:
-      return MAP_CONFIG.NORTH_AMERICA_BOUNDS;
+      bounds = MAP_CONFIG.NORTH_AMERICA_BOUNDS;
+      break;
     case RegionCode.Europe:
-      return MAP_CONFIG.EUROPE_BOUNDS;
+      bounds = MAP_CONFIG.EUROPE_BOUNDS;
+      break;
     case RegionCode.Asia:
-      return MAP_CONFIG.ASIA_BOUNDS;
+      bounds = MAP_CONFIG.ASIA_BOUNDS;
+      break;
     case RegionCode.Africa:
-      return MAP_CONFIG.AFRICA_BOUNDS;
+      bounds = MAP_CONFIG.AFRICA_BOUNDS;
+      break;
     case RegionCode.Oceania:
-      return MAP_CONFIG.OCEANIA_BOUNDS;
+      bounds = MAP_CONFIG.OCEANIA_BOUNDS;
+      break;
     case RegionCode.South_America:
-      return MAP_CONFIG.SOUTH_AMERICA_BOUNDS;
+      bounds = MAP_CONFIG.SOUTH_AMERICA_BOUNDS;
+      break;
     case RegionCode.GLOBAL:
     default:
-      return MAP_CONFIG.GLOBAL_BOUNDS;
+      bounds = MAP_CONFIG.GLOBAL_BOUNDS;
+      break;
   }
+  
+  console.log('Resolved bounds:', bounds);
+  return bounds;
+};
+
+// Helper function to debug bounds and center calculation
+export const debugBoundsAndCenter = (region: RegionCode | string) => {
+  const bounds = getBoundsByRegion(region);
+  
+  if (Array.isArray(bounds) && bounds.length === 2) {
+    const southWest = bounds[0];
+    const northEast = bounds[1];
+    
+    if (Array.isArray(southWest) && Array.isArray(northEast) && 
+        southWest.length === 2 && northEast.length === 2) {
+      
+      const centerLat = (southWest[0] + northEast[0]) / 2;
+      const centerLng = (southWest[1] + northEast[1]) / 2;
+      
+      console.log({
+        region,
+        bounds,
+        center: [centerLat, centerLng]
+      });
+      
+      return {
+        region,
+        bounds,
+        center: [centerLat, centerLng]
+      };
+    }
+  }
+  
+  console.error('Invalid bounds format:', bounds);
+  return null;
 };
 
 // Add a new helper function to get the appropriate zoom level for a region

@@ -1,69 +1,53 @@
-// FloatingGeofencePanel.tsx - Simplified to be purely presentational
-import React, { useState, useRef, useEffect } from 'react';
+// components/filters/FloatingGeofencePanel.tsx
+import React, { useRef } from 'react';
 import { X, Search } from 'lucide-react';
 import Draggable from 'react-draggable';
-import { MapboxService } from '../../../lib/services/MapboxService';
-import { getFlagImageUrl } from '../../../utils/getFlagImage';
 import { useFormattedCityCountry } from '../hooks/useFormattedCityCountry';
-
-interface Coordinates {
-  lat: number;
-  lng: number;
-}
+import { getFlagImageUrl } from '../../../utils/getFlagImage';
+import { useFilterLogic } from '../hooks/useFilterLogic';
 
 interface FloatingGeofencePanelProps {
   isOpen: boolean;
   onClose: () => void;
-  geofenceRadius: number;
-  setGeofenceRadius: (radius: number) => void;
-  onSearch: (lat: number, lng: number) => void;
-  panelPosition: null | { x: number; y: number };
-  isGeofenceActive: boolean;
-  geofenceLocation: Coordinates | null;
-
-  setShowPanel: (show: boolean) => void;
-  isSearching: boolean;
-  coordinates: Coordinates | null;
-  setCoordinates: (coords: Coordinates | null) => void;
+  coordinates: { lat: number; lng: number } | null;
+  setCoordinates: (coords: { lat: number; lng: number } | null) => void;
   locationName: string | null;
   isLoadingLocation: boolean;
-  processGeofenceSearch: (fromPanel?: boolean) => void;
+  setIsLoadingLocation: (isLoading: boolean) => void;
+  isSearching: boolean;
+  setLocationName: (name: string | null) => void;
+  onSearch: (lat: number, lng: number) => void;
   onReset: () => void;
-  flagUrl?: string | null; // Optional flag URL prop
+  panelPosition: { x: number; y: number } | null;
+  flagUrl?: string | null;
+  geofenceRadius: number;
+  setGeofenceRadius: (radius: number) => void;
 }
 
 const FloatingGeofencePanel: React.FC<FloatingGeofencePanelProps> = ({
   isOpen,
   onClose,
-  geofenceRadius,
-  setGeofenceRadius,
-  processGeofenceSearch,
-  isGeofenceActive,
-  geofenceLocation,
-  isSearching,
   coordinates,
+  setLocationName,
+  setIsLoadingLocation,
   setCoordinates,
   locationName,
   isLoadingLocation,
-  panelPosition,
-  setShowPanel,
+  isSearching,
   onSearch,
-  onReset, // Destructure the onReset prop
-  flagUrl, // Optional flag URL prop
+  onReset,
+  panelPosition,
+  flagUrl,
 }) => {
-  const [position, setPosition] = useState({ x: 0, y: 0 });
-  const [countryName, setCountryName] = useState<string | null>(null);
-  const nodeRef = useRef(null);
-  const { label, isLoading } = useFormattedCityCountry(geofenceLocation, true);
+  const {
+    geofenceRadius,
+    setGeofenceRadius,
+    geofenceLocation,
+    isGeofenceActive,
+  } = useFilterLogic();
 
-  // The reset button directly calls the onReset prop
-  // This function is passed from the parent component
-  // and handles clearing coordinates, location data, etc.
-  const handleReset = () => {
-    if (onReset) {
-      onReset(); // Call the provided onReset function
-    }
-  };
+  const nodeRef = useRef(null);
+  const { label } = useFormattedCityCountry(geofenceLocation, true);
 
   // Helper function to render flag with location name
   function renderFlagAndName(label: string | null) {
@@ -87,27 +71,22 @@ const FloatingGeofencePanel: React.FC<FloatingGeofencePanelProps> = ({
     );
   }
 
-  // Then modify your useEffect to update this state when location changes
-  useEffect(() => {
-    // When geofenceLocation or locationName changes, extract the country
-    if (isGeofenceActive && geofenceLocation) {
-      const locationString = `${geofenceLocation.lat}, ${geofenceLocation.lng}`;
-      const country = MapboxService.extractCountry(locationString);
-      setCountryName(country);
-    } else if (locationName) {
-      const country = MapboxService.extractCountry(locationName);
-      setCountryName(country);
-    } else {
-      setCountryName(null);
+  // Handle search button click
+  const handleSearch = () => {
+    if (coordinates) {
+      onSearch(coordinates.lat, coordinates.lng);
     }
-  }, [isGeofenceActive, geofenceLocation, locationName]);
+  };
 
   return (
     <Draggable nodeRef={nodeRef} handle=".handle">
       <div
         ref={nodeRef}
         className="absolute z-50 bg-white rounded-lg shadow-lg border border-gray-200 w-80 geofence-floating-panel"
-        style={{ top: 0, left: 0 }}
+        style={{
+          top: panelPosition?.y || 0,
+          left: panelPosition?.x || 0,
+        }}
       >
         {/* Header/Handle for dragging */}
         <div className="handle px-4 py-3 bg-indigo-600 text-white rounded-t-lg flex items-center justify-between cursor-move">
@@ -180,10 +159,7 @@ const FloatingGeofencePanel: React.FC<FloatingGeofencePanelProps> = ({
             {/* Search Button */}
             <button
               type="button"
-              onClick={(e) => {
-                e.preventDefault();
-                processGeofenceSearch(true); // Pass true to indicate search is from panel
-              }}
+              onClick={handleSearch}
               disabled={!coordinates || isSearching}
               className={`flex-1 py-2 px-4 flex items-center justify-center gap-2 rounded-md ${
                 !coordinates || isSearching
@@ -221,7 +197,7 @@ const FloatingGeofencePanel: React.FC<FloatingGeofencePanelProps> = ({
             {/* Reset Button */}
             <button
               type="button"
-              onClick={handleReset} // ✅ Now uses your custom handler
+              onClick={onReset}
               className="flex-1 py-2 px-4 flex items-center justify-center gap-2 rounded-md bg-red-500 text-white hover:bg-red-600 transition-colors"
             >
               Reset

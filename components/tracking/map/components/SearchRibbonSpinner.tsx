@@ -3,8 +3,8 @@ import React from 'react';
 import styles from '../../../../styles/SearchRibbonSpinner.module.css';
 
 interface SearchRibbonSpinnerProps {
-  isLoading: boolean;
-  loadingText?: string;
+  isLoading: any;
+  loadingText?: string; // Add the loadingText prop
 }
 
 const SearchRibbonSpinner: React.FC<SearchRibbonSpinnerProps> = ({

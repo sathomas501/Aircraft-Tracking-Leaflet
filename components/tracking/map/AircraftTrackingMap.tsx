@@ -3,9 +3,12 @@ import React, { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import { EnhancedMapProvider } from '../context/EnhancedMapContext';
 import { EnhancedUIProvider } from '../../tracking/context/EnhancedUIContext';
-import type { SelectOption } from '@/types/base';
+import EnhancedReactBaseMap from './EnhancedReactBaseMap';
+import { FilterProvider } from '../context/FilterContext'; // Add this import
+import type { SelectOption } from '../../../types/base';
 import AircraftSpinner from '../../tracking/map/components/AircraftSpinner';
-import RibbonAircraftSelector from '../Ribbon';
+import RibbonAircraftSelector from './RibbonAircraftSelector';
+import Ribbon from '../Ribbon';
 
 // Dynamically import the optimized map to avoid SSR issues
 const EnhancedMap = dynamic(() => import('./EnhancedReactBaseMap'), {
@@ -14,8 +17,8 @@ const EnhancedMap = dynamic(() => import('./EnhancedReactBaseMap'), {
 });
 
 interface AircraftTrackingMapProps {
-  manufacturers: SelectOption[];
-  onError?: (message: string) => void;
+  manufacturers?: any[]; // Make it optional
+  onError: (message: string) => void;
 }
 
 const AircraftTrackingMap: React.FC<AircraftTrackingMapProps> = ({
@@ -25,6 +28,10 @@ const AircraftTrackingMap: React.FC<AircraftTrackingMapProps> = ({
   // Add state for controlling update panel visibility
   const [updatePanelVisible, setUpdatePanelVisible] = useState(false);
   const [updateCount, setUpdateCount] = useState(0);
+  const handleError = (message: string) => {
+    console.error(message);
+    // Handle error, show toast, etc.
+  };
 
   // Show the update panel after initial load
   useEffect(() => {
@@ -46,18 +53,18 @@ const AircraftTrackingMap: React.FC<AircraftTrackingMapProps> = ({
   };
 
   return (
-    // Nest providers - UI context wraps Map context
+    // Nest providers - UI context wraps Map context, which wraps Filter context
     <EnhancedUIProvider>
       <EnhancedMapProvider manufacturers={manufacturers} onError={onError}>
-        <div className="relative w-full h-screen flex flex-col">
-          {/* Sticky Ribbon */}
-          <RibbonAircraftSelector manufacturers={manufacturers} />
-
-          {/* Fill the rest of the space with the map */}
-          <div className="flex-grow relative z-0">
-            <EnhancedMap onError={onError} />
+        <FilterProvider>
+          <div className="h-screen flex flex-col">
+            {/* Replaced FilterBar with Ribbon */}
+            <Ribbon />
+            <div className="flex-1">
+              <EnhancedReactBaseMap onError={handleError} />
+            </div>
           </div>
-        </div>
+        </FilterProvider>
       </EnhancedMapProvider>
     </EnhancedUIProvider>
   );

@@ -105,50 +105,7 @@ class ManufacturersService {
     }
   }
 
-  /**
-   * Get currently loaded manufacturers
-   */
-  public getManufacturers(): SelectOption[] {
-    return this.manufacturers;
-  }
 
-  /**
-   * Refresh manufacturers
-   */
-  public async refreshManufacturers(): Promise<SelectOption[]> {
-    this.loading = true;
-
-    try {
-      console.log('[ManufacturersService] Refreshing manufacturers...');
-      const response = await fetch('/api/tracking/manufacturers');
-
-      if (!response.ok) {
-        throw new Error(
-          `Failed to fetch manufacturers: ${response.statusText}`
-        );
-      }
-
-      const data = await response.json();
-      console.log(
-        `[ManufacturersService] Refreshed ${data.length} manufacturers`
-      );
-
-      this.manufacturers = data || [];
-
-      // Notify subscribers
-      this.notifySubscribers();
-
-      return this.manufacturers;
-    } catch (error) {
-      console.error(
-        '[ManufacturersService] Error refreshing manufacturers:',
-        error
-      );
-      return this.manufacturers;
-    } finally {
-      this.loading = false;
-    }
-  }
 }
 
 const manufacturersService = ManufacturersService.getInstance();

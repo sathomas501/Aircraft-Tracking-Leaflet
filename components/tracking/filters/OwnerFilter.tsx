@@ -1,7 +1,20 @@
-import React from 'react';
-import { Users } from 'lucide-react';
-import type { OwnerFilterProps, FilterMode } from '../types/filters';
-import OwnershipTypeFilter from '../map/components/OwnershipTypeFilter';
+// components/tracking/filters/OwnerFilter.tsx
+import React, { RefObject } from 'react';
+import { ChevronDown, ChevronUp } from 'lucide-react';
+import { FilterMode } from '../types/filters'; // adjust if your FilterMode type is somewhere else
+
+type OwnerFilterProps = {
+  activeFilters: string[];
+  onFilterChange: (filters: string[]) => void;
+  allOwnerTypes: string[];
+  activeDropdown: string | null;
+  toggleFilterMode: (mode: FilterMode) => void;
+  dropdownRef: RefObject<HTMLDivElement>;
+  toggleDropdown: (
+    dropdown: string,
+    event: React.MouseEvent<Element, MouseEvent>
+  ) => void;
+};
 
 const OwnerFilter: React.FC<OwnerFilterProps> = ({
   activeFilters,
@@ -12,92 +25,107 @@ const OwnerFilter: React.FC<OwnerFilterProps> = ({
   dropdownRef,
   toggleDropdown,
 }) => {
+  const isOpen = activeDropdown === 'owner';
+
+  const handleToggleFilter = (ownerType: string) => {
+    if (activeFilters.includes(ownerType)) {
+      onFilterChange(activeFilters.filter((f) => f !== ownerType));
+    } else {
+      onFilterChange([...activeFilters, ownerType]);
+    }
+  };
+
+  const handleClearFilters = () => {
+    onFilterChange([]);
+  };
+
+  const handleSelectAll = () => {
+    onFilterChange([...allOwnerTypes]);
+  };
+
   return (
-    <div ref={dropdownRef} className="relative">
+    <div className="relative" ref={dropdownRef}>
       <button
-        className={`px-4 py-2 flex items-center justify-between gap-2 rounded-lg border ${
-          activeDropdown === 'owner'
-            ? 'bg-indigo-100 text-indigo-700 border-indigo-300 shadow-sm'
-            : activeFilters.length < allOwnerTypes.length
-              ? 'bg-indigo-50/70 text-indigo-600 border-indigo-200'
-              : 'bg-gray-50/30 hover:bg-gray-50 border-gray-200 text-gray-700 hover:border-gray-300'
-        } transition-all duration-200`}
-        onClick={(event) => toggleDropdown('owner', event)}
+        onClick={(e) => toggleDropdown('owner', e)}
+        className={`flex items-center gap-2 h-10 px-3 rounded-md border ${
+          activeFilters.length > 0
+            ? 'border-indigo-500 bg-indigo-50'
+            : 'border-gray-300'
+        } hover:bg-gray-50 transition`}
+        data-testid="owner-filter-button"
       >
-        <span className="flex items-center gap-2 font-medium">
-          <Users
-            size={16}
-            className={
-              activeFilters.length < allOwnerTypes.length
-                ? 'text-indigo-500'
-                : 'text-gray-500'
-            }
-          />
-          {activeFilters.length === allOwnerTypes.length
-            ? 'Owner Types'
-            : `Owner Types (${activeFilters.length})`}
+        <span className="text-sm">
+          {activeFilters.length > 0
+            ? `Owner Types (${activeFilters.length})`
+            : 'Owner Types'}
         </span>
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          className={`h-4 w-4 transition-transform ${activeDropdown === 'owner' ? 'transform rotate-180' : ''}`}
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M19 9l-7 7-7-7"
-          />
-        </svg>
+        {isOpen ? (
+          <ChevronUp size={16} className="text-gray-500" />
+        ) : (
+          <ChevronDown size={16} className="text-gray-500" />
+        )}
       </button>
 
-      {activeDropdown === 'owner' && (
-        <div className="absolute left-0 top-full mt-1 w-64 bg-white shadow-lg rounded-md border border-gray-200 z-50">
-          <div className="p-3 border-b flex justify-between items-center">
-            <span className="text-sm font-medium text-gray-700">
-              Owner Type Filters
-            </span>
-            <div className="space-x-2">
+      {isOpen && (
+        <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg w-64 max-h-96 overflow-y-auto z-10">
+          <div className="p-2">
+            {/* Filter mode selector */}
+            <div className="flex mb-2 bg-gray-100 rounded overflow-hidden">
               <button
-                onClick={() => onFilterChange([...allOwnerTypes])}
-                className="text-xs text-indigo-600 hover:text-indigo-800"
+                className={`flex-1 py-1 text-sm ${
+                  activeFilters.length === 0
+                    ? 'bg-indigo-500 text-white'
+                    : 'text-gray-700'
+                }`}
+                onClick={handleClearFilters}
               >
-                Select All
+                None
               </button>
               <button
-                onClick={() => onFilterChange([])}
-                className="text-xs text-indigo-600 hover:text-indigo-800"
+                className={`flex-1 py-1 text-sm ${
+                  activeFilters.length > 0 &&
+                  activeFilters.length < allOwnerTypes.length
+                    ? 'bg-indigo-500 text-white'
+                    : 'text-gray-700'
+                }`}
+                onClick={() => toggleFilterMode('AND')}
               >
-                Clear All
+                Some
+              </button>
+              <button
+                className={`flex-1 py-1 text-sm ${
+                  activeFilters.length === allOwnerTypes.length
+                    ? 'bg-indigo-500 text-white'
+                    : 'text-gray-700'
+                }`}
+                onClick={handleSelectAll}
+              >
+                All
               </button>
             </div>
-          </div>
 
-          <div className="max-h-64 overflow-y-auto p-3">
-            <OwnershipTypeFilter
-              onFilterChange={onFilterChange}
-              activeFilters={activeFilters}
-            />
-          </div>
+            {/* Owner type checkboxes */}
+            {allOwnerTypes.map((ownerType) => (
+              <div
+                key={ownerType}
+                className="flex items-center p-2 hover:bg-gray-50 cursor-pointer"
+                onClick={() => handleToggleFilter(ownerType)}
+              >
+                <input
+                  type="checkbox"
+                  checked={activeFilters.includes(ownerType)}
+                  readOnly
+                  className="mr-2"
+                />
+                <span className="text-sm">{ownerType}</span>
+              </div>
+            ))}
 
-          <div className="p-3 border-t flex justify-between items-center">
-            <span className="text-xs text-gray-500">
-              {activeFilters.length} of {allOwnerTypes.length} selected
-            </span>
-            <button
-              onClick={() => {
-                toggleFilterMode('owner');
-                toggleDropdown(
-                  'owner',
-                  new MouseEvent('click') as unknown as React.MouseEvent
-                );
-              }}
-              className="px-3 py-1 bg-indigo-600 text-white rounded-md text-sm hover:bg-indigo-700"
-            >
-              Apply Filters
-            </button>
+            {allOwnerTypes.length === 0 && (
+              <div className="p-2 text-gray-500 text-sm">
+                No owner types available
+              </div>
+            )}
           </div>
         </div>
       )}

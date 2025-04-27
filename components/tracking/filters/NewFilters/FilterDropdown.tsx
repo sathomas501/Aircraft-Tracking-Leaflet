@@ -1,33 +1,25 @@
+// components/filters/FilterModeSelector.tsx (renamed from StandaloneFilterDropdown)
 import React, { useState, useEffect, useRef } from 'react';
 import { Filter, MapPin, Users, Layers, Globe } from 'lucide-react';
+import { FilterMode } from '../../types/filters';
+import { useFilterLogic } from '../../hooks/useFilterLogic';
 
-// Define FilterMode type
-export type FilterMode =
-  | 'manufacturer'
-  | 'geofence'
-  | 'both'
-  | 'owner'
-  | 'region';
-
-interface StandaloneFilterDropdownProps {
-  // The currently selected filter mode
-  currentFilterMode: FilterMode | null;
-  // Callback when filter mode is changed
-  onFilterModeChange: (mode: FilterMode) => void;
-  // Required for checking 'both' mode disabled state
-  selectedManufacturer: string | null;
-  isGeofenceActive: boolean;
-  // Any extra class names to apply to the component
+interface FilterModeSelectorProps {
+  id: string;
+  label: string | React.ReactNode;
+  icon: React.ReactNode;
+  isFiltered: boolean;
+  disabled: boolean;
+  children?: React.ReactNode; // Add children property
   className?: string;
 }
 
-const StandaloneFilterDropdown: React.FC<StandaloneFilterDropdownProps> = ({
-  currentFilterMode,
-  onFilterModeChange,
-  selectedManufacturer,
-  isGeofenceActive,
+const FilterModeSelector: React.FC<FilterModeSelectorProps> = ({
   className = '',
 }) => {
+  const { filterMode, setFilterMode, selectedManufacturer, isGeofenceActive } =
+    useFilterLogic();
+
   // Local state for dropdown visibility
   const [isOpen, setIsOpen] = useState(false);
 
@@ -76,8 +68,8 @@ const StandaloneFilterDropdown: React.FC<StandaloneFilterDropdownProps> = ({
 
   // Handle filter selection
   const handleFilterSelect = (mode: FilterMode) => {
-    // Call parent's callback with the selected mode
-    onFilterModeChange(mode);
+    // Update the filter mode in context
+    setFilterMode(mode);
     // Close the dropdown
     setIsOpen(false);
   };
@@ -95,11 +87,10 @@ const StandaloneFilterDropdown: React.FC<StandaloneFilterDropdownProps> = ({
         onClick={toggleDropdown}
       >
         <span className="flex items-center gap-2 font-medium">
-          {getFilterIcon(currentFilterMode)}
-          <span className={currentFilterMode ? 'text-indigo-700' : ''}>
-            {currentFilterMode
-              ? currentFilterMode.charAt(0).toUpperCase() +
-                currentFilterMode.slice(1)
+          {getFilterIcon(filterMode)}
+          <span className={filterMode ? 'text-indigo-700' : ''}>
+            {filterMode
+              ? filterMode.charAt(0).toUpperCase() + filterMode.slice(1)
               : 'Filter Selection'}
           </span>
         </span>
@@ -137,7 +128,7 @@ const StandaloneFilterDropdown: React.FC<StandaloneFilterDropdownProps> = ({
                 const isDisabled =
                   mode === 'both' &&
                   (!selectedManufacturer || !isGeofenceActive);
-                const isSelected = currentFilterMode === mode;
+                const isSelected = filterMode === mode;
 
                 return (
                   <div
@@ -164,4 +155,4 @@ const StandaloneFilterDropdown: React.FC<StandaloneFilterDropdownProps> = ({
   );
 };
 
-export default StandaloneFilterDropdown;
+export default FilterModeSelector;

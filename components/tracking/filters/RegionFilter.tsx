@@ -1,8 +1,9 @@
-import React from 'react';
-import { Globe } from 'lucide-react';
-import { RegionCode } from '@/types/base';
-import { MAP_CONFIG } from '@/config/map';
-import type { RegionFilterProps } from '../types/filters';
+// components/tracking/filters/RegionFilter.tsx
+import React, { RefObject } from 'react';
+import { ChevronDown, ChevronUp, Globe } from 'lucide-react';
+import { RegionCode } from '../../../types/base'; // adjust path if needed
+import { RegionFilterProps } from '../types/filters';
+import { MAP_CONFIG } from '../../../config/map'; // adjust path as needed
 
 const RegionFilter: React.FC<RegionFilterProps> = ({
   activeRegion,
@@ -11,70 +12,88 @@ const RegionFilter: React.FC<RegionFilterProps> = ({
   toggleDropdown,
   dropdownRef,
   selectedRegion,
+  isGeofenceActive,
 }) => {
-  // Helper function to get region name from code
-  const getRegionName = (regionCode: RegionCode): string => {
-    const entry = Object.entries(MAP_CONFIG.REGIONS).find(
-      ([_, code]) => code === regionCode
+  const isOpen = activeDropdown === 'region';
+
+  // Define available regions based on your map config
+  const availableRegions = Object.entries(MAP_CONFIG.REGIONS || {}).map(
+    ([name, code]) => ({
+      name: name
+        .replace(/_/g, ' ')
+        .toLowerCase()
+        .replace(/\b\w/g, (l) => l.toUpperCase()),
+      code: code as RegionCode,
+    })
+  );
+
+  // Helper to get the current region name
+  const getRegionName = () => {
+    if (!activeRegion) return 'All Regions';
+    const region = availableRegions.find(
+      (r) => String(r.code) === String(activeRegion)
     );
-    return entry ? entry[0] : 'Unknown Region';
+    return region ? region.name : 'Unknown Region';
   };
 
   return (
-    <div ref={dropdownRef} className="relative">
+    <div className="relative" ref={dropdownRef}>
       <button
-        className={`px-4 py-2 flex items-center justify-between gap-2 rounded-lg border ${
-          activeDropdown === 'region'
-            ? 'bg-indigo-100 text-indigo-700 border-indigo-300 shadow-sm'
-            : activeRegion !== null
-              ? 'bg-indigo-50/70 text-indigo-600 border-indigo-200'
-              : 'bg-gray-50/30 hover:bg-gray-50 border-gray-200 text-gray-700 hover:border-gray-300'
-        } transition-all duration-200`}
-        onClick={(event) => toggleDropdown('region', event)}
+        onClick={(e) => toggleDropdown('region', e)}
+        className={`flex items-center gap-2 h-10 px-3 rounded-md border ${
+          activeRegion ? 'border-indigo-500 bg-indigo-50' : 'border-gray-300'
+        } hover:bg-gray-50 transition ${isGeofenceActive ? 'opacity-50 cursor-not-allowed' : ''}`}
+        data-testid="region-filter-button"
+        disabled={isGeofenceActive}
       >
-        <span className="flex items-center gap-2 font-medium">
-          <Globe
-            size={16}
-            className={
-              activeRegion !== null ? 'text-indigo-500' : 'text-gray-500'
-            }
-          />
-          {activeRegion !== null && typeof activeRegion !== 'string'
-            ? getRegionName(activeRegion)
-            : 'Region'}
-        </span>
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          className={`h-4 w-4 transition-transform ${activeDropdown === 'region' ? 'transform rotate-180' : ''}`}
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M19 9l-7 7-7-7"
-          />
-        </svg>
+        <Globe size={16} className="text-gray-500" />
+        <span className="text-sm">{getRegionName()}</span>
+        {isOpen ? (
+          <ChevronUp size={16} className="text-gray-500" />
+        ) : (
+          <ChevronDown size={16} className="text-gray-500" />
+        )}
       </button>
 
-      {activeDropdown === 'region' && (
-        <div className="absolute left-0 top-full mt-1 w-52 bg-white shadow-lg rounded-md border border-gray-200 z-50">
-          <div className="p-3 grid grid-cols-1 gap-2">
-            {Object.entries(MAP_CONFIG.REGIONS).map(([name, code]) => (
-              <button
-                key={name}
-                onClick={() => handleRegionSelect(code as RegionCode)}
-                className={`px-3 py-2 text-sm rounded-md ${
-                  selectedRegion === code
-                    ? 'bg-indigo-100 text-indigo-700 border border-indigo-300'
-                    : 'bg-gray-50 text-gray-700 border border-gray-200 hover:bg-gray-100'
-                }`}
-              >
-                {name}
-              </button>
-            ))}
+      {isOpen && !isGeofenceActive && (
+        <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg w-64 max-h-96 overflow-y-auto z-10">
+          <div className="p-2">
+            {/* All regions option */}
+            <div
+              className={`p-2 cursor-pointer rounded hover:bg-gray-100 ${
+                activeRegion === null ? 'bg-indigo-50 font-medium' : ''
+              }`}
+              onClick={() =>
+                handleRegionSelect(MAP_CONFIG.REGIONS.GLOBAL as RegionCode)
+              }
+            >
+              All Regions
+            </div>
+
+            {/* Available regions */}
+            {availableRegions.map(
+              (region) =>
+                region.code !== MAP_CONFIG.REGIONS.GLOBAL && (
+                  <div
+                    key={region.code}
+                    className={`p-2 cursor-pointer rounded hover:bg-gray-100 ${
+                      selectedRegion === region.code ||
+                      activeRegion === region.code
+                        ? 'bg-indigo-50 font-medium'
+                        : ''
+                    }`}
+                    onClick={() => handleRegionSelect(region.code)}
+                  >
+                    {region.name}
+                  </div>
+                )
+            )}
+
+            {availableRegions.length === 0 && (
+              <div className="p-2 text-gray-500 text-sm">
+                No regions available
+              </div>
+            )}
           </div>
         </div>
       )}

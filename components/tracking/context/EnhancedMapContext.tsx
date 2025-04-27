@@ -6,7 +6,6 @@ import React, {
   useEffect,
   useCallback,
   useRef,
-  useMemo,
 } from 'react';
 import L from 'leaflet';
 import {
@@ -15,7 +14,7 @@ import {
   AircraftPosition,
   RegionCode,
 } from '@/types/base';
-import type { CachedAircraftData } from '@/types/base'; // Import your new type
+import type { CachedAircraftData } from '@/types/base';
 import type { AircraftModel } from '../../../types/aircraft-models';
 import openSkyTrackingService from '@/lib/services/openSkyTrackingService';
 import {
@@ -25,18 +24,26 @@ import {
   clearAircraftData,
 } from '../persistence/AircraftDataPersistence';
 import type { LatLngBoundsExpression } from 'leaflet';
-import {
-  MAP_CONFIG,
-  getBoundsByRegion as configGetBoundsByRegion,
-} from '../../../config/map';
 
 // Define context interface
-interface EnhancedMapContextType {
+export interface EnhancedMapContextType {
   // Map state
   mapInstance: L.Map | null;
   setMapInstance: (map: L.Map | null) => void;
   zoomLevel: number;
   setZoomLevel: (zoom: number) => void;
+
+  geofenceCenter: { lat: number; lng: number } | null;
+  geofenceRadius: number | null;
+  isGeofenceActive: boolean;
+  clearGeofence: () => void;
+  setGeofenceRadius: (radius: number | null) => void;
+  toggleGeofence: () => void;
+  geofenceCoordinates: [number, number][] | null;
+  isGeofencePlacementMode: boolean;
+  setIsGeofencePlacementMode: (active: boolean) => void;
+  selectedRegion: number;
+  reset: () => void;
 
   // Aircraft data
   displayedAircraft: ExtendedAircraft[];
@@ -48,11 +55,11 @@ interface EnhancedMapContextType {
   updateAircraftData: (newAircraft: ExtendedAircraft[]) => void;
   lastPersistenceUpdate: number | null;
 
-  // Selection state
-  selectedManufacturer: string | null;
-  selectedModel: string | null;
+  // Model data
   activeModels: AircraftModel[];
   totalActive: number;
+
+  manufacturers?: Array<{ value: string; label: string }>;
 
   // Loading state
   isLoading: boolean;
@@ -61,42 +68,18 @@ interface EnhancedMapContextType {
   lastRefreshed: string | null;
 
   // Actions
-  selectManufacturer: (MANUFACTURER: string | null) => Promise<void>;
-  selectModel: (MODEL: string | null) => void;
-  reset: () => Promise<void>;
+  loadManufacturerData: (manufacturer: string | null) => Promise<void>;
   refreshPanel: () => void;
   refreshPositions: () => Promise<void>;
   fullRefresh: () => Promise<void>;
   clearCache: () => void;
-  clearGeofenceData: () => void;
-  // Add new function for updating aircraft from geofence
+
+  // Geofence actions
   updateGeofenceAircraft: (geofenceAircraft: ExtendedAircraft[]) => void;
+  clearGeofenceData: () => void;
 
-  filterMode: 'manufacturer' | 'geofence' | 'both' | 'region' | 'owner';
-  setFilterMode: (
-    mode: 'manufacturer' | 'geofence' | 'both' | 'region' | 'owner'
-  ) => void;
-  blockManufacturerApiCalls: boolean;
-  setBlockManufacturerApiCalls: (block: boolean) => void;
-  isManufacturerApiBlocked: boolean;
-  setIsManufacturerApiBlocked: (blocked: boolean) => void;
-  filteredAircraft: ExtendedAircraft[];
-
-  // Geofencing properties
-  geofenceCenter: { lat: number; lng: number } | null; // Correctly typed as { lat: number; lng: number } | null
-  geofenceRadius: number | null; // in kilometers
-  isGeofenceActive: boolean;
-  setGeofenceCenter: (center: { lat: number; lng: number } | null) => void;
-  setGeofenceRadius: (radius: number | null) => void;
-  toggleGeofence: () => void;
-  clearGeofence: () => {};
-  geofenceCoordinates: { lat: number; lng: number } | null;
-  isGeofencePlacementMode: boolean;
-  setIsGeofencePlacementMode: (isPlacementMode: boolean) => void;
-
-  // Region selection properties
-  selectedRegion: RegionCode | string; // Allow both for backward compatibility
-  setSelectedRegion: (region: RegionCode | string) => void;
+  // Region helpers
+  GLOBAL_BOUNDS: (region: string) => LatLngBoundsExpression;
   getBoundsByRegion: (region: string) => LatLngBoundsExpression;
 }
 
@@ -109,71 +92,61 @@ const EnhancedMapContext = createContext<EnhancedMapContextType>({
   displayedAircraft: [],
   selectedAircraft: null,
   selectAircraft: () => {},
-
+  geofenceCenter: null, // Fix type
+  geofenceRadius: 25,
+  isGeofenceActive: false,
+  clearGeofence: () => {},
+  setGeofenceRadius: () => {},
+  toggleGeofence: () => {},
+  geofenceCoordinates: null,
+  isGeofencePlacementMode: false, // Added
+  setIsGeofencePlacementMode: () => {}, // Added
+  selectedRegion: 0, // Added, using proper RegionCode.GLOBAL value
+  reset: () => {}, // Added
   // Data persistence defaults
   cachedAircraftData: {},
   updateAircraftData: () => {},
   lastPersistenceUpdate: null,
-
-  selectedManufacturer: null,
-  selectedModel: null,
   activeModels: [],
   totalActive: 0,
-
   isLoading: false,
   isRefreshing: false,
   trackingStatus: '',
   lastRefreshed: null,
-
-  selectManufacturer: async () => {},
-  selectModel: () => {},
+  loadManufacturerData: async () => {},
   refreshPanel: () => {},
-  // Reset function to clear all selections and data
-  reset: async () => {},
   refreshPositions: async () => {},
   fullRefresh: async () => {},
   clearCache: () => {},
-  clearGeofenceData: () => {},
-  // Add default for new function
   updateGeofenceAircraft: () => {},
-
-  filterMode: 'manufacturer',
-  setFilterMode: () => {},
-  blockManufacturerApiCalls: false,
-  setBlockManufacturerApiCalls: () => {},
-  isManufacturerApiBlocked: false,
-  setIsManufacturerApiBlocked: () => {},
-
-  // Geofencing properties
-  geofenceCenter: null,
-  geofenceRadius: 25, // Default to 25km, not null
-  isGeofenceActive: false,
-  setGeofenceCenter: () => {},
-  setGeofenceRadius: () => {},
-  geofenceCoordinates: null,
-  toggleGeofence: () => {},
-  clearGeofence: () => ({}),
-  filteredAircraft: [],
-  selectedRegion: RegionCode.GLOBAL,
-  setSelectedRegion: (region: RegionCode | string) => {},
-  getBoundsByRegion: (region: string) =>
-    configGetBoundsByRegion('GLOBAL') as LatLngBoundsExpression,
-  isGeofencePlacementMode: false,
-  setIsGeofencePlacementMode: () => {},
+  clearGeofenceData: () => {},
+  GLOBAL_BOUNDS: (region: string) => {
+    console.warn('GLOBAL_BOUNDS is not implemented yet.');
+    return [
+      [0, 0],
+      [0, 0],
+    ] as LatLngBoundsExpression; // Default bounds
+  },
+  getBoundsByRegion: (region: string) => {
+    console.warn('getBoundsByRegion is not implemented yet.');
+    return [
+      [0, 0],
+      [0, 0],
+    ] as LatLngBoundsExpression; // Default bounds
+  },
 });
 
 // Props for the context provider
-interface EnhancedMapProviderProps {
+export interface EnhancedMapProviderProps {
   children: React.ReactNode;
-  manufacturers: SelectOption[];
-  onError: (message: string) => void;
+  manufacturers?: Array<{ value: string; label: string }>;
+  onError?: (message: string) => void;
 }
 
 // Enhanced Map Provider component
 export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
   children,
-  manufacturers,
-  onError,
+  onError = (message: string) => console.error(message),
 }) => {
   // Map state
   const [mapInstance, setMapInstance] = useState<L.Map | null>(null);
@@ -194,130 +167,31 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
     number | null
   >(null);
 
-  const [geofenceCenter, setGeofenceCenter] = useState<{
-    lat: number;
-    lng: number;
-  } | null>(null);
-
-  const [selectedRegion, setSelectedRegion] = useState<RegionCode | string>(
-    RegionCode.GLOBAL
-  );
-
-  // Derived state for geofence coordinates
-  const geofenceCoordinates = useMemo(() => geofenceCenter, [geofenceCenter]);
-  const [geofenceRadius, setGeofenceRadius] = useState<number | null>(25); // Default 25km radius
-  const [isGeofenceActive, setIsGeofenceActive] = useState<boolean>(false);
-  const [isGeofencePlacementMode, setIsGeofencePlacementMode] =
-    useState<boolean>(false);
-
   // Add this to your state declarations
   const [aircraftPositions, setAircraftPositions] = useState<
     AircraftPosition[]
   >([]);
-  // Toggle geofence activation
-  const toggleGeofence = useCallback(() => {
-    setIsGeofenceActive((prev) => !prev);
-  }, []);
-
-  // Clear geofence
-  const clearGeofence = useCallback(() => {
-    setGeofenceCenter(null);
-    setIsGeofenceActive(false);
-    return {}; // Return an empty object to match the expected type
-  }, []);
-
-  // Selection state
-  const [selectedManufacturer, setSelectedManufacturer] = useState<
-    string | null
-  >(null);
-  const [selectedModel, setSelectedModel] = useState<string | null>(null);
-  const [activeModels, setActiveModels] = useState<AircraftModel[]>([]);
-  const [totalActive, setTotalActive] = useState<number>(0);
 
   // Loading state
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [trackingStatus, setTrackingStatus] = useState<string>('');
   const [lastRefreshed, setLastRefreshed] = useState<string | null>(null);
-  // Add this with your other state variables
   const [lastFullRefreshTime, setLastFullRefreshTime] = useState<number | null>(
     null
   );
-  const [isManufacturerApiBlocked, setIsManufacturerApiBlocked] =
-    useState<boolean>(false);
 
-  const [filterMode, setFilterMode] = useState<
-    'manufacturer' | 'geofence' | 'both' | 'region' | 'owner'
-  >('manufacturer');
-  const [blockManufacturerApiCalls, setBlockManufacturerApiCalls] =
-    useState<boolean>(false);
+  // Model stats
+  const [activeModels, setActiveModels] = useState<AircraftModel[]>([]);
+  const [totalActive, setTotalActive] = useState<number>(0);
 
   // Flag to track if we're in geofence mode
   const [isGeofenceMode, setIsGeofenceMode] = useState<boolean>(false);
 
-  // Define the filter function correctly
-  const filterAircraftByGeofence = useCallback(() => {
-    if (!geofenceCenter || !isGeofenceActive) {
-      return displayedAircraft;
-    }
-
-    // Helper function to calculate distance between two points
-    const calculateDistance = (
-      lat1: number,
-      lon1: number,
-      lat2: number,
-      lon2: number
-    ): number => {
-      const R = 6371; // Radius of the earth in km
-      const dLat = deg2rad(lat2 - lat1);
-      const dLon = deg2rad(lon2 - lon1);
-      const a =
-        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-        Math.cos(deg2rad(lat1)) *
-          Math.cos(deg2rad(lat2)) *
-          Math.sin(dLon / 2) *
-          Math.sin(dLon / 2);
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-      const distance = R * c; // Distance in km
-      return distance;
-    };
-
-    const deg2rad = (deg: number): number => {
-      return deg * (Math.PI / 180);
-    };
-
-    // Filter aircraft within the radius
-    return displayedAircraft.filter((aircraft) => {
-      if (!aircraft.latitude || !aircraft.longitude) return false;
-
-      // Calculate distance between aircraft and geofence center
-      const distance = calculateDistance(
-        geofenceCenter.lat,
-        geofenceCenter.lng,
-        aircraft.latitude,
-        aircraft.longitude
-      );
-
-      // Return true if aircraft is within radius
-      return geofenceRadius !== null && distance <= geofenceRadius;
-    });
-  }, [displayedAircraft, geofenceCenter, geofenceRadius, isGeofenceActive]);
-
-  // Then separately, define filteredAircraft - don't try to do both in the same function
-  const filteredAircraft = useMemo(() => {
-    return isGeofenceActive && geofenceCenter
-      ? filterAircraftByGeofence()
-      : displayedAircraft;
-  }, [
-    isGeofenceActive,
-    geofenceCenter,
-    filterAircraftByGeofence,
-    displayedAircraft,
-  ]);
-
   // Refs for tracking subscriptions
   const unsubscribeAircraftRef = useRef<(() => void) | null>(null);
   const unsubscribeStatusRef = useRef<(() => void) | null>(null);
+
   // Load persisted aircraft data on mount
   useEffect(() => {
     const savedData = loadAircraftData();
@@ -342,8 +216,8 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
 
   // Initialize tracking service and subscriptions
   useEffect(() => {
-    // Subscribe to tracking updates that include trail data
-    const handleTrackingUpdate = (data: any) => {
+    // Subscribe to tracking updates
+    const handleTrackingUpdate = () => {
       // Only update displayed aircraft if we're not in geofence mode
       if (!isGeofenceMode) {
         updateAircraftDisplay();
@@ -427,34 +301,31 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
     setTrackingStatus('Cache cleared');
   }, []);
 
-  // Update aircraft display based on selected MODEL
-  const updateAircraftDisplay = useCallback(() => {
-    // Get extended aircraft based on selected MODEL
-    const extendedAircraft = openSkyTrackingService.getExtendedAircraft(
-      selectedModel || undefined
-    );
+  // Update aircraft display based on model
+  const updateAircraftDisplay = useCallback(
+    (model?: string) => {
+      // Get extended aircraft based on model
+      const extendedAircraft =
+        openSkyTrackingService.getExtendedAircraft(model);
 
-    // Get MODEL stats from the service
-    const { models, totalActive: total } =
-      openSkyTrackingService.getModelStats();
+      // Get model stats from the service
+      const { models, totalActive: total } =
+        openSkyTrackingService.getModelStats();
 
-    // Enhance aircraft data with persistence
-    updateAircraftData(extendedAircraft as ExtendedAircraft[]);
+      // Enhance aircraft data with persistence
+      updateAircraftData(extendedAircraft as ExtendedAircraft[]);
 
-    // Only update displayed aircraft if we're not in geofence mode
-    if (!isGeofenceMode) {
-      setDisplayedAircraft(extendedAircraft as ExtendedAircraft[]);
-      setActiveModels(models);
-      setTotalActive(total);
-    }
+      // Only update displayed aircraft if we're not in geofence mode
+      if (!isGeofenceMode) {
+        setDisplayedAircraft(extendedAircraft as ExtendedAircraft[]);
+        setActiveModels(models);
+        setTotalActive(total);
+      }
 
-    setIsLoading(openSkyTrackingService.isLoading());
-  }, [selectedModel, updateAircraftData, isGeofenceMode]);
-
-  // Update display when MODEL selection changes
-  useEffect(() => {
-    updateAircraftDisplay();
-  }, [selectedModel, updateAircraftDisplay]);
+      setIsLoading(openSkyTrackingService.isLoading());
+    },
+    [updateAircraftData, isGeofenceMode]
+  );
 
   // New function to handle geofence aircraft updates
   const updateGeofenceAircraft = useCallback(
@@ -475,38 +346,38 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
       // Update stats
       setTotalActive(geofenceAircraft.length);
 
-      // Extract MODEL stats for the sidebar
+      // Extract model stats for the sidebar
       const modelCounts = geofenceAircraft.reduce(
         (acc, aircraft) => {
-          const MODEL = aircraft.MODEL || aircraft.TYPE_AIRCRAFT || 'Unknown';
-          if (!acc[MODEL]) {
-            acc[MODEL] = {
-              MODEL,
+          const model = aircraft.MODEL || aircraft.TYPE_AIRCRAFT || 'Unknown';
+          if (!acc[model]) {
+            acc[model] = {
+              MODEL: model,
               count: 0,
               MANUFACTURER: aircraft.MANUFACTURER || 'Unknown',
               // Add required properties for AircraftModel
-              label: MODEL,
+              label: model,
               activeCount: 0,
               totalCount: 0,
             };
           }
-          acc[MODEL].count++;
-          acc[MODEL].activeCount++;
-          acc[MODEL].totalCount++;
+          acc[model].count++;
+          acc[model].activeCount++;
+          acc[model].totalCount++;
           return acc;
         },
         {} as Record<string, AircraftModel>
       );
 
       // Convert to array for the activeModels state
-      const modelArray = Object.values(modelCounts).map((MODEL) => ({
-        MODEL: MODEL.MODEL,
-        count: MODEL.count,
-        MANUFACTURER: MODEL.MANUFACTURER,
+      const modelArray = Object.values(modelCounts).map((model) => ({
+        MODEL: model.MODEL,
+        count: model.count,
+        MANUFACTURER: model.MANUFACTURER,
         // Add required properties for AircraftModel type
-        label: MODEL.MODEL,
-        activeCount: MODEL.count,
-        totalCount: MODEL.count,
+        label: model.MODEL,
+        activeCount: model.count,
+        totalCount: model.count,
       }));
 
       setActiveModels(modelArray);
@@ -517,14 +388,10 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
     [updateAircraftData]
   );
 
-  // Handle MANUFACTURER selection
-  // In your EnhancedMapContext.tsx - modify the selectManufacturer function
-
-  const selectManufacturer = async (MANUFACTURER: string | null) => {
-    // Exit geofence mode when selecting a MANUFACTURER
+  // Load manufacturer data - replaces selectManufacturer
+  const loadManufacturerData = async (manufacturer: string | null) => {
+    // Exit geofence mode when selecting a manufacturer
     setIsGeofenceMode(false);
-    setSelectedManufacturer(MANUFACTURER);
-    setSelectedModel(null);
     setIsLoading(true);
     setLastRefreshed(null);
 
@@ -534,29 +401,17 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
     setTotalActive(0);
 
     // If null, just exit
-    if (MANUFACTURER === null) {
-      setIsLoading(false);
-      return;
-    }
-
-    // If we're blocking API calls, exit early
-    if (isManufacturerApiBlocked) {
-      console.log(
-        `[EnhancedMapContext] API calls blocked for manufacturer: ${MANUFACTURER}`
-      );
+    if (manufacturer === null) {
       setIsLoading(false);
       return;
     }
 
     try {
       // Start tracking with a progress handler
-      setTrackingStatus(`Loading aircraft for ${MANUFACTURER}...`);
-
-      // Use the existing service but with a progress callback
-      // In EnhancedMapContext.tsx, modify your callback to handle both types:
+      setTrackingStatus(`Loading aircraft for ${manufacturer}...`);
 
       await openSkyTrackingService.trackManufacturerWithProgress(
-        MANUFACTURER,
+        manufacturer,
         (progress) => {
           // Update the tracking status message
           if (progress.message) {
@@ -565,7 +420,7 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
 
           // Update displayed aircraft as they're loaded
           if (progress.aircraft) {
-            // Cast the aircraft array to ExtendedAircraft[] since our context uses that type
+            // Cast the aircraft array to ExtendedAircraft[]
             setDisplayedAircraft(progress.aircraft as ExtendedAircraft[]);
           }
 
@@ -592,11 +447,6 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
     }
   };
 
-  // Handle MODEL selection
-  const selectModel = (MODEL: string | null) => {
-    setSelectedModel(MODEL);
-  };
-
   // Handle aircraft selection
   const selectAircraft = (aircraft: ExtendedAircraft | null) => {
     setSelectedAircraft(aircraft);
@@ -611,23 +461,17 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
     }
   };
 
-  // If you don't already have it, add this function to expose the map's getBoundsByRegion function
   // Create a wrapped function that calls your map config function
   const handleGetBoundsByRegion = useCallback(
     (region: string): LatLngBoundsExpression => {
-      return configGetBoundsByRegion(region);
+      return getBoundsByRegion(region);
     },
     []
   );
 
-  // Reset all selections
-  const reset = async () => {
-    await selectManufacturer(null);
-  };
-
   // Method to refresh only the positions of active aircraft
   const refreshPositions = async () => {
-    if (isRefreshing || (!selectedManufacturer && !isGeofenceMode)) return;
+    if (isRefreshing) return;
 
     setIsRefreshing(true);
     setTrackingStatus('Updating aircraft positions...');
@@ -653,10 +497,9 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
 
   // Method for full tracking refresh
   const fullRefresh = async () => {
-    if ((!selectedManufacturer && !isGeofenceMode) || isRefreshing) return;
+    if (isRefreshing) return;
 
     // Set a timeout to force exit from loading state after 10 seconds
-    // This is a safety mechanism
     const safetyTimeout = setTimeout(() => {
       setIsRefreshing(false);
       setTrackingStatus('Refresh timed out');
@@ -687,7 +530,6 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
           setLastFullRefreshTime(Date.now());
           success = true;
         } catch (error) {
-          // Silently handle this error
           console.warn('Full refresh failed');
         }
       } else {
@@ -712,7 +554,6 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
               setLastFullRefreshTime(Date.now());
               success = true;
             } catch (fallbackError) {
-              // Silently handle this error
               console.warn('Fallback refresh failed');
             }
           }
@@ -752,15 +593,7 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
     setDisplayedAircraft([]);
     setActiveModels([]);
     setTotalActive(0);
-
-    // If there was a previously selected MANUFACTURER, we can restore it
-    if (selectedManufacturer) {
-      // Small delay to ensure state updates properly
-      setTimeout(() => {
-        openSkyTrackingService.trackManufacturer(selectedManufacturer);
-      }, 100);
-    }
-  }, [selectedManufacturer]);
+  }, []);
 
   // Create context value
   const contextValue: EnhancedMapContextType = {
@@ -768,6 +601,36 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
     setMapInstance,
     zoomLevel,
     setZoomLevel,
+
+    isGeofencePlacementMode: false, // Default value for isGeofencePlacementMode
+    setIsGeofencePlacementMode: (active: boolean) => {
+      console.warn('setIsGeofencePlacementMode is not implemented yet.');
+    },
+    selectedRegion: 0, // Default value for selectedRegion
+    reset: () => {
+      console.warn('reset is not implemented yet.');
+    },
+    GLOBAL_BOUNDS: (region: string) => {
+      console.warn('GLOBAL_BOUNDS is not implemented yet.');
+      return [
+        [0, 0],
+        [0, 0],
+      ] as LatLngBoundsExpression; // Default bounds
+    },
+
+    geofenceCenter: null, // Default value for geofenceCenter
+    geofenceRadius: 25, // Default value for geofenceRadius
+    isGeofenceActive: false, // Default value for isGeofenceActive
+    clearGeofence: () => {
+      console.warn('clearGeofence is not implemented yet.');
+    },
+    setGeofenceRadius: (radius: number | null) => {
+      console.warn('setGeofenceRadius is not implemented yet.');
+    },
+    toggleGeofence: () => {
+      console.warn('toggleGeofence is not implemented yet.');
+    },
+    geofenceCoordinates: null, // Default value for geofenceCoordinates
 
     displayedAircraft,
     selectedAircraft,
@@ -778,8 +641,6 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
     updateAircraftData,
     lastPersistenceUpdate,
 
-    selectedManufacturer,
-    selectedModel,
     activeModels,
     totalActive,
 
@@ -788,9 +649,7 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
     trackingStatus,
     lastRefreshed,
 
-    selectManufacturer,
-    selectModel,
-    reset,
+    loadManufacturerData,
     refreshPanel: () => {
       console.warn('refreshPanel is not implemented yet.');
     },
@@ -799,30 +658,8 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
     clearCache,
     clearGeofenceData,
     updateGeofenceAircraft,
-    filteredAircraft,
 
-    filterMode,
-    setFilterMode,
-    blockManufacturerApiCalls,
-    setBlockManufacturerApiCalls,
-    isManufacturerApiBlocked,
-    setIsManufacturerApiBlocked,
-
-    // Geofencing properties
-    geofenceCenter,
-    geofenceRadius,
-    isGeofenceActive,
-    geofenceCoordinates,
-    setGeofenceCenter,
-    setGeofenceRadius,
-    toggleGeofence,
-    clearGeofence,
-    isGeofencePlacementMode,
-    setIsGeofencePlacementMode,
-
-    // Region selection
-    selectedRegion,
-    setSelectedRegion,
+    // Region selection helper
     getBoundsByRegion: handleGetBoundsByRegion,
   };
 
@@ -837,3 +674,6 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
 export const useEnhancedMapContext = () => useContext(EnhancedMapContext);
 
 export default EnhancedMapContext;
+function getBoundsByRegion(region: string): L.LatLngBoundsExpression {
+  throw new Error('Function not implemented.');
+}

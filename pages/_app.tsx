@@ -12,6 +12,7 @@ import { EnhancedUIProvider } from '@/components/tracking/context/EnhancedUICont
 import { EnhancedMapProvider } from '@/components/tracking/context/EnhancedMapContext';
 import { LocationProvider } from '@/components/tracking/context/LocationContex';
 import { DataPersistenceProvider } from '../components/tracking/persistence/DataPersistenceManager';
+import { FilterProvider } from '@/components/tracking/context/FilterContext';
 
 function MyApp({ Component, pageProps }: AppProps) {
   return (
@@ -38,25 +39,17 @@ export default function App({ Component, pageProps }: AppProps) {
     <QueryClientProvider client={queryClient}>
       <EnhancedUIProvider>
         <EnhancedMapProvider
-          manufacturers={[]} // Provide your manufacturers or get them dynamically
+          manufacturers={[]}
           onError={(msg) => toast.error(msg)}
         >
           <LocationProvider>
-            {' '}
-            {/* ✅ Add LocationProvider here */}
             <DataPersistenceProvider>
-              <ToastContainer
-                position="top-right"
-                autoClose={5000}
-                hideProgressBar={false}
-                newestOnTop={true}
-                closeOnClick
-                rtl={false}
-                pauseOnFocusLoss
-                draggable
-                pauseOnHover
-              />
-              <Component {...pageProps} />
+              <FilterProvider>
+                {' '}
+                {/* Add this provider */}
+                <ToastContainer />
+                <Component {...pageProps} />
+              </FilterProvider>
             </DataPersistenceProvider>
           </LocationProvider>
         </EnhancedMapProvider>
