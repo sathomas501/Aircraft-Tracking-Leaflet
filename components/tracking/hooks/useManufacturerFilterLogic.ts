@@ -1,10 +1,16 @@
-import { useState, useRef, useEffect } from 'react';
-import React from 'react';
-import {useEnhancedMapContext} from '../context/EnhancedMapContext'
+import { useState, useEffect } from 'react';
+import { useEnhancedMapContext } from '../context/EnhancedMapContext';
 import type { ExtendedAircraft } from '@/types/base';
 
+interface UseManufacturerFilterLogicProps {
+  activeDropdown: string | null;
+  setActiveDropdown: (dropdown: string | null) => void;
+}
 
-export function useManufacturerLogic() {
+export function useManufacturerFilterLogic({
+  activeDropdown,
+  setActiveDropdown
+}: UseManufacturerFilterLogicProps) {
   // Get context state and functions
   const {
     selectedManufacturer,
@@ -16,24 +22,20 @@ export function useManufacturerLogic() {
     setBlockManufacturerApiCalls,
     isManufacturerApiBlocked,
     setIsManufacturerApiBlocked,
-
     displayedAircraft,
   } = useEnhancedMapContext();
 
- const [localLoading, setLocalLoading] = useState(false);
-  const [filterMode, setFilterMode] = useState<FilterMode | null>(null);
-  const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
+  // Local state
+  const [localLoading, setLocalLoading] = useState(false);
   const [manufacturerSearchTerm, setManufacturerSearchTerm] = useState('');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isRateLimited, setIsRateLimited] = useState(false);
   const [rateLimitTimer, setRateLimitTimer] = useState<number | null>(null);
 
-
-
   // Manufacturer filter methods
   const selectManufacturerAndClose = (value: string) => {
     // Close dropdown
-
+    setActiveDropdown(null);
     setManufacturerSearchTerm('');
 
     // If clearing the selection
@@ -45,11 +47,15 @@ export function useManufacturerLogic() {
     // Set the manufacturer selection
     selectManufacturer(value);
 
-      fetchManufacturerData(value);
-    }
+    // Fetch manufacturer data
+    fetchManufacturerData(value);
   };
 
   const fetchManufacturerData = (manufacturer: string) => {
+    if (isRateLimited) {
+      console.log(`Skipping data fetch - rate limited for ${rateLimitTimer}s`);
+      return;
+    }
 
     console.log(`Fetching data for manufacturer: ${manufacturer}`);
 
@@ -76,63 +82,57 @@ export function useManufacturerLogic() {
     }
   };
 
-
   // Model selection methods
   const handleModelSelect = (value: string) => {
     selectModel(value === '' ? null : value);
     setActiveDropdown(null);
+  };
 
-    // If in combined mode, reapply the filter
-    if (filterMode === 'both' && isGeofenceActive && selectedManufacturer) {
-      setTimeout(() => {
-        applyCombinedFilters();
-      }, 100);
+  // Rate limit handling
+  const handleRateLimit = (retryAfter: number = 30) => {
+    setIsRateLimited(true);
+    setRateLimitTimer(retryAfter);
+    console.log(`Rate limited by API. Retry after ${retryAfter}s`);
+
+    // Block API calls
+    setBlockManufacturerApiCalls(true);
+    setIsManufacturerApiBlocked(true);
+
+    // Show notification to user
+    if (retryAfter > 0) {
+      alert(
+        `Aircraft data refresh rate limited. Please wait ${retryAfter} seconds before trying again.`
+      );
     }
   };
 
+  // Effect to handle rate limit timer
+  useEffect(() => {
+    if (isRateLimited && rateLimitTimer) {
+      const timer = setTimeout(() => {
+        setIsRateLimited(false);
+        setRateLimitTimer(null);
+        console.log('Rate limit timer expired, resuming API calls');
+      }, rateLimitTimer * 1000);
 
-  // Reset all filters
-  const clearAllFilters = () => {
-    console.log('Clearing all filters...');
-
-    // 1. Reset filter mode
-    setFilterMode('manufacturer');
-
-    // 2. Unblock API calls that might have been blocked
-    openSkyTrackingService.setBlockAllApiCalls(false);
-    setBlockManufacturerApiCalls(false);
-    setIsManufacturerApiBlocked(false);
-
-    // 3. Clear manufacturer selection
-    selectManufacturer(null);
-    selectModel(null);
-
-    // Add this line to clear locationName
-    setLocationName(null); // or setLocationName('') depending on how you handle empty states
-
-    // 12. Reset search terms
-    setManufacturerSearchTerm('');
+      return () => clearTimeout(timer);
+    }
+  }, [isRateLimited, rateLimitTimer]);
 
   return {
     // State
-
-    isGeofencePlacementMode: false, // Initialize with a default value
+    selectedManufacturer,
+    selectedModel,
+    manufacturerSearchTerm,
+    localLoading,
+    isRefreshing,
+    isRateLimited,
+    rateLimitTimer,
 
     // Methods
-
+    selectManufacturerAndClose,
     handleModelSelect,
-
-    clearAllFilters,
-
-
-    refreshWithFilters: () => {
-      // Implement refresh logic here
-      if (typeof refreshPositions === 'function') {
-        refreshPositions().catch((error) => {
-          console.error('Error refreshing positions:', error);
-        });
-      }
-    },
-    setActiveDropdown, // Add this line if you have this function
+    setManufacturerSearchTerm,
+    handleRateLimit
   };
 }

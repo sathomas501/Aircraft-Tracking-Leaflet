@@ -1,6 +1,9 @@
 // types/filterState.ts
 import { ExtendedAircraft, RegionCode } from "@/types/base";
 
+// Add this to filterState.ts
+export type FilterMode = 'manufacturer' | 'geofence' | 'both' | 'owner' | 'region';
+
 export interface FilterState {
   filters: {
     region: {

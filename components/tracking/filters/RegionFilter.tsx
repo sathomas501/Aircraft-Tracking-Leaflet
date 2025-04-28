@@ -11,6 +11,7 @@ const RegionFilter: React.FC<RegionFilterProps> = ({
   toggleDropdown,
   dropdownRef,
   selectedRegion,
+  isGeofenceActive,
 }) => {
   // Helper function to get region name from code
   const getRegionName = (regionCode: RegionCode): string => {

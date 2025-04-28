@@ -1,5 +1,5 @@
-import { useState, useRef, useEffect } from 'react';
-import React from 'react';
+// hooks/useGeofenceFilterLogic.ts
+import { useState, useEffect } from 'react';
 import type { ExtendedAircraft } from '@/types/base';
 import { useEnhancedMapContext } from '../context/EnhancedMapContext';
 import openSkyTrackingService from '@/lib/services/openSkyTrackingService';
@@ -12,36 +12,22 @@ import {
   getAircraftNearSearchedLocation,
 } from '../../../lib/services/geofencing';
 
-interface FilterLogicResult {
-  geofenceLocation: string;
-  geofenceRadius: number;
-  isGettingLocation: boolean;
-  isGeofenceActive: boolean;
-  geofenceCoordinates: { lat: number; lng: number } | null;
-  combinedLoading: boolean;
-  processGeofenceSearch: () => void;
-  toggleGeofenceState: (active: boolean) => void;
-  setGeofenceLocation: (location: string) => void;
-  setGeofenceRadius: (radius: number) => void;
-  setGeofenceCoordinates: (coords: { lat: number; lng: number } | null) => void;
-  setGeofenceCenter: (coords: { lat: number; lng: number }) => void;
-  setIsGettingLocation: (isGetting: boolean) => void;
-  updateGeofenceAircraft: (aircraft: any[]) => void;
+interface UseGeofenceFilterLogicProps {
+  activeDropdown: string | null;
+  setActiveDropdown: (dropdown: string | null) => void;
 }
 
-export function useFilterLogic() {
+export function useGeofenceFilterLogic({
+  activeDropdown,
+  setActiveDropdown
+}: UseGeofenceFilterLogicProps) {
   // Get context state and functions
   const {
     selectedModel,
     selectManufacturer,
     selectModel,
-    reset,
-    fullRefresh,
-    refreshPositions,
     mapInstance,
-    updateAircraftData,
     clearGeofenceData,
-    refreshPanel,
     updateGeofenceAircraft,
     setBlockManufacturerApiCalls,
     setIsManufacturerApiBlocked,
@@ -55,7 +41,7 @@ export function useFilterLogic() {
   const geolocationServices = useGeolocationServices();
 
   // Geofence state
-    const [localLoading, setLocalLoading] = useState(false);
+  const [localLoading, setLocalLoading] = useState(false);
   const [isGettingLocation, setIsGettingLocation] = useState(false);
   const [locationName, setLocationName] = useState<string | null>(null);
   const [geofenceLocation, setGeofenceLocation] = useState<string>('');
@@ -64,20 +50,14 @@ export function useFilterLogic() {
     lat: number;
     lng: number;
   } | null>(null);
-  const [geofenceAircraft, setGeofenceAircraft] = useState<ExtendedAircraft[]>(
-    []
-  );
+  const [geofenceAircraft, setGeofenceAircraft] = useState<ExtendedAircraft[]>([]);
   const [geofenceEnabled, setGeofenceEnabled] = useState(false);
   const [isGeofenceActive, setIsGeofenceActive] = useState(false);
-  const [isSearchReady, setIsSearchReady] = React.useState(false);
-   const [isRateLimited, setIsRateLimited] = useState(false);
+  const [isSearchReady, setIsSearchReady] = useState(false);
+  const [isRateLimited, setIsRateLimited] = useState(false);
   const [rateLimitTimer, setRateLimitTimer] = useState<number | null>(null);
 
-
-
   // Geofence methods
-  // Fixed getUserLocation function to use the geolocation hook
-
   const handleRateLimit = (retryAfter: number = 30) => {
     setIsRateLimited(true);
     setRateLimitTimer(retryAfter);
@@ -95,9 +75,13 @@ export function useFilterLogic() {
     }
   };
 
-
   const getUserLocation = async () => {
-
+    if (isRateLimited) {
+      alert(
+        `Rate limited. Please wait ${rateLimitTimer || 30} seconds before trying to get location.`
+      );
+      return;
+    }
 
     setIsGettingLocation(true);
     try {
@@ -132,8 +116,7 @@ export function useFilterLogic() {
 
           // Process the aircraft data
           const adaptedAircraft = adaptGeofenceAircraft(fetchedAircraft);
-          const enrichedAircraft =
-            await enrichGeofenceAircraft(adaptedAircraft);
+          const enrichedAircraft = await enrichGeofenceAircraft(adaptedAircraft);
 
           // Save to local state
           setGeofenceAircraft(enrichedAircraft);
@@ -147,7 +130,7 @@ export function useFilterLogic() {
           updateGeofenceAircraft(enrichedAircraft);
           setIsGeofenceActive(true);
 
-          // Center the map on user's location - SIMPLIFIED ZOOM LOGIC
+          // Center the map on user's location
           if (mapInstance) {
             // Don't modify zoom if it's already at an appropriate level
             const currentZoom = mapInstance.getZoom();
@@ -160,7 +143,8 @@ export function useFilterLogic() {
             mapInstance.invalidateSize();
           }
 
-          
+          // Close the dropdown after selection
+          setActiveDropdown(null);
         } catch (error: any) {
           if (error.message?.includes('rate limit') || error.status === 429) {
             handleRateLimit(30);
@@ -173,8 +157,6 @@ export function useFilterLogic() {
             throw error;
           }
         }
-
-    
       }
     } catch (error) {
       console.error('Error getting user location:', error);
@@ -189,12 +171,19 @@ export function useFilterLogic() {
   const processGeofenceSearch = async (fromPanel = false) => {
     if (!geofenceLocation) return;
 
-    
+    // Check if rate limited
+    if (isRateLimited) {
+      alert(
+        `Rate limited. Please wait ${rateLimitTimer || 30} seconds before searching again.`
+      );
+      return;
+    }
+
+    // Set loading state
+    setLocalLoading(true);
 
     try {
-      console.log(
-        `Searching for aircraft near location: "${geofenceLocation}"`
-      );
+      console.log(`Searching for aircraft near location: "${geofenceLocation}"`);
 
       // This will handle Postal codes, place names, addresses, POIs, etc.
       let fetchedAircraft;
@@ -259,17 +248,15 @@ export function useFilterLogic() {
       if (coordinates) {
         setGeofenceCoordinates(coordinates);
         setGeofenceCenter(coordinates);
-        setGeofenceRadius(geofenceRadius);
       }
+      
       if (!isGeofenceActive) {
         toggleGeofence();
       } else if (!coordinates) {
         throw new Error('Could not determine coordinates for the location');
       }
 
-      console.log(
-        `Found ${fetchedAircraft.length} aircraft in the area, preparing for display...`
-      );
+      console.log(`Found ${fetchedAircraft.length} aircraft in the area, preparing for display...`);
 
       // Ensure the data is in the right format
       const adaptedAircraft =
@@ -281,18 +268,50 @@ export function useFilterLogic() {
       console.log('Enriching geofence aircraft with static data...');
       const enrichedAircraft = await enrichGeofenceAircraft(adaptedAircraft);
 
-        // Save the FULL set to local state
-        setGeofenceAircraft(enrichedAircraft);
-        setIsGeofenceActive(true);
-      } catch (error) {
-        console.error('Error processing geofence search:', error);
+      // Save the FULL set to local state
+      setGeofenceAircraft(enrichedAircraft);
+      setIsGeofenceActive(true);
+
+      // Clear existing aircraft data
+      if (clearGeofenceData) {
+        clearGeofenceData();
       }
 
+      // Update the display
+      updateGeofenceAircraft(enrichedAircraft);
 
+      // Center the map
+      if (mapInstance && coordinates) {
+        // Get current zoom level
+        const currentZoom = mapInstance.getZoom();
+        // Use appropriate zoom level based on current view
+        const targetZoom = currentZoom <= 7 ? 9 : currentZoom;
 
-  /**
-   * STEP 3: Fix toggleGeofenceState to better handle manually clicking the button
-   */
+        // Set view to the coordinates
+        mapInstance.setView([coordinates.lat, coordinates.lng], targetZoom);
+
+        // Ensure map is updated
+        mapInstance.invalidateSize();
+      }
+
+      // Close dropdown after search
+      if (!fromPanel) {
+        setActiveDropdown(null);
+      }
+    } catch (error: any) {
+      console.error('Error in geofence search:', error);
+      if (error.message?.includes('rate limit') || error.status === 429) {
+        handleRateLimit(30);
+      } else {
+        alert(
+          `Error: ${error instanceof Error ? error.message : 'Unknown error occurred'}`
+        );
+      }
+    } finally {
+      setLocalLoading(false);
+    }
+  };
+
   const toggleGeofenceState = (enabled: boolean) => {
     console.log('toggleGeofenceState called with:', enabled);
     console.log('Current geofenceCoordinates:', geofenceCoordinates);
@@ -319,9 +338,7 @@ export function useFilterLogic() {
 
         // Display aircraft if we have them
         if (geofenceAircraft && geofenceAircraft.length > 0) {
-          console.log(
-            `Showing ${geofenceAircraft.length} aircraft in geofence`
-          );
+          console.log(`Showing ${geofenceAircraft.length} aircraft in geofence`);
           updateGeofenceAircraft(geofenceAircraft);
         } else {
           // No aircraft data yet, trigger a search
@@ -353,14 +370,23 @@ export function useFilterLogic() {
   };
 
   // Effects
-
-  React.useEffect(() => {
+  useEffect(() => {
     if (geofenceCoordinates) {
       setIsSearchReady(true);
     }
   }, [geofenceCoordinates]);
 
+  useEffect(() => {
+    if (isRateLimited && rateLimitTimer) {
+      const timer = setTimeout(() => {
+        setIsRateLimited(false);
+        setRateLimitTimer(null);
+        console.log('Rate limit timer expired, resuming API calls');
+      }, rateLimitTimer * 1000);
 
+      return () => clearTimeout(timer);
+    }
+  }, [isRateLimited, rateLimitTimer]);
 
   // Effect to sync geofence state
   useEffect(() => {
@@ -369,8 +395,6 @@ export function useFilterLogic() {
       setGeofenceEnabled(isGeofenceActive);
     }
   }, [isGeofenceActive]);
-
-
 
   // Effect to handle map click for geofence
   useEffect(() => {
@@ -401,6 +425,10 @@ export function useFilterLogic() {
           setGeofenceLocation(locationName);
         }
 
+        // Open the location dropdown if needed
+        if (activeDropdown !== 'location') {
+          setActiveDropdown('location');
+        }
       } catch (error) {
         console.error('Error handling map click:', error);
         // Keep the coordinates display if there was an error
@@ -420,83 +448,28 @@ export function useFilterLogic() {
         handleMapGeofenceClick as EventListener
       );
     };
-  }, [
-    setGeofenceLocation,
-    setGeofenceCoordinates,
-
-  ]);
-
- 
-
-  // Reset all filters
-  const clearAllFilters = () => {
-    console.log('Clearing all filters...');
-
-
-    // 2. Unblock API calls that might have been blocked
-    openSkyTrackingService.setBlockAllApiCalls(false);
-    setBlockManufacturerApiCalls(false);
-    setIsManufacturerApiBlocked(false);
-
-    // 3. Clear manufacturer selection
-    selectManufacturer(null);
-    selectModel(null);
-
-    // 4. Clear geofence
-    setGeofenceLocation('');
-    setGeofenceCoordinates(null);
-    setGeofenceAircraft([]);
-    setGeofenceEnabled(false);
-    setIsGeofenceActive(false);
-    if (typeof clearGeofence === 'function') {
-      clearGeofence();
-    }
-    if (typeof clearGeofenceData === 'function') {
-      clearGeofenceData();
-    }
-
-    // Add this line to clear locationName
-    setLocationName(null); // or setLocationName('') depending on how you handle empty states
-
-
-
-    setGeofenceLocation(''); // ✅ ← this clears the ribbon display
-    setGeofenceRadius(25); // or whatever your default is
-
-
-
-    // 13. Dispatch a custom event that other components can listen for
-    const clearEvent = new CustomEvent('ribbon-filters-cleared');
-    document.dispatchEvent(clearEvent);
-
-    console.log('All filters cleared successfully');
-  };
-
-
+  }, [setGeofenceLocation, setGeofenceCoordinates, setActiveDropdown, activeDropdown]);
 
   return {
     // State
-
-    selectedModel,
     geofenceLocation,
- geofenceRadius,
+    geofenceRadius,
+    isGettingLocation,
     isGeofenceActive,
     geofenceCoordinates,
-    getUserLocation,
-    isGettingLocation,
-     isGeofencePlacementMode: false, // Initialize with a default value
-
-    // Methods
+    geofenceAircraft,
+    isSearchReady,
+    localLoading,
     
+    // Methods
+    getUserLocation,
     processGeofenceSearch,
+    toggleGeofenceState,
     setGeofenceLocation,
     setGeofenceRadius,
-    toggleGeofenceState,
-    clearAllFilters,
-    setLocationName,
     setGeofenceCoordinates,
     setGeofenceCenter,
     setIsGettingLocation,
-    updateGeofenceAircraft,
+    setLocationName,
   };
-}}
+}

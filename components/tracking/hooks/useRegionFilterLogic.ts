@@ -42,6 +42,7 @@ export function useRegionFilterLogic(
     const [selectedRegion, setSelectedRegion] = useState<number>(RegionCode.GLOBAL);
     const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
     const [localLoading, setLocalLoading] = useState(false);
+    
 
     const filterAircraftByRegion = (region: string): void => {
         if (!displayedAircraft || displayedAircraft.length === 0) return;

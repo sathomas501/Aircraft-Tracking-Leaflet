@@ -1,32 +1,38 @@
 // components/tracking/filters/Containers/RegionFilterContainer.tsx
 import React, { useRef } from 'react';
-import { useFilterContext } from '../../../tracking/context/FilterContext';
-import { useRegionFilterAdapter } from '../../hooks/useFilterLogicAdapter';
+import { useFilterLogic } from '../../hooks/useFilterLogicCompatible';
 import RegionFilter from '../RegionFilter';
-import { FEATURE_FLAGS } from '../../../../config/featureFlags';
+import { RegionCode } from '../../../../types/base';
 
 const RegionFilterContainer: React.FC = () => {
+  const {
+    activeRegion,
+    handleRegionSelect,
+    activeDropdown,
+    toggleDropdown,
+    isGeofenceActive,
+  } = useFilterLogic();
+
+  // Create a ref for the dropdown
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Use feature flag to determine which implementation to use
-  const useNewImplementation = FEATURE_FLAGS.USE_CENTRALIZED_FILTERS.region;
-
-  // Get props from either old or new implementation
-  const oldProps = useFilterContext();
-  const newProps = useRegionFilterAdapter();
-
-  // Choose which implementation to use
-  const props = useNewImplementation ? newProps : oldProps;
+  // Get the selected region from activeRegion or provide a default
+  // This assumes activeRegion is the same as selectedRegion in your current model
+  const selectedRegion = Number(activeRegion) || RegionCode.GLOBAL;
 
   return (
     <RegionFilter
-      activeRegion={props.activeRegion}
-      handleRegionSelect={props.handleRegionSelect}
-      activeDropdown={props.activeDropdown}
-      toggleDropdown={props.toggleDropdown}
+      activeRegion={activeRegion}
+      handleRegionSelect={handleRegionSelect}
+      activeDropdown={activeDropdown}
+      toggleDropdown={toggleDropdown}
       dropdownRef={dropdownRef}
-      selectedRegion={props.selectedRegion}
-      isGeofenceActive={props.isGeofenceActive}
+      selectedRegion={selectedRegion}
+      isGeofenceActive={isGeofenceActive}
+      // Add the missing properties that TypeScript is complaining about
+      geofence={{ active: false }} // Fill with appropriate default values
+      manufacturer={{ value: null, active: false }} // Fill with appropriate default values
+      region={{ value: null, active: false }} // Fill with appropriate default values
     />
   );
 };

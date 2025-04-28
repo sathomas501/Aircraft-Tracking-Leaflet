@@ -1,5 +1,5 @@
 import React from 'react';
-import { useFilterLogic } from './hooks/useFilterLogic';
+import { useFilterLogic } from './hooks/useFilterLogicCompatible';
 import ManufacturerFilter from './filters/ManufacturerFilter';
 import ModelFilter from './filters/ModelFilter';
 import GeofenceFilter from './filters/GeofenceFilter';
@@ -189,7 +189,23 @@ const RibbonAircraftSelector: React.FC<RibbonProps> = ({ manufacturers }) => {
             activeDropdown={activeDropdown}
             toggleDropdown={toggleDropdown}
             dropdownRef={dropdownRefs.region}
-            selectedRegion={filterLogic.selectedRegion}
+            isGeofenceActive={isGeofenceActive}
+            selectedRegion={Number(filterLogic.selectedRegion)}
+            geofence={
+              filterLogic.geofenceCoordinates
+                ? { active: true }
+                : { active: false }
+            }
+            manufacturer={{
+              value: selectedManufacturer,
+              active: !!selectedManufacturer,
+            }}
+            region={{
+              value: filterLogic.selectedRegion
+                ? String(filterLogic.selectedRegion)
+                : null,
+              active: !!filterLogic.selectedRegion,
+            }}
           />
 
           {/* Manufacturer Dropdown */}

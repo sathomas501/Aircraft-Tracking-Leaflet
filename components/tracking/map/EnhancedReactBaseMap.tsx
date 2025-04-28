@@ -370,7 +370,7 @@ const EnhancedReactBaseMap: React.FC<ReactBaseMapProps> = ({ onError }) => {
           // Set the geofence center
           setGeofenceCenter({ lat, lng });
 
-          // Dispatch custom event for useFilterLogic
+          // Dispatch custom event for useFilterLogicCoordinator
           const event = new CustomEvent('map-geofence-click', {
             detail: { lat, lng },
           });

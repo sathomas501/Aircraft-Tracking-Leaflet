@@ -71,6 +71,10 @@ export interface RegionFilterProps {
   toggleDropdown: (type: string, event: React.MouseEvent) => void;
   dropdownRef: RefObject<HTMLDivElement>;
   selectedRegion: number;
+  geofence: {active: boolean};
+  manufacturer: { value: string | null; active: boolean; };
+  region: { value: string | null; active: boolean; };
+isGeofenceActive: boolean;
 }
 
 export interface ModelFilterProps {
@@ -95,6 +99,7 @@ interface FilterLogicReturnType {
   selectedManufacturer: string | null;
   selectedModel: string | null;
   geofenceLocation: string;
+  geofence: {active: boolean};
   geofenceRadius: number;
   geofenceCoordinates: { lat: number; lng: number } | null;
   // ... other existing properties

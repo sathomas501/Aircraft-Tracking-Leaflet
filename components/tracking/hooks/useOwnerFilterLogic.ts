@@ -1,28 +1,32 @@
-import { useState, useRef, useEffect } from 'react';
+// hooks/useOwnerFilterLogic.ts
+import { useState, useEffect } from 'react';
 import { ExtendedAircraft } from '@/types/base';
 import { useEnhancedMapContext } from '../context/EnhancedMapContext';
 
+interface UseOwnerFilterLogicProps {
+  activeDropdown: string | null;
+  setActiveDropdown: (dropdown: string | null) => void;
+  displayedAircraft: ExtendedAircraft[];
+  updateGeofenceAircraft: (aircraft: ExtendedAircraft[]) => void;
+  clearGeofenceData: () => void;
+}
 
+interface UseOwnerFilterLogicReturn {
+  ownerFilters: string[];
+  allOwnerTypes: string[];
+  handleOwnerFilterChange: (updatedFilters: string[]) => void;
+  resetOwnerFilters: () => void;
+  getAircraftOwnerType: (aircraft: ExtendedAircraft) => string;
+  applyOwnerTypeFilter: (filters: string[]) => void;
+}
 
-export function useOwnerLogic() {
-  // Get context state and functions
-  const {
-    selectedManufacturer,
-    selectedModel,
-    refreshPositions,
-
-  } = useEnhancedMapContext();
-
-
-  // Local state
-  const [localLoading, setLocalLoading] = useState(false);
-  const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
-  const [manufacturerSearchTerm, setManufacturerSearchTerm] = useState('');
-  const [isRefreshing, setIsRefreshing] = useState(false);
-
-  // Combined mode state
-  const [combinedModeReady, setCombinedModeReady] = useState<boolean>(false);
-
+export function useOwnerFilterLogic({
+  activeDropdown,
+  setActiveDropdown,
+  displayedAircraft,
+  updateGeofenceAircraft,
+  clearGeofenceData
+}: UseOwnerFilterLogicProps): UseOwnerFilterLogicReturn {
   // Owner filter state
   const allOwnerTypes = [
     'individual',
@@ -47,9 +51,7 @@ export function useOwnerLogic() {
     'unknown',
   ];
 
-  const [ownerFilters, setOwnerFilters] = useState<string[]>([
-    ...allOwnerTypes,
-  ]);
+  const [ownerFilters, setOwnerFilters] = useState<string[]>([...allOwnerTypes]);
 
   // Owner filter methods
   const getAircraftOwnerType = (aircraft: ExtendedAircraft): string => {
@@ -90,6 +92,20 @@ export function useOwnerLogic() {
     if (filters.length === 0 || filters.length === allOwnerTypes.length) {
       return;
     }
+
+    // Filter the aircraft based on selected owner types
+    if (displayedAircraft && displayedAircraft.length > 0) {
+      const filteredAircraft = displayedAircraft.filter((aircraft) => {
+        const ownerType = getAircraftOwnerType(aircraft);
+        return filters.includes(ownerType);
+      });
+
+      // Update the displayed aircraft
+      if (clearGeofenceData) {
+        clearGeofenceData();
+      }
+      updateGeofenceAircraft(filteredAircraft);
+    }
   };
 
   const handleOwnerFilterChange = (updatedFilters: string[]) => {
@@ -102,42 +118,12 @@ export function useOwnerLogic() {
     setOwnerFilters([...allOwnerTypes]);
   };
 
-    // 5. Reset owner filters to select all
-    setOwnerFilters([...allOwnerTypes]);
-
-    
   return {
-    // State
-    activeDropdown,
-    selectedManufacturer,
-    selectedModel,
-      ownerFilters,
+    ownerFilters,
     allOwnerTypes,
-    manufacturerSearchTerm,
-    localLoading,
-    isRefreshing,
-    isGeofencePlacementMode: false, // Initialize with a default value
-
-    // Methods
     handleOwnerFilterChange,
-    setManufacturerSearchTerm,
-    applyCombinedFilters,
+    resetOwnerFilters,
     getAircraftOwnerType,
-
-
-    refreshWithFilters: () => {
-      // Implement refresh logic here
-      if (typeof refreshPositions === 'function') {
-        refreshPositions()
-          .catch((error: unknown) => {
-            console.error('Error refreshing positions:', error);
-          });
-      }
-    },
-    setActiveDropdown, // Add this line if you have this function
+    applyOwnerTypeFilter
   };
-}
-
-function applyCombinedFilters() {
-  throw new Error('Function not implemented.');
 }

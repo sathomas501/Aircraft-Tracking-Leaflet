@@ -1,7 +1,7 @@
 // components/tracking/context/FilterContext.tsx
 import React, { createContext, useContext, ReactNode } from 'react';
-import { useFilterLogic } from '../hooks/useFilterLogic';
-import type { FilterLogicReturnType } from '../../tracking/types/filterState';
+import type { FilterLogicReturnType } from '../hooks/useFilterState';
+import { useFilterLogicCoordinator } from '../hooks/useFilterLogicCoordinator';
 
 // Create the context
 const FilterContext = createContext<FilterLogicReturnType | undefined>(
@@ -15,7 +15,7 @@ interface FilterProviderProps {
 
 export const FilterProvider: React.FC<FilterProviderProps> = ({ children }) => {
   // Use the filter logic hook to get all the state and methods
-  const filterLogic = useFilterLogic();
+  const filterLogic = useFilterLogicCoordinator();
 
   return (
     <FilterContext.Provider value={filterLogic}>
@@ -33,5 +33,5 @@ export const useFilterContext = (): FilterLogicReturnType => {
   return context;
 };
 
-// Re-export useFilterLogic for direct access when needed
-export { useFilterLogic };
+// Re-export useFilterLogicCoordinator for direct access when needed
+export { useFilterLogicCoordinator };

@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { MapPin } from 'lucide-react';
 import { useEnhancedMapContext } from '../context/EnhancedMapContext';
 import FloatingGeofencePanel from './FloatingGeofencePanel';
-import { useFilterLogic } from '../hooks/useFilterLogic';
+import { useFilterLogicCoordinator } from '../hooks/useFilterLogicCoordinator';
 import { useGeofencePanel } from '../hooks/useGeofencePanel';
 import { useGeolocationServices } from '../hooks/useGeolocationServices';
 import { MapboxService } from '../../../lib/services/MapboxService';
@@ -84,7 +84,7 @@ const GeofenceFilter: React.FC<GeofenceFilterProps> = ({
     setGeofenceCenter,
     updateGeofenceAircraft,
     setIsGettingLocation,
-  } = useFilterLogic();
+  } = useFilterLogicCoordinator();
 
   // Use the panel hook for managing the floating panel
   const panelLogic = useGeofencePanel({
