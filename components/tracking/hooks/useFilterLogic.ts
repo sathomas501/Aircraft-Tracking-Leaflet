@@ -9,6 +9,7 @@ import { MapboxService } from '../../../lib/services/MapboxService';
 import { adaptGeofenceAircraft } from '@/lib/utils/geofenceAdapter';
 import { enrichGeofenceAircraft } from '@/lib/utils/geofenceEnricher';
 import { useGeolocationServices } from '../hooks/useGeolocationServices';
+
 import {
   getAircraftNearLocation,
   getAircraftNearSearchedLocation,
@@ -55,6 +56,7 @@ export function useFilterLogic(): FilterLogicReturnType {
   // DO NOT USE useFilterLogic here again! Use useEnhancedMapContext directly
   const mapContext = useEnhancedMapContext();
 
+
   // Local state for filter management
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
   const [filterMode, setFilterMode] = useState<FilterMode>('OR');
@@ -68,7 +70,8 @@ export function useFilterLogic(): FilterLogicReturnType {
   const [geofenceRadius, setGeofenceRadius] = useState<number>(50);
   const [geofenceCoordinates, setGeofenceCoordinates] = useState<{ lat: number; lng: number } | null>(null);
   const [isGeofenceActive, setIsGeofenceActive] = useState<boolean>(false);
-
+  const [models, setModels] = useState<Array<{ name: string; count: number }>>([]);
+  const [isLoading, setIsLoading] = useState(false);
   // Extract from map context
   const {
     mapInstance,
@@ -501,29 +504,50 @@ const setActiveRegion = useCallback((region: RegionCode | string | null) => {
     return geofenceAircraft; // Return the filtered aircraft array
   }, [geofenceAircraft]);
 
-  // Handler functions for interface compliance
-  const handleManufacturerSelect = useCallback(
-  async (value: string) => {
-    setSelectedManufacturer(value === '' ? null : value);
+
+// Function to handle manufacturer selection that also fetches models
+const handleManufacturerSelect = useCallback(async (value: string) => {
+  console.log('Manufacturer selected:', value);
+  const manufacturer = value === '' ? null : value;
+  setSelectedManufacturer(manufacturer);
+  
+  // Clear models if no manufacturer selected
+  if (!manufacturer) {
+    setModels([]);
+    setActiveDropdown(null);
+    return;
+  }
+  
+  try {
+    setIsLoading(true);
     
-    // If a manufacturer is selected, fetch the models
-    if (value && value !== '') {
-      try {
-        // This could be from cache or an API call
-        const modelData = await getModelsForManufacturer(value);
-        setModels(modelData);
-      } catch (error) {
-        console.error('Error loading models:', error);
-      }
-    } else {
-      // Clear models if no manufacturer is selected
-      setModels([]);
+    // Fetch models for this manufacturer
+    const response = await fetch(`/api/tracking/models?manufacturer=${encodeURIComponent(manufacturer)}`);
+    
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
     }
     
+    const data = await response.json();
+    console.log('Models API response received');
+    
+    // Format the models
+    const formattedModels = data.models?.map((model: any) => ({
+      name: model.name || model.model || model.MODEL || 'Unknown',
+      count: typeof model.count === 'number' ? model.count : 0
+    })) || [];
+    
+    console.log('Formatted models:', formattedModels.length, 'items');
+    setModels(formattedModels);
+  } catch (error) {
+    console.error('Error fetching models:', error);
+    // Handle error appropriately
+  } finally {
+    setIsLoading(false);
     setActiveDropdown(null);
-  },
-  [setSelectedManufacturer, setModels, setActiveDropdown]
-);
+  }
+}, [setSelectedManufacturer, setModels, setActiveDropdown, setIsLoading]);
+
 
   const handleModelSelect = useCallback(
     (value: string) => {
@@ -628,25 +652,26 @@ const setActiveRegion = useCallback((region: RegionCode | string | null) => {
   // Combined loading state
   const combinedLoading = localLoading || mapLoading || false;
 
+
   // Add effect to fetch manufacturers on mount
- useEffect(() => {
+  useEffect(() => {
   const fetchManufacturers = async () => {
     setIsLoadingManufacturers(true);
     try {
+      console.log('Fetching manufacturers on initialization...');
       const response = await fetch('/api/tracking/manufacturers');
       if (!response.ok) {
         throw new Error(`Failed to load manufacturers: ${response.statusText}`);
       }
       const data = await response.json();
-      console.log('Fetched manufacturer data:', data);
-
+      console.log('Manufacturers API response received');
+      
       const processedData = data.manufacturers?.map((m: any) => ({
-        manufacturer: m.name || 'Unknown', // <--- FIXED HERE
+        name: m.name || m.manufacturer || m.MANUFACTURER || 'Unknown',
         count: typeof m.count === 'number' ? m.count : 0,
       })) || [];
-
-      console.log('Processed manufacturer list:', processedData);
-
+      
+      console.log('Processed manufacturers data:', processedData.length, 'items');
       setManufacturers(processedData);
     } catch (error) {
       console.error('Error loading manufacturers:', error);
@@ -654,10 +679,12 @@ const setActiveRegion = useCallback((region: RegionCode | string | null) => {
       setIsLoadingManufacturers(false);
     }
   };
+  
   fetchManufacturers();
 }, []);
+    
 
-
+  
 
   // Effect to fetch model data when manufacturer changes
   useEffect(() => {
@@ -761,6 +788,7 @@ const setActiveRegion = useCallback((region: RegionCode | string | null) => {
     isLoading: combinedLoading,
     totalActive,
     combinedLoading,
+ 
     
     // Data
     manufacturers,

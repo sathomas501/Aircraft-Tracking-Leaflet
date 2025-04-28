@@ -58,7 +58,7 @@ export interface ManufacturerFilterProps {
   activeDropdown: string | null;
   dropdownRef: RefObject<HTMLDivElement>;
   toggleDropdown: (type: string, event: React.MouseEvent) => void;
-  handleManufacturerSelect: (value: string) => void;
+
 
   // Update this type to match what's being passed
   activeRegion: RegionCode | string | null;

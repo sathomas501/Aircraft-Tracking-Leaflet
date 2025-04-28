@@ -1,63 +1,55 @@
-import React, { useRef } from 'react';
+// components/tracking/filters/Containers/ManufacturerFilterContainer.tsx
+import React, { useRef, useEffect } from 'react';
 import { useFilterContext } from '../../context/FilterContext';
 import ManufacturerFilter from '../ManufacturerFilter';
 
 const ManufacturerFilterContainer: React.FC = () => {
   const {
     selectedManufacturer,
-    setSelectedManufacturer,
+    handleManufacturerSelect,
+    manufacturers,
     activeDropdown,
     toggleDropdown,
-    manufacturers,
-    combinedLoading,
     manufacturerSearchTerm,
     setManufacturerSearchTerm,
-    activeRegion,
-    totalActive,
-    regionCounts,
-    handleManufacturerSelect,
+    combinedLoading,
   } = useFilterContext();
 
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  console.log('Raw manufacturers:', manufacturers);
+  // Debug log to track manufacturers data
+  useEffect(() => {
+    console.log(
+      'ManufacturerFilterContainer - Manufacturers:',
+      manufacturers?.length || 0,
+      'items'
+    );
+  }, [manufacturers]);
 
+  // Transform manufacturers to match the expected format
   const transformedManufacturers =
     manufacturers?.map((m) => ({
       value: m.name,
       label: m.name,
-      manufacturer: m.name,
-      count: m.count || 0,
     })) || [];
 
-  const handleError = (message: string) => {
-    console.error(`[ManufacturerFilter] Error: ${message}`);
+  // Combined function to select manufacturer and close dropdown
+  const selectManufacturerAndClose = (value: string) => {
+    handleManufacturerSelect(value);
+    // This assumes handleManufacturerSelect will close the dropdown internally
   };
-  console.log('Manufacturers from context:', manufacturers);
 
   return (
     <ManufacturerFilter
-      selectedManufacturer={selectedManufacturer}
-      handleManufacturerSelect={handleManufacturerSelect}
-      activeDropdown={activeDropdown}
-      toggleDropdown={toggleDropdown}
-      dropdownRef={dropdownRef}
       manufacturers={transformedManufacturers}
-      combinedLoading={combinedLoading || false}
+      selectedManufacturer={selectedManufacturer}
       manufacturerSearchTerm={manufacturerSearchTerm || ''}
       setManufacturerSearchTerm={setManufacturerSearchTerm}
-      activeRegion={activeRegion}
-      totalActive={totalActive}
-      regionCounts={{
-        totalActive: regionCounts?.totalActive || 0,
-        manufacturerCount: regionCounts?.manufacturerCount || 0,
-        modelCount: regionCounts?.modelCount || 0,
-        selectedManufacturerCount: regionCounts?.selectedManufacturerCount || 0,
-        selectedModelCount: regionCounts?.selectedModelCount || 0,
-      }}
-      searchTerm={manufacturerSearchTerm || ''}
-      setSearchTerm={setManufacturerSearchTerm}
-      onError={handleError}
+      selectManufacturerAndClose={selectManufacturerAndClose}
+      combinedLoading={combinedLoading || false}
+      activeDropdown={activeDropdown}
+      dropdownRef={dropdownRef}
+      toggleDropdown={toggleDropdown}
     />
   );
 };
