@@ -12,6 +12,7 @@ import { EnhancedUIProvider } from '@/components/tracking/context/EnhancedUICont
 import { EnhancedMapProvider } from '@/components/tracking/context/EnhancedMapContext';
 import { LocationProvider } from '@/components/tracking/context/LocationContex';
 import { DataPersistenceProvider } from '../components/tracking/persistence/DataPersistenceManager';
+import { CentralFilterStateProvider } from '@/components/tracking/context/CentralizedFilterContext';
 
 function MyApp({ Component, pageProps }: AppProps) {
   return (
@@ -42,22 +43,22 @@ export default function App({ Component, pageProps }: AppProps) {
           onError={(msg) => toast.error(msg)}
         >
           <LocationProvider>
-            {' '}
-            {/* ✅ Add LocationProvider here */}
-            <DataPersistenceProvider>
-              <ToastContainer
-                position="top-right"
-                autoClose={5000}
-                hideProgressBar={false}
-                newestOnTop={true}
-                closeOnClick
-                rtl={false}
-                pauseOnFocusLoss
-                draggable
-                pauseOnHover
-              />
-              <Component {...pageProps} />
-            </DataPersistenceProvider>
+            <CentralFilterStateProvider>
+              <DataPersistenceProvider>
+                <ToastContainer
+                  position="top-right"
+                  autoClose={5000}
+                  hideProgressBar={false}
+                  newestOnTop={true}
+                  closeOnClick
+                  rtl={false}
+                  pauseOnFocusLoss
+                  draggable
+                  pauseOnHover
+                />
+                <Component {...pageProps} />
+              </DataPersistenceProvider>
+            </CentralFilterStateProvider>
           </LocationProvider>
         </EnhancedMapProvider>
       </EnhancedUIProvider>

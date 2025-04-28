@@ -11,6 +11,7 @@ import { useEnhancedMapContext } from './context/EnhancedMapContext';
 import type { RibbonProps } from './types/filters';
 import ManualRefreshButton from './map/components/ManualRefreshButton';
 import StandaloneFilterDropdown from './filters/FilterDropdown';
+import { FilterMode } from './types/filterState';
 
 const RibbonAircraftSelector: React.FC<RibbonProps> = ({ manufacturers }) => {
   // Get the aircraft state from context

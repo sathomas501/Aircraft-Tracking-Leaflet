@@ -1,6 +1,6 @@
 // hooks/useFilterState.ts - Core state management
 import { useState } from 'react';
-import { FilterState } from '../types/filterState';
+import { FilterState, FilterMode } from '../types/filterState';
 import { RegionCode } from '@/types/base';
 import { useFilterLogicCoordinator } from './useFilterLogicCoordinator';
 
@@ -98,26 +98,31 @@ export function useFilterState() {
     }));
   };
 
-  // Add more state management methods
+  // Add more state management method
+
+// UI state update methods
+  const updateUIState = (key: string, value: any) => {
+  setState(prev => ({
+    ...prev,
+    ui: {
+      ...prev.ui,
+      [key]: value
+    }
+  }));
+};
+
+
   const setActiveDropdown = (dropdown: string | null) => {
-    setState(prev => ({
-      ...prev,
-      ui: {
-        ...prev.ui,
-        activeDropdown: dropdown
-      }
-    }));
+    updateUIState('activeDropdown', dropdown);
   };
 
-  const setFilterMode = (mode: string | null) => {
-    setState(prev => ({
-      ...prev,
-      ui: {
-        ...prev.ui,
-        filterMode: mode
-      }
-    }));
+  const setFilterMode = (mode: FilterMode | null) => {
+    updateUIState('filterMode', mode);
   };
+
+  const setLoading = (isLoading: boolean) => {
+  updateUIState('loading', isLoading);
+};
 
   const resetFilters = () => {
     setState(initialState);
@@ -126,8 +131,10 @@ export function useFilterState() {
   return {
     state,
     updateFilter,
+    updateUIState,
     setActiveDropdown,
     setFilterMode,
-    resetFilters,
+    setLoading,
+    resetFilters
   };
 }

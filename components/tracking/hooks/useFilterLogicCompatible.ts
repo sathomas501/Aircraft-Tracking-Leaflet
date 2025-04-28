@@ -73,6 +73,9 @@ export function useFilterLogic() {
     ...coordinator,
     state,
     actions,
+    isRefreshing: false, // Or get from coordinator if available
+    localLoading: coordinator.combinedLoading || false,
+    updateGeofenceAircraft: mapContext.updateGeofenceAircraft,
     refreshWithFilters: () => {
       if (typeof mapContext.refreshPositions === 'function') {
         mapContext.refreshPositions().catch((error: unknown) => {

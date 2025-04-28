@@ -15,14 +15,10 @@ export function useFilterLogicCoordinator() {
   
   // UI state
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
-  const [activeRegion, setActiveRegion] = useState<string | null>(null);
   const [filterMode, setFilterMode] = useState<FilterMode | null>(null);
   const [localLoading, setLocalLoading] = useState(false);
   const [isRateLimited, setIsRateLimited] = useState(false);
-    const [locationName, setLocationName] = useState<string | null>(null);
   const [rateLimitTimer, setRateLimitTimer] = useState<number | null>(null);
-const [isRefreshing, setIsRefreshing] = useState(false);
-const { updateGeofenceAircraft } = mapContext;
   
   // Create dropdown refs
   const dropdownRefs = {
@@ -33,7 +29,6 @@ const { updateGeofenceAircraft } = mapContext;
     region: useRef<HTMLDivElement>(null),
     owner: useRef<HTMLDivElement>(null),
     actions: useRef<HTMLDivElement>(null),
-    state:useRef<HTMLDivElement>(null),
   };
   
   // Initialize the individual filter hooks
@@ -41,19 +36,21 @@ const { updateGeofenceAircraft } = mapContext;
     activeDropdown,
     setActiveDropdown
   });
+
+   const regionLogic = useRegionFilterLogic({
+    mapInstance: mapContext.mapInstance,
+    clearGeofenceData: mapContext.clearGeofenceData,
+    activeDropdown,
+    setActiveDropdown,
+    updateGeofenceAircraft: mapContext.updateGeofenceAircraft,
+    displayedAircraft: mapContext.displayedAircraft
+  });
+  
   
   const geofenceLogic = useGeofenceFilterLogic({
     activeDropdown,
     setActiveDropdown
   });
-
-  const regionLogic = useRegionFilterLogic(
-    mapContext.mapInstance,
-    mapContext.updateGeofenceAircraft,
-    mapContext.clearGeofenceData,
-    mapContext.displayedAircraft
-  );
-
   
   const ownerLogic = useOwnerFilterLogic({
     activeDropdown,
@@ -133,7 +130,6 @@ const { updateGeofenceAircraft } = mapContext;
     }
   };
   
-  
   // Method to clear all filters
   const clearAllFilters = () => {
     console.log('Clearing all filters...');
@@ -172,6 +168,8 @@ const { updateGeofenceAircraft } = mapContext;
     console.log('All filters cleared successfully');
   };
   
+
+
   // Calculate combined loading state
   const combinedLoading = localLoading || 
     manufacturerLogic.localLoading || 
@@ -182,32 +180,24 @@ const { updateGeofenceAircraft } = mapContext;
     activeDropdown,
     filterMode,
     dropdownRefs,
-    activeRegion,
-    isRefreshing,
-    localLoading,
     
     // UI methods
     toggleDropdown,
     setActiveDropdown,
     
+// Region filter properties
+    activeRegion: regionLogic.activeRegion,
+    handleRegionSelect: regionLogic.handleRegionSelect,
+
     // Filter mode methods
     toggleFilterMode,
     applyCombinedFilters,
     clearAllFilters,
     
-    
     // Combined state
     combinedLoading,
     isRateLimited,
     rateLimitTimer,
-
- 
-    // Region filter properties
-
- 
-    updateGeofenceAircraft,
-     handleRegionSelect: regionLogic.handleRegionSelect, // Make sure this is included
-    
     
     // Manufacturer filter
     selectedManufacturer: manufacturerLogic.selectedManufacturer,
@@ -231,8 +221,6 @@ const { updateGeofenceAircraft } = mapContext;
     setGeofenceCoordinates: geofenceLogic.setGeofenceCoordinates,
     setGeofenceCenter: geofenceLogic.setGeofenceCenter,
     setIsGettingLocation: geofenceLogic.setIsGettingLocation,
-    setLocationName:geofenceLogic.setLocationName,
-    
     
     // Owner filter
     ownerFilters: ownerLogic.ownerFilters,
@@ -242,14 +230,15 @@ const { updateGeofenceAircraft } = mapContext;
     
     // Additional properties for backward compatibility
     isGeofencePlacementMode: false,
-
+  
+    
     selectedRegion: mapContext.selectedRegion, // Or implement region filter logic
     refreshWithFilters: () => {
       if (typeof mapContext.refreshPositions === 'function') {
         mapContext.refreshPositions().catch((error: unknown) => {
           console.error('Error refreshing positions:', error);
         });
-  }
-
-  
-}}}
+      }
+    },
+  };
+}

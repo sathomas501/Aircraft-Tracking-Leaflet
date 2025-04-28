@@ -1,16 +1,12 @@
 // hooks/useRegionFilterLogic.ts
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { RegionCode } from '@/types/base';
 import { MAP_CONFIG, getBoundsByRegion, getZoomLevelForRegion } from '@/config/map';
 import { ExtendedAircraft } from '@/types/base';
-import { useFilterUILogic } from './useFilterUILogic';
+import { useCentralFilterState } from '../context/CentralizedFilterContext';
 
 interface RegionOutline {
     remove: () => void;
-}
-
-interface FilteredAircraftResponse {
-    aircraft: AircraftData[];
 }
 
 interface AircraftData {
@@ -19,41 +15,60 @@ interface AircraftData {
     REGION: number;
 }
 
+interface UseRegionFilterLogicProps {
+    mapInstance: any;
+    updateGeofenceAircraft: (aircraft: ExtendedAircraft[]) => void;
+    clearGeofenceData: () => void;
+    activeDropdown: string |null;
+    setActiveDropdown:(dropdown: string | null) => void;
+    displayedAircraft: ExtendedAircraft[];
+}
+
 interface UseRegionFilterLogicReturn {
     activeRegion: RegionCode | string | null;
     regionOutline: RegionOutline | null;
     selectedRegion: number;
-    setActiveRegion: React.Dispatch<React.SetStateAction<RegionCode | string | null>>;
-    setRegionOutline: React.Dispatch<React.SetStateAction<RegionOutline | null>>;
-    setSelectedRegion: React.Dispatch<React.SetStateAction<number>>;
     handleRegionSelect: (region: RegionCode) => Promise<void>;
     filterAircraftByRegion: (region: string) => void;
     drawRegionOutline: (region: RegionCode) => void;
 }
 
-export function useRegionFilterLogic(
-    mapInstance: any,
-    updateGeofenceAircraft: (aircraft: ExtendedAircraft[]) => void,
-    clearGeofenceData: () => void,
-    displayedAircraft: ExtendedAircraft[]
-): UseRegionFilterLogicReturn {
-    const [activeRegion, setActiveRegion] = useState<RegionCode | string | null>(null);
-    const [regionOutline, setRegionOutline] = useState<RegionOutline | null>(null);
-    const [selectedRegion, setSelectedRegion] = useState<number>(RegionCode.GLOBAL);
-    const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
-    const [localLoading, setLocalLoading] = useState(false);
+export function useRegionFilterLogic({
+    mapInstance,
+    updateGeofenceAircraft,
+    clearGeofenceData,
+    displayedAircraft
+}: UseRegionFilterLogicProps): UseRegionFilterLogicReturn {
+    // Use the central state
+    const { state, updateFilter, updateUIState, setActiveDropdown } = useCentralFilterState();
     
+    // Get region state from central state
+    const activeRegion = state.filters.region.value;
+    const selectedRegion = state.filters.region.selectedRegion;
+    
+    // Keep regionOutline as local state
+    const [regionOutline, setRegionOutline] = useState<RegionOutline | null>(null);
+    
+    // Keep loading as local state for now
+    const [localLoading, setLocalLoading] = useState(false);
+
+const setLoading = (isLoading: boolean) => {
+  updateUIState('loading', isLoading);
+};
 
     const filterAircraftByRegion = (region: string): void => {
         if (!displayedAircraft || displayedAircraft.length === 0) return;
         setLocalLoading(true);
+
+        // Mark UI as loading in central state if available
+        updateUIState('loading', true);
 
         try {
             const boundsExpression = getBoundsByRegion(region);
 
             if (!Array.isArray(boundsExpression) || boundsExpression.length !== 2) {
                 console.error(`Invalid bounds format for region: ${region}`, boundsExpression);
-                setLocalLoading(false);
+                setLoading(false);
                 return;
             }
 
@@ -85,13 +100,21 @@ export function useRegionFilterLogic(
             console.error('Error filtering aircraft by region:', error);
         } finally {
             setLocalLoading(false);
+            // Update central loading state
+            updateUIState('loading', true);
         }
     };
 
+
     const handleRegionSelect = async (region: RegionCode): Promise<void> => {
-        setActiveRegion(region);
-        setSelectedRegion(region);
+        // Update central state
+        updateFilter('region', 'value', region);
+        updateFilter('region', 'selectedRegion', region);
+        updateFilter('region', 'active', true);
+        
         setLocalLoading(true);
+        // Update central loading state
+        updateUIState('loading', true);
 
         try {
             if (mapInstance) {
@@ -122,9 +145,13 @@ export function useRegionFilterLogic(
             console.error('Error in region selection:', error);
         } finally {
             setLocalLoading(false);
+            // Update central loading state
+            updateUIState('loading', true);
+            // Update active dropdown
             setActiveDropdown(null);
         }
     };
+
 
     const drawRegionOutline = (region: RegionCode): void => {
         if (!mapInstance) return;
@@ -156,65 +183,7 @@ export function useRegionFilterLogic(
         });
     };
 
-    const fetchAircraftByRegionAndManufacturer = async (
-    region: RegionCode,
-    manufacturer: string,
-    page: number = 1,
-    limit: number = 500
-  ) => {
-    if (!region || !manufacturer) {
-      console.log('Both region and manufacturer must be selected');
-      return;
-    }
-
-    setLocalLoading(true);
-
-    try {
-      const response = await fetch(
-        `/api/tracking/filtered-aircraft?region=${region}&manufacturer=${encodeURIComponent(manufacturer)}&page=${page}&limit=${limit}`
-      );
-
-      const data = await response.json();
-      const aircraftData = data.aircraft || [];
-
-      if (!response.ok) {
-        throw new Error(`API error: ${response.statusText}`);
-      }
-
-      // Process the filtered aircraft data
-      if (aircraftData.length > 0) {
-        // Transform to ExtendedAircraft
-        interface AircraftData {
-          TYPE_AIRCRAFT?: string;
-          OPERATOR?: string;
-          REGION: number;
-        }
-
-        const extendedAircraft: ExtendedAircraft[] = aircraftData.map(
-          (aircraft: AircraftData) => ({
-            ...aircraft,
-            type: aircraft.TYPE_AIRCRAFT || 'Unknown',
-            isGovernment:
-              aircraft.OPERATOR?.toLowerCase().includes('government') ?? false,
-            REGION: aircraft.REGION,
-            zoomLevel: undefined,
-          })
-        );
-
-        // Update the map
-        updateGeofenceAircraft(extendedAircraft);
-      } else {
-        console.log(
-          `No aircraft found for manufacturer ${manufacturer} in region ${region}`
-        );
-      }
-    } catch (error) {
-      console.error('Error fetching filtered aircraft:', error);
-    } finally {
-      setLocalLoading(false);
-    }
-  };
-
+    // Clean up function
     useEffect(() => {
         return () => {
             if (regionOutline) {
@@ -227,9 +196,6 @@ export function useRegionFilterLogic(
         activeRegion,
         regionOutline,
         selectedRegion,
-        setActiveRegion,
-        setRegionOutline,
-        setSelectedRegion,
         handleRegionSelect,
         filterAircraftByRegion,
         drawRegionOutline,

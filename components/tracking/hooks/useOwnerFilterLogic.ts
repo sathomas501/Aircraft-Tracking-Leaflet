@@ -1,12 +1,11 @@
 // hooks/useOwnerFilterLogic.ts
-import { useState, useEffect } from 'react';
 import { ExtendedAircraft } from '@/types/base';
-import { useEnhancedMapContext } from '../context/EnhancedMapContext';
+import { useCentralFilterState } from '../context/CentralizedFilterContext';
 
 interface UseOwnerFilterLogicProps {
+  displayedAircraft: ExtendedAircraft[];
   activeDropdown: string | null;
   setActiveDropdown: (dropdown: string | null) => void;
-  displayedAircraft: ExtendedAircraft[];
   updateGeofenceAircraft: (aircraft: ExtendedAircraft[]) => void;
   clearGeofenceData: () => void;
 }
@@ -21,12 +20,16 @@ interface UseOwnerFilterLogicReturn {
 }
 
 export function useOwnerFilterLogic({
-  activeDropdown,
-  setActiveDropdown,
   displayedAircraft,
   updateGeofenceAircraft,
   clearGeofenceData
 }: UseOwnerFilterLogicProps): UseOwnerFilterLogicReturn {
+  // Use the central state instead of local state
+  const { state, updateFilter } = useCentralFilterState();
+  
+  // Access centralized state
+  const ownerFilters = state.filters.owner.selectedTypes;
+
   // Owner filter state
   const allOwnerTypes = [
     'individual',
@@ -50,8 +53,6 @@ export function useOwnerFilterLogic({
     'military',
     'unknown',
   ];
-
-  const [ownerFilters, setOwnerFilters] = useState<string[]>([...allOwnerTypes]);
 
   // Owner filter methods
   const getAircraftOwnerType = (aircraft: ExtendedAircraft): string => {
@@ -109,13 +110,14 @@ export function useOwnerFilterLogic({
   };
 
   const handleOwnerFilterChange = (updatedFilters: string[]) => {
-    setOwnerFilters(updatedFilters);
-    // Apply the filter to your aircraft data
+    // Update the central state instead of local state
+    updateFilter('owner', 'selectedTypes', updatedFilters);
     applyOwnerTypeFilter(updatedFilters);
   };
 
   const resetOwnerFilters = () => {
-    setOwnerFilters([...allOwnerTypes]);
+    // Update central state instead of using the old setOwnerFilters
+    updateFilter('owner', 'selectedTypes', [...allOwnerTypes]);
   };
 
   return {
