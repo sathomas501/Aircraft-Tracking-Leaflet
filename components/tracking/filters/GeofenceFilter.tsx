@@ -1,427 +1,204 @@
-// components/GeofenceFilter.tsx
-import React from 'react';
-import { useEffect, useState } from 'react';
-import { MapPin } from 'lucide-react';
-import { useEnhancedMapContext } from '../context/EnhancedMapContext';
-import FloatingGeofencePanel from './FloatingGeofencePanel';
-import { useFilterLogicCoordinator } from '../hooks/useFilterLogicCoordinator';
+// components/tracking/filters/GeofenceFilter.tsx
+import React, { useEffect, useRef } from 'react';
+import { MapPin, Search, Loader2 } from 'lucide-react';
+import { useFilterLogic } from '../hooks/useFilterLogicCompatible';
 import { useGeofencePanel } from '../hooks/useGeofencePanel';
-import { useGeolocationServices } from '../hooks/useGeolocationServices';
-import { MapboxService } from '../../../lib/services/MapboxService';
-import { useLocationFlag } from '../hooks/useLocationFlag';
-import { useFormattedCityCountry } from '../hooks/useFormattedCityCountry';
-import { getFlagImageUrl } from '../../../utils/getFlagImage';
+import { useEnhancedMapContext } from '../context/EnhancedMapContext';
 
-interface MapboxFeature {
-  id: string;
-  type: string;
-  place_type: string[];
-  relevance: number;
-  properties: { [key: string]: any };
-  text: string;
-  place_name: string;
-  center: [number, number];
-  geometry: { type: string; coordinates: [number, number] };
-  bbox?: [number, number, number, number];
-  context?: Array<{ id: string; text: string }>;
-}
-
-// When you get location data from Mapbox, store the feature
-interface MapClickEvent {
-  lngLat: {
-    lng: number;
-    lat: number;
-  };
-}
+// Simple toggle switch component to replace the imported one
+const Toggle: React.FC<{
+  checked: boolean;
+  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  disabled?: boolean;
+}> = ({ checked, onChange, disabled = false }) => {
+  return (
+    <label className="relative inline-flex items-center cursor-pointer">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={onChange}
+        disabled={disabled}
+        className="sr-only peer"
+      />
+      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"></div>
+    </label>
+  );
+};
 
 interface GeofenceFilterProps {
-  activeDropdown: string | null;
-  setActiveDropdown: (dropdown: string | null) => void;
-  toggleDropdown: (type: string, event: React.MouseEvent) => void;
-  geofenceLocation: string;
-  geofenceRadius: number;
-  isGettingLocation: boolean;
-  isGeofenceActive: boolean;
-  geofenceCoordinates: { lat: number; lng: number } | null;
-  combinedLoading: boolean;
-  getUserLocation: () => Promise<void>;
-  setGeofenceCoordinates: (coordinates: { lat: number; lng: number }) => void;
-  setGeofenceCenter: (coordinates: { lat: number; lng: number }) => void;
-  updateGeofenceAircraft: (aircraft: any[]) => void;
-  setIsGettingLocation: (isGetting: boolean) => void;
-  isGeofencePlacementMode: boolean;
-  setGeofenceRadius: (radius: number) => void;
-  processGeofenceSearch: () => void;
-  toggleGeofenceState: (active: boolean) => void;
-  setGeofenceLocation: (location: string) => void;
-  dropdownRef: React.RefObject<HTMLDivElement>;
+  onClose?: () => void;
 }
 
-const GeofenceFilter: React.FC<GeofenceFilterProps> = ({
-  activeDropdown,
-  setActiveDropdown,
-  toggleDropdown,
-  dropdownRef,
-}) => {
-  // Get map context
-  const { mapInstance } = useEnhancedMapContext();
+const GeofenceFilter: React.FC<GeofenceFilterProps> = ({ onClose }) => {
+  // Get map instance directly from the map context
+  const mapContext = useEnhancedMapContext();
 
-  // Get filter logic from the main hook
+  const { state, actions, hasError } = useFilterLogic();
 
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Extract geofence state from the filter logic
   const {
-    geofenceLocation,
-    geofenceRadius,
+    active: isGeofenceActive,
+    location: geofenceLocation,
+    radius: geofenceRadius,
+    coordinates: geofenceCoordinates,
     isGettingLocation,
-    isGeofenceActive,
-    geofenceCoordinates,
-    combinedLoading,
-    setLocationName,
-    processGeofenceSearch,
-    toggleGeofenceState,
-    setGeofenceLocation,
-    setGeofenceRadius,
-    setGeofenceCoordinates,
-    setGeofenceCenter,
-    updateGeofenceAircraft,
-    setIsGettingLocation,
-  } = useFilterLogicCoordinator();
+  } = state.filters.geofence;
 
-  // Use the panel hook for managing the floating panel
-  const panelLogic = useGeofencePanel({
+  // Create local geofence panel with map instance from context
+  const geofencePanel = useGeofencePanel({
     geofenceRadius,
-    setGeofenceLocation,
-    setGeofenceCoordinates,
-    processGeofenceSearch,
-    setGeofenceCenter,
-    updateGeofenceAircraft,
+    mapInstance: mapContext.mapInstance, // Use mapInstance from the context
     isGeofenceActive,
-    toggleGeofenceState,
-    setActiveDropdown,
-    mapInstance,
-    setCoordinates: () => {}, // Provide a default or actual implementation
-    setShowPanel: () => {}, // Provide a default or actual implementation
+    toggleGeofenceState: (enabled) =>
+      actions.updateFilter('geofence', 'active', enabled),
+    setActiveDropdown: (dropdown) => actions.toggleDropdown(dropdown || ''),
+    updateGeofenceAircraft: (aircraft) =>
+      actions.updateFilter('geofence', 'aircraft', aircraft),
+    setGeofenceCenter: (coords) =>
+      actions.updateFilter('geofence', 'coordinates', coords),
+    setGeofenceCoordinates: (coords) =>
+      actions.updateFilter('geofence', 'coordinates', coords),
+    processGeofenceSearch: () => actions.processGeofenceSearch(true),
+    // Fixed: Added setCoordinates and setShowPanel to match interface
+    setCoordinates: (position) => {
+      // This should be connecting to our state management
+      // Not directly used in this component
+    },
+    setShowPanel: (show) => {
+      // This would connect to state management to show/hide panels
+      // Not directly used in this component
+    },
   });
 
-  const {
-    showPanel,
-    panelPosition,
-    tempCoordinates,
-    isSearching,
-    locationName,
-    isLoadingLocation,
-    openPanel,
-    closePanel,
-    resetPanel,
-    setShowPanel,
-    handlePanelSearch,
-  } = panelLogic;
+  // Focus the search input when the filter is opened
+  useEffect(() => {
+    if (searchInputRef.current) {
+      searchInputRef.current.focus();
+    }
+  }, []);
 
-  // Use the geolocation services hook for browser geolocation
-  const geolocationServices = useGeolocationServices();
-  const [mapboxFeature, setMapboxFeature] = useState<MapboxFeature | null>(
-    null
-  );
-  const [countryName, setCountryName] = useState<string | null>(null);
+  // Handle location input change
+  const handleLocationChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    actions.updateFilter('geofence', 'location', e.target.value);
+  };
 
-  // Update how you use the hook to include the country name
-  const { flagUrl, isLoading: isFlagLoading } = useLocationFlag({
-    mapboxFeature,
-    locationName,
-    countryName, // Add this parameter
-  });
-
-  const { label, isLoading } = useFormattedCityCountry(geofenceLocation, true);
-
-  // Implement getUserLocation using geolocationServices
-  const getUserLocation = async () => {
-    if (combinedLoading) return;
-
-    setGeofenceLocation('Getting your location...');
-    setIsGettingLocation(true);
-
-    try {
-      const position = await geolocationServices.getCurrentPosition();
-
-      const lat = position.coords.latitude;
-      const lng = position.coords.longitude;
-
-      // Update coordinates
-      setGeofenceCoordinates({ lat, lng });
-      setGeofenceCenter({ lat, lng });
-
-      // Update location text
-      setGeofenceLocation(`${lat.toFixed(6)}, ${lng.toFixed(6)}`);
-
-      // Automatically start a search with these coordinates
-      handlePanelSearch(lat, lng);
-    } catch (error) {
-      console.error('Error getting location:', error);
-      alert(
-        'Could not get your location. Please make sure location services are enabled.'
-      );
-    } finally {
-      setIsGettingLocation(false);
+  // Handle radius change
+  const handleRadiusChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = parseInt(e.target.value, 10);
+    if (!isNaN(value) && value > 0) {
+      actions.updateFilter('geofence', 'radius', value);
     }
   };
 
-  function renderFlagAndName(label: string | null) {
-    if (!label) return null;
+  // Handle search button click
+  const handleSearch = () => {
+    actions.processGeofenceSearch();
+    if (onClose) onClose();
+  };
 
-    const country = label.split(', ').pop() || '';
-    const flagUrl = getFlagImageUrl(country);
+  // Handle get location button click
+  const handleGetLocation = () => {
+    actions.getGeofenceUserLocation();
+    if (onClose) onClose();
+  };
 
-    return (
-      <div className="inline-flex items-center gap-2">
-        {flagUrl && (
-          <img
-            src={flagUrl}
-            alt={`${country} flag`}
-            className="w-4 h-3 object-cover rounded-sm shadow-sm"
-            onError={(e) => (e.currentTarget.style.display = 'none')}
-          />
-        )}
-        <span>{label}</span>
-      </div>
-    );
-  }
-
-  useEffect(() => {
-    if (isSearching) {
-      // Ensure the panel stays open during search
-      panelLogic.setShowPanel(true);
-    }
-  }, [isSearching]);
+  // Handle toggle change
+  const handleToggleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    actions.updateFilter('geofence', 'active', e.target.checked);
+  };
 
   return (
-    <div ref={dropdownRef} className="relative">
-      {/* Ribbon filter button */}
-      <button
-        className={`px-4 py-2 flex items-center justify-between gap-2 rounded-lg border ${
-          showPanel
-            ? 'bg-gray-100 text-gray-400 border-gray-300 cursor-not-allowed' // Always grayed out when panel is open
-            : activeDropdown === 'location'
-              ? 'bg-indigo-100 text-indigo-700 border-indigo-300 shadow-sm'
-              : isGeofenceActive
-                ? 'bg-indigo-50/70 text-indigo-600 border-indigo-200'
-                : 'bg-gray-50/30 hover:bg-gray-50 border-gray-200 text-gray-700 hover:border-gray-300'
-        } transition-all duration-200`}
-        // Add a onClick handler that does nothing when panel is open
-        onClick={(event) => toggleDropdown('location', event)}
-        disabled={combinedLoading}
-      >
-        <span className="flex items-center gap-2 font-medium">
-          <MapPin
-            size={16}
-            className={
-              showPanel
-                ? 'text-gray-400' // Gray out icon when panel is open
-                : isGeofenceActive
-                  ? 'text-indigo-500'
-                  : 'text-gray-500'
-            }
-          />
-
-          {isGeofenceActive && geofenceLocation
-            ? renderFlagAndName(label)
-            : showPanel
-              ? 'Placing pin...'
-              : isLoadingLocation
-                ? 'Loading location...'
-                : locationName
-                  ? renderFlagAndName(label)
-                  : locationName === null // Explicitly check if locationName has been cleared (set to null)
-                    ? 'No location selected' // Or any text you prefer for cleared state
-                    : 'Location'}
-        </span>
-
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          className={`h-4 w-4 transition-transform ${activeDropdown === 'location' ? 'transform rotate-180' : ''}`}
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M19 9l-7 7-7-7"
-          />
-        </svg>
-      </button>
-
-      {/* Dropdown menu */}
-      {activeDropdown === 'location' && !showPanel && (
-        <div className="absolute left-0 top-full mt-1 w-72 bg-white shadow-lg rounded-md border border-gray-200 z-50">
-          {/* Location search input */}
-          <div className="p-3 border-b">
-            <div className="flex gap-2 mb-3">
-              <input
-                type="text"
-                className="flex-1 px-3 py-2 border border-gray-300 rounded-md"
-                placeholder="ZIP code or coordinates..."
-                value={geofenceLocation}
-                onChange={(e) => setGeofenceLocation(e.target.value)}
-                onKeyDown={(e) => {
-                  if (
-                    e.key === 'Enter' &&
-                    !combinedLoading &&
-                    geofenceLocation
-                  ) {
-                    processGeofenceSearch();
-                  }
-                }}
-                autoFocus
-              />
-              <button
-                className={`px-3 py-2 rounded-md text-white ${
-                  combinedLoading || (!geofenceLocation && !isGettingLocation)
-                    ? 'bg-gray-400 cursor-not-allowed'
-                    : 'bg-indigo-600 hover:bg-indigo-700'
-                }`}
-                onClick={(e) => {
-                  e.preventDefault();
-                  openPanel();
-                  processGeofenceSearch();
-                }}
-                disabled={
-                  combinedLoading || (!geofenceLocation && !isGettingLocation)
-                }
-                title="Search"
-              >
-                {combinedLoading ? (
-                  <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-                    <circle
-                      className="opacity-25"
-                      cx="12"
-                      cy="12"
-                      r="10"
-                      stroke="currentColor"
-                      strokeWidth="4"
-                    ></circle>
-                    <path
-                      className="opacity-75"
-                      fill="currentColor"
-                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                    ></path>
-                  </svg>
-                ) : (
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    className="h-5 w-5"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                    />
-                  </svg>
-                )}
-              </button>
-            </div>
-
-            {/* Map placement button */}
-            <button
-              onClick={openPanel}
-              className="w-full flex items-center justify-center py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors"
-            >
-              <MapPin size={16} className="mr-2" />
-              Click on Map to Set Location
-            </button>
-
-            {/* Spacer */}
-            <div className="my-2"></div>
-
-            {/* Current location button */}
-            <button
-              className={`w-full flex items-center justify-center py-2 border border-indigo-300 rounded-md text-indigo-700 bg-indigo-50 hover:bg-indigo-100 transition-colors ${
-                isGettingLocation ? 'opacity-75 cursor-not-allowed' : ''
-              }`}
-              onClick={getUserLocation}
-              disabled={isGettingLocation || combinedLoading}
-            >
-              {isGettingLocation ? (
-                <>
-                  <svg
-                    className="animate-spin h-4 w-4 mr-2"
-                    viewBox="0 0 24 24"
-                  >
-                    <circle
-                      className="opacity-25"
-                      cx="12"
-                      cy="12"
-                      r="10"
-                      stroke="currentColor"
-                      strokeWidth="4"
-                    ></circle>
-                    <path
-                      className="opacity-75"
-                      fill="currentColor"
-                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                    ></path>
-                  </svg>
-                  Getting location...
-                </>
-              ) : (
-                <>
-                  <MapPin size={16} className="mr-2" />
-                  Use My Current Location
-                </>
-              )}
-            </button>
-          </div>
-
-          {/* Radius slider */}
-          <div className="p-3 border-b">
-            <label className="text-sm font-medium text-gray-700 block mb-1">
-              Radius: {geofenceRadius} km
-            </label>
-            <input
-              type="range"
-              min="5"
-              max="100"
-              step="5"
-              value={geofenceRadius}
-              onChange={(e) => setGeofenceRadius(parseInt(e.target.value))}
-              className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-            />
-            <div className="flex justify-between text-xs text-gray-500 mt-1">
-              <span>5 km</span>
-              <span>50 km</span>
-              <span>100 km</span>
-            </div>
-          </div>
+    <div className="p-4 space-y-4">
+      {/* Error message */}
+      {hasError && (
+        <div className="bg-red-50 border border-red-200 rounded p-3 text-sm text-red-600">
+          {hasError}
         </div>
       )}
 
-      {/* Floating panel */}
-      {showPanel && (
-        <FloatingGeofencePanel
-          isOpen={showPanel}
-          onClose={closePanel}
-          geofenceRadius={geofenceRadius}
-          setGeofenceRadius={setGeofenceRadius}
-          onSearch={handlePanelSearch}
-          processGeofenceSearch={processGeofenceSearch}
-          isGeofenceActive={isGeofenceActive}
-          geofenceLocation={
-            geofenceCoordinates || { lat: 0, lng: 0 } // Provide default coordinates if null
-          }
-          isSearching={isSearching}
-          coordinates={tempCoordinates}
-          setCoordinates={panelLogic.setTempCoordinates}
-          locationName={locationName}
-          isLoadingLocation={isLoadingLocation}
-          onReset={resetPanel}
-          panelPosition={panelPosition ?? null}
-          setShowPanel={setShowPanel}
-          flagUrl={flagUrl} // Add this prop
+      {/* Location input group */}
+      <div className="space-y-2">
+        <label
+          htmlFor="geofence-location"
+          className="block text-sm font-medium text-gray-700"
+        >
+          Location
+        </label>
+        <div className="flex gap-2">
+          <input
+            ref={searchInputRef}
+            id="geofence-location"
+            type="text"
+            value={geofenceLocation}
+            onChange={handleLocationChange}
+            placeholder="City, address, or coordinates"
+            className="flex-grow px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+          />
+          <button
+            onClick={handleGetLocation}
+            disabled={isGettingLocation}
+            className="inline-flex items-center justify-center p-2 border border-transparent rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+            title="Get current location"
+          >
+            {isGettingLocation ? (
+              <Loader2 className="h-5 w-5 animate-spin" />
+            ) : (
+              <MapPin className="h-5 w-5" />
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* Radius slider */}
+      <div className="space-y-2">
+        <div className="flex justify-between">
+          <label
+            htmlFor="geofence-radius"
+            className="block text-sm font-medium text-gray-700"
+          >
+            Radius
+          </label>
+          <span className="text-sm text-gray-500">{geofenceRadius} nm</span>
+        </div>
+        <input
+          id="geofence-radius"
+          type="range"
+          min="5"
+          max="100"
+          step="5"
+          value={geofenceRadius}
+          onChange={handleRadiusChange}
+          className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
         />
-      )}
+        <div className="flex justify-between text-xs text-gray-500">
+          <span>5 nm</span>
+          <span>100 nm</span>
+        </div>
+      </div>
+
+      {/* Search button */}
+      <button
+        onClick={handleSearch}
+        disabled={!geofenceLocation}
+        className="w-full flex items-center justify-center px-4 py-2 border border-transparent rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+      >
+        <Search className="mr-2 h-5 w-5" />
+        <span>Search</span>
+      </button>
+
+      {/* Toggle switch */}
+      <div className="flex items-center justify-between pt-3 border-t">
+        <span className="text-sm font-medium text-gray-700">
+          Enable geofence
+        </span>
+        <Toggle
+          checked={isGeofenceActive}
+          onChange={handleToggleChange}
+          disabled={!geofenceCoordinates}
+        />
+      </div>
     </div>
   );
 };

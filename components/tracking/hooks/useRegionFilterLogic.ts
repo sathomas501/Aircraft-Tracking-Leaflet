@@ -107,50 +107,73 @@ const setLoading = (isLoading: boolean) => {
 
 
     const handleRegionSelect = async (region: RegionCode): Promise<void> => {
-        // Update central state
-        updateFilter('region', 'value', region);
-        updateFilter('region', 'selectedRegion', region);
-        updateFilter('region', 'active', true);
-        
-        setLocalLoading(true);
-        // Update central loading state
-        updateUIState('loading', true);
+  // Update state first
+  updateFilter('region', 'value', region);
+  updateFilter('region', 'selectedRegion', region);
+  updateFilter('region', 'active', true);
+  
+  // Clear existing data
+  if (clearGeofenceData) {
+    clearGeofenceData();
+  }
+  
+  setLocalLoading(true);
+  
+  try {
+    // Add a small delay before map operations
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
+    if (mapInstance) {
+      const bounds = getBoundsByRegion(region);
+      const zoomLevel = getZoomLevelForRegion(region);
+      
+      mapInstance.setZoom(zoomLevel);
+      
+      // Force redraw/reflow before fitBounds
+      mapInstance.invalidateSize();
+      
+      const options = {
+        padding: MAP_CONFIG.PADDING.DEFAULT,
+      };
+      
+      mapInstance.fitBounds(bounds as any, options);
+      
+      // Draw outline after bounds are set
+      drawRegionOutline(region);
+    }
+    
+    // Fetch data
+    const countResponse = await fetch(`/api/tracking/region-count?region=${region}`);
+    if (countResponse.ok) {
+      const countData = await countResponse.json();
+      console.log(`${countData.count} aircraft available in this region`);
+    }
+  } catch (error) {
+    console.error('Error in region selection:', error);
+  } finally {
+    setLocalLoading(false);
+    updateUIState('loading', false);
+    setActiveDropdown(null);
+  }
+};
 
-        try {
-            if (mapInstance) {
-                const bounds = getBoundsByRegion(region);
-                const zoomLevel = getZoomLevelForRegion(region);
-
-                mapInstance.setZoom(zoomLevel);
-
-                const options = {
-                    padding: MAP_CONFIG.PADDING.DEFAULT,
-                };
-
-                mapInstance.fitBounds(bounds as any, options);
-                mapInstance.invalidateSize();
-                drawRegionOutline(region);
-            }
-
-            const countResponse = await fetch(`/api/tracking/region-count?region=${region}`);
-            if (countResponse.ok) {
-                const countData = await countResponse.json();
-                console.log(`${countData.count} aircraft available in this region`);
-            }
-
-            if (clearGeofenceData) {
-                clearGeofenceData();
-            }
-        } catch (error) {
-            console.error('Error in region selection:', error);
-        } finally {
-            setLocalLoading(false);
-            // Update central loading state
-            updateUIState('loading', true);
-            // Update active dropdown
-            setActiveDropdown(null);
-        }
+// In useRegionFilterLogic.ts
+useEffect(() => {
+  // If region is selected and map instance exists, center the map
+  if (activeRegion && mapInstance) {
+    const bounds = getBoundsByRegion(activeRegion as RegionCode);
+    const zoomLevel = getZoomLevelForRegion(activeRegion as RegionCode);
+    
+    mapInstance.setZoom(zoomLevel);
+    const options = {
+      padding: MAP_CONFIG.PADDING.DEFAULT,
     };
+    
+    mapInstance.fitBounds(bounds as any, options);
+    mapInstance.invalidateSize();
+    drawRegionOutline(activeRegion as RegionCode);
+  }
+}, [activeRegion, mapInstance]); // Depend on activeRegion and mapInstance
 
 
     const drawRegionOutline = (region: RegionCode): void => {

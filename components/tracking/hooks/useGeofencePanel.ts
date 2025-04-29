@@ -1,361 +1,147 @@
 // hooks/useGeofencePanel.ts
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
+import { ExtendedAircraft } from '@/types/base';
 import { MapboxService } from '../../../lib/services/MapboxService';
-import { getAircraftNearLocation } from '../../../lib/services/geofencing';
 
+// Define the shape of panel coordinates
+interface PanelPosition {
+  x: number;
+  y: number;
+}
+
+// Define the shape of geofence coordinates
 interface Coordinates {
   lat: number;
   lng: number;
 }
 
-interface GeofencePanelOptions {
+// Define the hook options
+export interface GeofencePanelOptions {
   geofenceRadius: number;
-  setGeofenceLocation: (location: string) => void;
-  setGeofenceCoordinates: (coordinates: Coordinates | null) => void;
-  setGeofenceCenter: (coordinates: Coordinates) => void;
-  updateGeofenceAircraft: (aircraft: any[]) => void;
+  mapInstance: any; // Replace with your map type if available
   isGeofenceActive: boolean;
-  processGeofenceSearch: () => void;
-  toggleGeofenceState: (active: boolean) => void;
+  toggleGeofenceState: (enabled: boolean) => void;
   setActiveDropdown: (dropdown: string | null) => void;
-  clearGeofenceData?: () => void;
-  setCoordinates: (coordinates: Coordinates | null) => void;
-  setShowPanel: (show: boolean) => void;
-
-  mapInstance: any;
+  updateGeofenceAircraft: (aircraft: ExtendedAircraft[]) => void;
+  setGeofenceCenter?: (coords: Coordinates) => void;
+  setGeofenceCoordinates?: (coords: Coordinates | null) => void;
+  processGeofenceSearch?: (fromPanel?: boolean) => Promise<void> | void;
+  setCoordinates?: (coords: PanelPosition) => void;
+  setShowPanel?: (show: boolean) => void;
 }
 
 export function useGeofencePanel(options: GeofencePanelOptions) {
-  const {
-    geofenceRadius,
-    setGeofenceLocation,
-    setGeofenceCoordinates,
-    setGeofenceCenter,
-    processGeofenceSearch,
-    updateGeofenceAircraft,
-    isGeofenceActive,
-    toggleGeofenceState,
-    clearGeofenceData,
-    setActiveDropdown,
-    setCoordinates,
-    mapInstance,
-  } = options;
-
-  // Panel UI state
-  const [panelPosition, setPanelPosition] = useState<
-    { x: number; y: number } | undefined
-  >({
-    x: window.innerWidth - 340,
-    y: 100,
-  });
-
-  const [showPanel, setShowPanel] = useState(false);
-  const [tempCoordinates, setTempCoordinates] = useState<Coordinates | null>(
-    null
-  );
-  const [isSearching, setIsSearching] = useState(false);
+  // Panel state
+  const [showPanel, setShowPanel] = useState<boolean>(false);
+  const [panelPosition, setPanelPosition] = useState<PanelPosition | null>(null);
+  const [tempCoordinates, setTempCoordinates] = useState<Coordinates | null>(null);
+  
+  // Geofence state
   const [locationName, setLocationName] = useState<string | null>(null);
-  const [isLoadingLocation, setIsLoadingLocation] = useState(false);
-  const [isLocalLoading, setLocalLoading] = useState(false); // Local loading state for geofence search
-  const [activeDropdown] = useState<string | null>(null); // Active dropdown state
-  // Default position for the panel - right side of screen
+  const [isLoadingLocation, setIsLoadingLocation] = useState<boolean>(false);
+  const [isSearching, setIsSearching] = useState<boolean>(false);
+  const [geofenceLocation, setGeofenceLocation] = useState<string>('');
 
-  // Panel control methods
-  const openPanel = useCallback(() => {
-    // Calculate position on right side of screen with some margin
-    const rightPosition = window.innerWidth - 340; // 300px width + 40px margin
-    const topPosition = 100; // 100px from top
-
-    // Update panel position
-    setPanelPosition({ x: rightPosition, y: topPosition });
-
-    // Show the panel
+  // Open panel at specific position
+  const openPanel = (position: PanelPosition) => {
+    setPanelPosition(position);
     setShowPanel(true);
-
-    // Close dropdown
-    options.setActiveDropdown(null);
-
-    // Dispatch event for map mode
-    const event = new CustomEvent('enable-geofence-placement', {
-      detail: { active: true },
-    });
-    document.dispatchEvent(event);
-  }, [options.setActiveDropdown]);
-
-  const closePanel = useCallback(() => {
-    setShowPanel(false);
-    setTempCoordinates(null);
-    setLocationName(null);
-
-    // Dispatch event to notify map that we're exiting geofence placement mode
-    const event = new CustomEvent('enable-geofence-placement', {
-      detail: { active: false },
-    });
-    document.dispatchEvent(event);
-  }, []);
-
-  // In your GeofenceFilter.tsx component
-  const handleReset = () => {
-    // Clear geofence data
-    setGeofenceCoordinates(null);
-    setGeofenceLocation('');
-
-    // Reset geofence state
-    if (isGeofenceActive) {
-      toggleGeofenceState(false);
-    }
-
-    // Clear aircraft data if needed
-    if (clearGeofenceData) {
-      clearGeofenceData();
-    }
-
-    // Reset loading states
-    setLocalLoading(false);
-
-    // Keep dropdown open if needed
-    if (activeDropdown === 'geofence') {
-      // Don't close dropdown
-    } else {
-      setActiveDropdown(null);
+    
+    // Pass to parent if handler provided
+    if (options.setShowPanel) {
+      options.setShowPanel(true);
     }
   };
 
-  const resetPanel = useCallback(() => {
-    // Clear UI state
+  // Close panel
+  const closePanel = () => {
+    setShowPanel(false);
+    setPanelPosition(null);
+    
+    // Pass to parent if handler provided
+    if (options.setShowPanel) {
+      options.setShowPanel(false);
+    }
+  };
+
+  // Reset panel state
+  const resetPanel = () => {
     setTempCoordinates(null);
-    setCoordinates(null);
     setLocationName(null);
-
-    // Clear geofence system state
-    setGeofenceCoordinates(null);
     setGeofenceLocation('');
-    setLocationName(null); // optional fallback
-    setGeofenceCenter?.({ lat: 0, lng: 0 }); // Reset to default coordinates
-
-    // Clear any data drawn on the map
-    if (clearGeofenceData) {
-      clearGeofenceData();
-    }
-
-    // Deactivate geofence
-    if (isGeofenceActive) {
-      toggleGeofenceState(false);
-    }
-
-    // Reset UI flags
-    setIsSearching(false);
-    setLocalLoading(false);
-
-    // Explicitly keep the panel open for new interactions
-    setShowPanel(true);
-
-    // Zoom out the map to show more area
-    if (mapInstance) {
-      // For Leaflet maps
-      if (
-        typeof mapInstance.getZoom === 'function' &&
-        typeof mapInstance.setZoom === 'function'
-      ) {
-        const currentZoom = mapInstance.getZoom();
-        const newZoom = Math.max(currentZoom - 4, 5); // Zoom out by 4 levels, but not beyond level 5
-        mapInstance.setZoom(newZoom);
-      }
-      // For Mapbox maps
-      else if (
-        typeof mapInstance.getZoom === 'function' &&
-        typeof mapInstance.zoomTo === 'function'
-      ) {
-        const currentZoom = mapInstance.getZoom();
-        const newZoom = Math.max(currentZoom - 4, 5);
-        mapInstance.zoomTo(newZoom, { duration: 500 }); // 500ms animation
-      }
-    }
-
-    // Notify the map that we're still in geofence placement mode
-    const event = new CustomEvent('enable-geofence-placement', {
-      detail: { active: true },
-    });
-    document.dispatchEvent(event);
-  }, [
-    setTempCoordinates,
-    setCoordinates,
-    setLocationName,
-    setGeofenceCoordinates,
-    setGeofenceLocation,
-    setGeofenceCenter,
-    clearGeofenceData,
-    isGeofenceActive,
-    toggleGeofenceState,
-    setIsSearching,
-    setLocalLoading,
-    setShowPanel,
-  ]);
-
-  // Make sure any panel action keeps the dropdown closed
-  useEffect(() => {
-    if (showPanel) {
-      // Keep dropdown closed while panel is open
-      options.setActiveDropdown(null);
-    }
-  }, [showPanel, options.setActiveDropdown]);
-
-  // Fetch location name whenever coordinates change
-  useEffect(() => {
-    if (!tempCoordinates) return;
-
-    setIsLoadingLocation(true);
-
-    MapboxService.getLocationNameFromCoordinates(
-      tempCoordinates.lat,
-      tempCoordinates.lng
-    )
-      .then((name) => {
-        setLocationName(name);
-      })
-      .catch((error) => {
-        console.error('Error fetching location name:', error);
-      })
-      .finally(() => {
-        setIsLoadingLocation(false);
-      });
-  }, [tempCoordinates]);
+    closePanel();
+  };
 
   // Handle search from panel
-  const handlePanelSearch = useCallback(
-    async (lat: number, lng: number) => {
-      if (!lat || !lng || isSearching) return;
-
-      setIsSearching(true);
-      try {
-        // Get location name
-        const locationName = await MapboxService.getLocationNameFromCoordinates(
-          lat,
-          lng
-        );
-
-        // Set location in filter logic
-        if (locationName) {
-          setGeofenceLocation(locationName);
-        } else {
-          // Fallback to coordinates if no name found
-          setGeofenceLocation(`${lat.toFixed(4)}, ${lng.toFixed(4)}`);
-        }
-
-        // Update coordinates
-        setGeofenceCoordinates({ lat, lng });
-        setGeofenceCenter({ lat, lng });
-
-        // Get aircraft data near this location
-        const fetchedAircraft = await getAircraftNearLocation(
-          lat,
-          lng,
-          geofenceRadius || 25
-        );
-
-        if (fetchedAircraft.length > 0) {
-          // Update aircraft data
-          updateGeofenceAircraft(fetchedAircraft);
-
-          // Activate geofence if not already active
-          if (!isGeofenceActive) {
-            toggleGeofenceState(true);
-          }
-        } else {
-          console.log('No aircraft found near clicked location');
-        }
-
-        // Center the map on this location
-        if (mapInstance && typeof mapInstance.setView === 'function') {
-          // Get current zoom level
-          const currentZoom = mapInstance.getZoom();
-          // Use appropriate zoom level based on current view
-          const targetZoom = currentZoom <= 7 ? 9 : currentZoom;
-
-          // Set view to the coordinates
-          mapInstance.setView([lat, lng], targetZoom);
-          mapInstance.invalidateSize();
-        }
-      } catch (error) {
-        console.error('Error searching from panel:', error);
-      } finally {
-        setIsSearching(false);
-        // IMPORTANT: Explicitly force the panel to stay open
-        setShowPanel(true);
-      }
-    },
-    [
-      isSearching,
-      geofenceRadius,
-      setGeofenceLocation,
-      setGeofenceCoordinates,
-      setGeofenceCenter,
-      updateGeofenceAircraft,
-      isGeofenceActive,
-      toggleGeofenceState,
-      mapInstance,
-    ]
-  );
-
-  // Listen for map clicks when panel is open
-  useEffect(() => {
-    if (!showPanel) return;
-
-    const handleMapClick = (e: CustomEvent<{ lat: number; lng: number }>) => {
-      const { lat, lng } = e.detail;
+  const handlePanelSearch = async (lat: number, lng: number) => {
+    if (!lat || !lng) return;
+    
+    setIsSearching(true);
+    try {
+      // Update temp coordinates
       setTempCoordinates({ lat, lng });
-    };
-
-    // Add event listener for map clicks
-    document.addEventListener(
-      'map-geofence-click',
-      handleMapClick as EventListener
-    );
-
-    // Cleanup listener when component unmounts or panel closes
-    return () => {
-      document.removeEventListener(
-        'map-geofence-click',
-        handleMapClick as EventListener
-      );
-    };
-  }, [showPanel]);
-
-  // Listen for the clear all filters event
-  useEffect(() => {
-    const handleClearAllFilters = () => {
-      // Close the floating panel when filters are cleared
-      if (showPanel) {
-        closePanel();
+      
+      // Get location name from coordinates
+      setIsLoadingLocation(true);
+      const name = await MapboxService.getLocationNameFromCoordinates(lat, lng);
+      setLocationName(name);
+      
+      // Set geofence coordinates if available
+      if (options.setGeofenceCoordinates) {
+        options.setGeofenceCoordinates({ lat, lng });
       }
-    };
+      
+      // Set geofence center if available
+      if (options.setGeofenceCenter) {
+        options.setGeofenceCenter({ lat, lng });
+      }
+      
+      // Process search if available
+      if (options.processGeofenceSearch) {
+        await options.processGeofenceSearch(true);
+      }
+      
+      // Close panel after search
+      closePanel();
+    } catch (error) {
+      console.error('Error in panel search:', error);
+    } finally {
+      setIsSearching(false);
+      setIsLoadingLocation(false);
+    }
+  };
 
-    // Add event listener for the clear all filters event
-    document.addEventListener('ribbon-filters-cleared', handleClearAllFilters);
-
-    // Clean up
-    return () => {
-      document.removeEventListener(
-        'ribbon-filters-cleared',
-        handleClearAllFilters
-      );
-    };
-  }, [showPanel, closePanel]);
+  // Update panel position and notify parent
+  const updatePanelPosition = (position: PanelPosition) => {
+    setPanelPosition(position);
+    
+    // Pass to parent if handler provided
+    if (options.setCoordinates) {
+      options.setCoordinates(position);
+    }
+  };
 
   return {
+    // State
     showPanel,
-    tempCoordinates,
-    isSearching,
-    locationName,
-    setLocationName,
-    isLoadingLocation,
-    setTempCoordinates,
-    setPanelPosition,
-    openPanel,
     panelPosition,
+    tempCoordinates,
+    locationName,
+    isLoadingLocation,
+    isSearching,
+    geofenceLocation,
+    
+    // Setters
+    setShowPanel,
+    setPanelPosition: updatePanelPosition,
+    setTempCoordinates,
+    setLocationName,
+    setGeofenceLocation,
+    
+    // Methods
+    openPanel,
     closePanel,
     resetPanel,
-    setShowPanel,
     handlePanelSearch,
   };
 }

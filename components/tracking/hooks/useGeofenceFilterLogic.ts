@@ -1,5 +1,7 @@
+
+
 // hooks/useGeofenceFilterLogic.ts
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import type { ExtendedAircraft } from '@/types/base';
 import { useEnhancedMapContext } from '../context/EnhancedMapContext';
 import openSkyTrackingService from '@/lib/services/openSkyTrackingService';
@@ -15,11 +17,13 @@ import {
 interface UseGeofenceFilterLogicProps {
   activeDropdown: string | null;
   setActiveDropdown: (dropdown: string | null) => void;
+  onError?: (error: string | null) => void;
 }
 
 export function useGeofenceFilterLogic({
   activeDropdown,
-  setActiveDropdown
+  setActiveDropdown,
+  onError
 }: UseGeofenceFilterLogicProps) {
   // Get context state and functions
   const {
@@ -27,7 +31,7 @@ export function useGeofenceFilterLogic({
     selectManufacturer,
     selectModel,
     mapInstance,
-    clearGeofenceData,
+    clearGeofenceData: contextClearGeofenceData,
     updateGeofenceAircraft,
     setBlockManufacturerApiCalls,
     setIsManufacturerApiBlocked,
@@ -56,34 +60,43 @@ export function useGeofenceFilterLogic({
   const [isSearchReady, setIsSearchReady] = useState(false);
   const [isRateLimited, setIsRateLimited] = useState(false);
   const [rateLimitTimer, setRateLimitTimer] = useState<number | null>(null);
+  const [hasError, setHasError] = useState<string | null>(null);
+
+  // Function to set errors and propagate them to the parent if needed
+  const setError = useCallback((error: string | null) => {
+    setHasError(error);
+    if (onError) {
+      onError(error);
+    }
+  }, [onError]);
 
   // Geofence methods
-  const handleRateLimit = (retryAfter: number = 30) => {
+  const handleRateLimit = useCallback((retryAfter: number = 30) => {
     setIsRateLimited(true);
     setRateLimitTimer(retryAfter);
     console.log(`Rate limited by API. Retry after ${retryAfter}s`);
 
     // Block all API calls
     openSkyTrackingService.setBlockAllApiCalls(true);
-    setBlockManufacturerApiCalls(true);
+    if (typeof setBlockManufacturerApiCalls === 'function') {
+      setBlockManufacturerApiCalls(true);
+    }
 
     // Show notification to user
     if (retryAfter > 0) {
-      alert(
-        `Aircraft data refresh rate limited. Please wait ${retryAfter} seconds before trying again.`
-      );
+      setError(`Aircraft data refresh rate limited. Please wait ${retryAfter} seconds before trying again.`);
     }
-  };
+  }, [setBlockManufacturerApiCalls, setError]);
 
-  const getUserLocation = async () => {
+  const getUserLocation = useCallback(async () => {
     if (isRateLimited) {
-      alert(
-        `Rate limited. Please wait ${rateLimitTimer || 30} seconds before trying to get location.`
-      );
+      setError(`Rate limited. Please wait ${rateLimitTimer || 30} seconds before trying to get location.`);
       return;
     }
 
     setIsGettingLocation(true);
+    setError(null);
+    
     try {
       // Use the getCurrentPosition from our combined hook
       const position = await geolocationServices.getCurrentPosition();
@@ -93,10 +106,29 @@ export function useGeofenceFilterLogic({
 
         // Update state with coordinates
         setGeofenceCoordinates({ lat: latitude, lng: longitude });
-        setGeofenceCenter({ lat: latitude, lng: longitude });
+        
+        if (typeof setGeofenceCenter === 'function') {
+          setGeofenceCenter({ lat: latitude, lng: longitude });
+        }
 
         // Update the location display with coordinates
         setGeofenceLocation(`${latitude.toFixed(6)}, ${longitude.toFixed(6)}`);
+
+        // Try to get a friendly name for the location
+        try {
+          const locationName = await MapboxService.getLocationNameFromCoordinates(
+            latitude,
+            longitude
+          );
+          
+          if (locationName) {
+            setLocationName(locationName);
+            setGeofenceLocation(locationName);
+          }
+        } catch (error) {
+          console.warn('Could not get location name, using coordinates', error);
+          // Continue with coordinates only
+        }
 
         // Automatically trigger the geofence search
         try {
@@ -107,9 +139,7 @@ export function useGeofenceFilterLogic({
           );
 
           if (fetchedAircraft.length === 0) {
-            alert(
-              `No aircraft found near your current location. Try increasing the radius.`
-            );
+            setError(`No aircraft found near your current location. Try increasing the radius.`);
             setIsGettingLocation(false);
             return;
           }
@@ -122,12 +152,15 @@ export function useGeofenceFilterLogic({
           setGeofenceAircraft(enrichedAircraft);
 
           // Clear existing aircraft data
-          if (clearGeofenceData) {
-            clearGeofenceData();
+          if (typeof contextClearGeofenceData === 'function') {
+            contextClearGeofenceData();
           }
 
           // Update the map with new aircraft
-          updateGeofenceAircraft(enrichedAircraft);
+          if (typeof updateGeofenceAircraft === 'function') {
+            updateGeofenceAircraft(enrichedAircraft);
+          }
+          
           setIsGeofenceActive(true);
 
           // Center the map on user's location
@@ -160,27 +193,28 @@ export function useGeofenceFilterLogic({
       }
     } catch (error) {
       console.error('Error getting user location:', error);
-      alert(
-        'Unable to access your location. Please make sure location services are enabled in your browser.'
-      );
+      setError('Unable to access your location. Please make sure location services are enabled in your browser.');
     } finally {
       setIsGettingLocation(false);
     }
-  };
+  }, [
+    isRateLimited, rateLimitTimer, geolocationServices, geofenceRadius,
+    setGeofenceCenter, mapInstance, contextClearGeofenceData, updateGeofenceAircraft,
+    handleRateLimit, setActiveDropdown, setError
+  ]);
 
-  const processGeofenceSearch = async (fromPanel = false) => {
+  const processGeofenceSearch = useCallback(async (fromPanel = false) => {
     if (!geofenceLocation) return;
 
     // Check if rate limited
     if (isRateLimited) {
-      alert(
-        `Rate limited. Please wait ${rateLimitTimer || 30} seconds before searching again.`
-      );
+      setError(`Rate limited. Please wait ${rateLimitTimer || 30} seconds before searching again.`);
       return;
     }
 
     // Set loading state
     setLocalLoading(true);
+    setError(null);
 
     try {
       console.log(`Searching for aircraft near location: "${geofenceLocation}"`);
@@ -224,6 +258,7 @@ export function useGeofenceFilterLogic({
         };
         // Save the formatted location name
         setGeofenceLocation(locations[0].name);
+        setLocationName(locations[0].name);
       } else if (
         fetchedAircraft.length > 0 &&
         fetchedAircraft[0].latitude &&
@@ -237,9 +272,7 @@ export function useGeofenceFilterLogic({
       }
 
       if (fetchedAircraft.length === 0) {
-        alert(
-          `No aircraft found near ${geofenceLocation}. Try increasing the radius or searching in a different area.`
-        );
+        setError(`No aircraft found near ${geofenceLocation}. Try increasing the radius or searching in a different area.`);
         setLocalLoading(false);
         return;
       }
@@ -247,11 +280,17 @@ export function useGeofenceFilterLogic({
       // Update state with the coordinates
       if (coordinates) {
         setGeofenceCoordinates(coordinates);
-        setGeofenceCenter(coordinates);
+        
+        if (typeof setGeofenceCenter === 'function') {
+          setGeofenceCenter(coordinates);
+        }
       }
       
       if (!isGeofenceActive) {
-        toggleGeofence();
+        if (typeof toggleGeofence === 'function') {
+          toggleGeofence();
+        }
+        setIsGeofenceActive(true);
       } else if (!coordinates) {
         throw new Error('Could not determine coordinates for the location');
       }
@@ -273,12 +312,14 @@ export function useGeofenceFilterLogic({
       setIsGeofenceActive(true);
 
       // Clear existing aircraft data
-      if (clearGeofenceData) {
-        clearGeofenceData();
+      if (typeof contextClearGeofenceData === 'function') {
+        contextClearGeofenceData();
       }
 
       // Update the display
-      updateGeofenceAircraft(enrichedAircraft);
+      if (typeof updateGeofenceAircraft === 'function') {
+        updateGeofenceAircraft(enrichedAircraft);
+      }
 
       // Center the map
       if (mapInstance && coordinates) {
@@ -303,16 +344,18 @@ export function useGeofenceFilterLogic({
       if (error.message?.includes('rate limit') || error.status === 429) {
         handleRateLimit(30);
       } else {
-        alert(
-          `Error: ${error instanceof Error ? error.message : 'Unknown error occurred'}`
-        );
+        setError(`Error: ${error instanceof Error ? error.message : 'Unknown error occurred'}`);
       }
     } finally {
       setLocalLoading(false);
     }
-  };
+  }, [
+    geofenceLocation, isRateLimited, rateLimitTimer, geofenceRadius,
+    isGeofenceActive, contextClearGeofenceData, updateGeofenceAircraft,
+    mapInstance, handleRateLimit, setActiveDropdown, toggleGeofence, setGeofenceCenter, setError
+  ]);
 
-  const toggleGeofenceState = (enabled: boolean) => {
+  const toggleGeofenceState = useCallback((enabled: boolean) => {
     console.log('toggleGeofenceState called with:', enabled);
     console.log('Current geofenceCoordinates:', geofenceCoordinates);
 
@@ -339,7 +382,10 @@ export function useGeofenceFilterLogic({
         // Display aircraft if we have them
         if (geofenceAircraft && geofenceAircraft.length > 0) {
           console.log(`Showing ${geofenceAircraft.length} aircraft in geofence`);
-          updateGeofenceAircraft(geofenceAircraft);
+          
+          if (typeof updateGeofenceAircraft === 'function') {
+            updateGeofenceAircraft(geofenceAircraft);
+          }
         } else {
           // No aircraft data yet, trigger a search
           console.log('No aircraft data yet, triggering search');
@@ -349,10 +395,8 @@ export function useGeofenceFilterLogic({
         }
       } else {
         // No valid coordinates
-        console.warn('No valid coordinates, showing alert');
-        alert(
-          'Please set a location before enabling geofence.\n\nClick anywhere on the map to set a location.'
-        );
+        console.warn('No valid coordinates, showing error');
+        setError('Please set a location before enabling geofence.\n\nClick anywhere on the map to set a location.');
         setGeofenceEnabled(false);
         setIsGeofenceActive(false);
       }
@@ -363,11 +407,36 @@ export function useGeofenceFilterLogic({
       setIsGeofenceActive(false);
 
       // Clear geofence data if function available
-      if (typeof clearGeofenceData === 'function') {
-        clearGeofenceData();
+      if (typeof contextClearGeofenceData === 'function') {
+        contextClearGeofenceData();
       }
+      
+      // Clear error state
+      setError(null);
     }
-  };
+  }, [geofenceCoordinates, geofenceAircraft, toggleGeofence, contextClearGeofenceData, updateGeofenceAircraft, processGeofenceSearch, setError]);
+
+  // Helper method to clear all geofence data
+  const clearGeofenceData = useCallback(() => {
+    setGeofenceCoordinates(null);
+    setGeofenceLocation('');
+    setLocationName(null);
+    setGeofenceAircraft([]);
+    setGeofenceEnabled(false);
+    setIsGeofenceActive(false);
+    setIsSearchReady(false);
+    setError(null);
+    
+    // Call context clear function if available
+    if (typeof clearGeofence === 'function') {
+      clearGeofence();
+    }
+    
+    // Clear from map context if available
+    if (typeof contextClearGeofenceData === 'function') {
+      contextClearGeofenceData();
+    }
+  }, [clearGeofence, contextClearGeofenceData, setError]);
 
   // Effects
   useEffect(() => {
@@ -381,12 +450,19 @@ export function useGeofenceFilterLogic({
       const timer = setTimeout(() => {
         setIsRateLimited(false);
         setRateLimitTimer(null);
+        
+        // Unblock API calls
+        openSkyTrackingService.setBlockAllApiCalls(false);
+        if (typeof setIsManufacturerApiBlocked === 'function') {
+          setIsManufacturerApiBlocked(false);
+        }
+        
         console.log('Rate limit timer expired, resuming API calls');
       }, rateLimitTimer * 1000);
 
       return () => clearTimeout(timer);
     }
-  }, [isRateLimited, rateLimitTimer]);
+  }, [isRateLimited, rateLimitTimer, setIsManufacturerApiBlocked]);
 
   // Effect to sync geofence state
   useEffect(() => {
@@ -394,7 +470,7 @@ export function useGeofenceFilterLogic({
     if (isGeofenceActive !== geofenceEnabled) {
       setGeofenceEnabled(isGeofenceActive);
     }
-  }, [isGeofenceActive]);
+  }, [isGeofenceActive, geofenceEnabled]);
 
   // Effect to handle map click for geofence
   useEffect(() => {
@@ -406,6 +482,7 @@ export function useGeofenceFilterLogic({
 
         // First update coordinates immediately
         setGeofenceCoordinates({ lat, lng });
+        setError(null); // Clear any previous errors
 
         // Then start an async operation to get the location name
         console.log(`Getting location name for: ${lat}, ${lng}`);
@@ -423,6 +500,7 @@ export function useGeofenceFilterLogic({
         // Update with the friendly name once we have it
         if (locationName !== null) {
           setGeofenceLocation(locationName);
+          setLocationName(locationName);
         }
 
         // Open the location dropdown if needed
@@ -448,7 +526,7 @@ export function useGeofenceFilterLogic({
         handleMapGeofenceClick as EventListener
       );
     };
-  }, [setGeofenceLocation, setGeofenceCoordinates, setActiveDropdown, activeDropdown]);
+  }, [setGeofenceLocation, setGeofenceCoordinates, setActiveDropdown, activeDropdown, setError]);
 
   return {
     // State
@@ -460,6 +538,8 @@ export function useGeofenceFilterLogic({
     geofenceAircraft,
     isSearchReady,
     localLoading,
+    locationName,
+    hasError,
     
     // Methods
     getUserLocation,
@@ -471,5 +551,5 @@ export function useGeofenceFilterLogic({
     setGeofenceCenter,
     setIsGettingLocation,
     setLocationName,
-  };
-}
+    clearGeofenceData,
+  };}

@@ -1,13 +1,24 @@
 // hooks/useFilterLogicCoordinator.ts
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useEnhancedMapContext } from '../context/EnhancedMapContext';
 import { useManufacturerFilterLogic } from './useManufacturerFilterLogic';
 import { useGeofenceFilterLogic } from './useGeofenceFilterLogic';
 import { useOwnerFilterLogic } from './useOwnerFilterLogic';
 import { useRegionFilterLogic } from './useRegionFilterLogic';
 import { RegionCode, ExtendedAircraft } from '@/types/base';
+import { MapboxService } from '../../../lib/services/MapboxService';
 
 export type FilterMode = 'manufacturer' | 'geofence' | 'both' | 'owner' | 'region';
+
+interface Coordinates {
+  lat: number;
+  lng: number;
+}
+
+interface PanelPosition {
+  x: number;
+  y: number;
+}
 
 export function useFilterLogicCoordinator() {
   // Get the map context
@@ -19,6 +30,14 @@ export function useFilterLogicCoordinator() {
   const [localLoading, setLocalLoading] = useState(false);
   const [isRateLimited, setIsRateLimited] = useState(false);
   const [rateLimitTimer, setRateLimitTimer] = useState<number | null>(null);
+  
+  // Geofence Panel state
+  const [showGeofencePanel, setShowGeofencePanel] = useState<boolean>(false);
+  const [geofencePanelPosition, setGeofencePanelPosition] = useState<PanelPosition | null>(null);
+  const [tempCoordinates, setTempCoordinates] = useState<Coordinates | null>(null);
+  const [locationName, setLocationName] = useState<string | null>(null);
+  const [isLoadingLocation, setIsLoadingLocation] = useState<boolean>(false);
+  const [hasError, setHasError] = useState<string | null>(null);
   
   // Create dropdown refs
   const dropdownRefs = {
@@ -37,7 +56,7 @@ export function useFilterLogicCoordinator() {
     setActiveDropdown
   });
 
-   const regionLogic = useRegionFilterLogic({
+  const regionLogic = useRegionFilterLogic({
     mapInstance: mapContext.mapInstance,
     clearGeofenceData: mapContext.clearGeofenceData,
     activeDropdown,
@@ -46,10 +65,11 @@ export function useFilterLogicCoordinator() {
     displayedAircraft: mapContext.displayedAircraft
   });
   
-  
+  // Initialize geofence logic with ability to handle errors
   const geofenceLogic = useGeofenceFilterLogic({
     activeDropdown,
-    setActiveDropdown
+    setActiveDropdown,
+    onError: setHasError
   });
   
   const ownerLogic = useOwnerFilterLogic({
@@ -125,6 +145,7 @@ export function useFilterLogicCoordinator() {
       
     } catch (error) {
       console.error('Error applying combined filters:', error);
+      setHasError('Error applying combined filters');
     } finally {
       setLocalLoading(false);
     }
@@ -161,14 +182,73 @@ export function useFilterLogicCoordinator() {
     // Close any open dropdown
     setActiveDropdown(null);
     
+    // Reset panel state
+    setShowGeofencePanel(false);
+    setGeofencePanelPosition(null);
+    setTempCoordinates(null);
+    setLocationName(null);
+    setHasError(null);
+    
     // Dispatch the event
     const clearEvent = new CustomEvent('ribbon-filters-cleared');
     document.dispatchEvent(clearEvent);
     
     console.log('All filters cleared successfully');
   };
-  
 
+  // Geofence Panel functions
+  const openGeofencePanel = useCallback((position: PanelPosition) => {
+    setGeofencePanelPosition(position);
+    setShowGeofencePanel(true);
+  }, []);
+
+  const closeGeofencePanel = useCallback(() => {
+    setShowGeofencePanel(false);
+    setGeofencePanelPosition(null);
+  }, []);
+
+  const resetGeofencePanel = useCallback(() => {
+    setTempCoordinates(null);
+    setLocationName(null);
+    closeGeofencePanel();
+  }, [closeGeofencePanel]);
+
+  const handlePanelSearch = useCallback(async (lat: number, lng: number) => {
+    if (!lat || !lng) return;
+    
+    setLocalLoading(true);
+    setHasError(null);
+    
+    try {
+      // Update temp coordinates
+      setTempCoordinates({ lat, lng });
+      
+      // Get location name from coordinates
+      setIsLoadingLocation(true);
+      const name = await MapboxService.getLocationNameFromCoordinates(lat, lng);
+      setLocationName(name);
+      
+      // Set geofence coordinates
+      geofenceLogic.setGeofenceCoordinates({ lat, lng });
+      
+      // Set geofence center if available
+      if (typeof geofenceLogic.setGeofenceCenter === 'function') {
+        geofenceLogic.setGeofenceCenter({ lat, lng });
+      }
+      
+      // Process search
+      await geofenceLogic.processGeofenceSearch(true);
+      
+      // Close panel after search
+      closeGeofencePanel();
+    } catch (error: any) {
+      console.error('Error in panel search:', error);
+      setHasError(`Error: ${error instanceof Error ? error.message : 'Unknown error occurred'}`);
+    } finally {
+      setLocalLoading(false);
+      setIsLoadingLocation(false);
+    }
+  }, [geofenceLogic, closeGeofencePanel]);
 
   // Calculate combined loading state
   const combinedLoading = localLoading || 
@@ -180,12 +260,13 @@ export function useFilterLogicCoordinator() {
     activeDropdown,
     filterMode,
     dropdownRefs,
+    hasError,
     
     // UI methods
     toggleDropdown,
     setActiveDropdown,
     
-// Region filter properties
+    // Region filter properties
     activeRegion: regionLogic.activeRegion,
     handleRegionSelect: regionLogic.handleRegionSelect,
 
@@ -221,6 +302,25 @@ export function useFilterLogicCoordinator() {
     setGeofenceCoordinates: geofenceLogic.setGeofenceCoordinates,
     setGeofenceCenter: geofenceLogic.setGeofenceCenter,
     setIsGettingLocation: geofenceLogic.setIsGettingLocation,
+    geofenceAircraft: geofenceLogic.geofenceAircraft,
+    clearGeofenceData: geofenceLogic.clearGeofenceData,
+    
+    // Panel state
+    showGeofencePanel,
+    geofencePanelPosition,
+    tempCoordinates,
+    locationName,
+    isLoadingLocation,
+    
+    // Panel methods
+    setShowGeofencePanel,
+    setGeofencePanelPosition,
+    setTempCoordinates,
+    setLocationName,
+    openGeofencePanel,
+    closeGeofencePanel,
+    resetGeofencePanel,
+    handlePanelSearch,
     
     // Owner filter
     ownerFilters: ownerLogic.ownerFilters,
@@ -230,13 +330,15 @@ export function useFilterLogicCoordinator() {
     
     // Additional properties for backward compatibility
     isGeofencePlacementMode: false,
-  
     
-    selectedRegion: mapContext.selectedRegion, // Or implement region filter logic
+    // MapContext pass-through
+    updateGeofenceAircraft: mapContext.updateGeofenceAircraft,
+    selectedRegion: mapContext.selectedRegion,
     refreshWithFilters: () => {
       if (typeof mapContext.refreshPositions === 'function') {
         mapContext.refreshPositions().catch((error: unknown) => {
           console.error('Error refreshing positions:', error);
+          setHasError('Error refreshing positions');
         });
       }
     },

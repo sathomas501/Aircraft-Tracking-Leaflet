@@ -1,7 +1,6 @@
 // context/CentralizedFilterContext.tsx
 import React, { createContext, useContext } from 'react';
 import { useFilterState } from '../hooks/useFilterState';
-import { FilterState, FilterMode } from '../types/filterState';
 
 type CentralFilterStateType = ReturnType<typeof useFilterState>;
 
