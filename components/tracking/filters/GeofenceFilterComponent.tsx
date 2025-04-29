@@ -1,36 +1,57 @@
-// components/tracking/filters/GeofenceFilter.tsx
+// components/tracking/filters/GeofenceFilterComponent.tsx
 import React, { useEffect, useRef } from 'react';
 import { MapPin, Search, Loader2 } from 'lucide-react';
-import { useEnhancedMapContext } from '../context/EnhancedMapContext';
-import { GeofenceFilterComponentProps } from './GeofenceFilterComponentProps';
 
-interface GeofenceFilterProps {
-  onClose?: () => void;
+// Simple toggle switch component
+const Toggle: React.FC<{
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  disabled?: boolean;
+}> = ({ checked, onChange, disabled = false }) => {
+  return (
+    <label className="relative inline-flex items-center cursor-pointer">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        disabled={disabled}
+        className="sr-only peer"
+      />
+      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"></div>
+    </label>
+  );
+};
+
+// Define the props interface for the component
+export interface GeofenceFilterComponentProps {
+  isGeofenceActive: boolean;
+  geofenceLocation: string;
+  geofenceRadius: number;
+  geofenceCoordinates: { lat: number; lng: number } | null;
+  isGettingLocation: boolean;
+  hasError: string | null;
+
+  onLocationChange: (value: string) => void;
+  onRadiusChange: (value: number) => void;
+  onSearch: () => void;
+  onGetLocation: () => void;
+  onToggleChange: (enabled: boolean) => void;
 }
 
-const GeofenceFilter: React.FC<GeofenceFilterProps> = ({ onClose }) => {
-  // Get all required state and methods directly from the EnhancedMapContext
-  const {
-    isGeofenceActive,
-    geofenceCenter,
-    geofenceRadius,
-    trackingStatus,
-    isLoading,
-    onLocationChange,
-    onRadiusChange,
-    onSearch,
-    onGetLocation,
-    onToggleChange,
-  } = useEnhancedMapContext();
-
+const GeofenceFilterComponent: React.FC<GeofenceFilterComponentProps> = ({
+  isGeofenceActive,
+  geofenceLocation,
+  geofenceRadius,
+  geofenceCoordinates,
+  isGettingLocation,
+  hasError,
+  onLocationChange,
+  onRadiusChange,
+  onSearch,
+  onGetLocation,
+  onToggleChange,
+}) => {
   const searchInputRef = useRef<HTMLInputElement>(null);
-
-  // Derived state
-  const geofenceLocation = geofenceCenter
-    ? `${geofenceCenter.lat.toFixed(6)}, ${geofenceCenter.lng.toFixed(6)}`
-    : '';
-  const hasError = trackingStatus.includes('Error') ? trackingStatus : null;
-  const isGettingLocation = isLoading;
 
   // Focus the search input when the filter is opened
   useEffect(() => {
@@ -50,43 +71,6 @@ const GeofenceFilter: React.FC<GeofenceFilterProps> = ({ onClose }) => {
     if (!isNaN(value) && value > 0) {
       onRadiusChange(value);
     }
-  };
-
-  // Handle search button click
-  const handleSearch = () => {
-    onSearch();
-    if (onClose) onClose();
-  };
-
-  // Handle get location button click
-  const handleGetLocation = () => {
-    onGetLocation();
-    if (onClose) onClose();
-  };
-
-  // Handle toggle change
-  const handleToggleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    onToggleChange(e.target.checked);
-  };
-
-  // Simple toggle switch component
-  const Toggle: React.FC<{
-    checked: boolean;
-    onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
-    disabled?: boolean;
-  }> = ({ checked, onChange, disabled = false }) => {
-    return (
-      <label className="relative inline-flex items-center cursor-pointer">
-        <input
-          type="checkbox"
-          checked={checked}
-          onChange={onChange}
-          disabled={disabled}
-          className="sr-only peer"
-        />
-        <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"></div>
-      </label>
-    );
   };
 
   return (
@@ -117,7 +101,7 @@ const GeofenceFilter: React.FC<GeofenceFilterProps> = ({ onClose }) => {
             className="flex-grow px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
           />
           <button
-            onClick={handleGetLocation}
+            onClick={onGetLocation}
             disabled={isGettingLocation}
             className="inline-flex items-center justify-center p-2 border border-transparent rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
             title="Get current location"
@@ -140,9 +124,7 @@ const GeofenceFilter: React.FC<GeofenceFilterProps> = ({ onClose }) => {
           >
             Radius
           </label>
-          <span className="text-sm text-gray-500">
-            {geofenceRadius || 25} nm
-          </span>
+          <span className="text-sm text-gray-500">{geofenceRadius} nm</span>
         </div>
         <input
           id="geofence-radius"
@@ -150,7 +132,7 @@ const GeofenceFilter: React.FC<GeofenceFilterProps> = ({ onClose }) => {
           min="5"
           max="100"
           step="5"
-          value={geofenceRadius || 25}
+          value={geofenceRadius}
           onChange={handleRadiusChange}
           className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
         />
@@ -162,7 +144,7 @@ const GeofenceFilter: React.FC<GeofenceFilterProps> = ({ onClose }) => {
 
       {/* Search button */}
       <button
-        onClick={handleSearch}
+        onClick={onSearch}
         disabled={!geofenceLocation}
         className="w-full flex items-center justify-center px-4 py-2 border border-transparent rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
       >
@@ -177,12 +159,12 @@ const GeofenceFilter: React.FC<GeofenceFilterProps> = ({ onClose }) => {
         </span>
         <Toggle
           checked={isGeofenceActive}
-          onChange={handleToggleChange}
-          disabled={!geofenceCenter}
+          onChange={onToggleChange}
+          disabled={!geofenceCoordinates}
         />
       </div>
     </div>
   );
 };
 
-export default GeofenceFilter;
+export default GeofenceFilterComponent;

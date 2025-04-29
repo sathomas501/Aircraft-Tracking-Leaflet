@@ -90,6 +90,8 @@ interface EnhancedMapContextType {
   setGeofenceRadius: (radius: number | null) => void;
   toggleGeofence: () => void;
   clearGeofence: () => {};
+  onToggleChange: (enabled: boolean) => void;
+
   geofenceCoordinates: { lat: number; lng: number } | null;
   isGeofencePlacementMode: boolean;
   setIsGeofencePlacementMode: (isPlacementMode: boolean) => void;
@@ -98,6 +100,11 @@ interface EnhancedMapContextType {
   selectedRegion: RegionCode | string; // Allow both for backward compatibility
   setSelectedRegion: (region: RegionCode | string) => void;
   getBoundsByRegion: (region: string) => LatLngBoundsExpression;
+
+  onLocationChange: (value: string) => void;
+  onRadiusChange: (value: number) => void;
+  onSearch: () => void;
+  onGetLocation: () => void;
 }
 
 // Create context with default values
@@ -139,6 +146,7 @@ const EnhancedMapContext = createContext<EnhancedMapContextType>({
 
   filterMode: 'manufacturer',
   setFilterMode: () => {},
+  onToggleChange: () => {},
   blockManufacturerApiCalls: false,
   setBlockManufacturerApiCalls: () => {},
   isManufacturerApiBlocked: false,
@@ -160,6 +168,11 @@ const EnhancedMapContext = createContext<EnhancedMapContextType>({
     configGetBoundsByRegion('GLOBAL') as LatLngBoundsExpression,
   isGeofencePlacementMode: false,
   setIsGeofencePlacementMode: () => {},
+
+  onLocationChange: (value: string) => {},
+  onRadiusChange: () => {},
+  onSearch: () => {},
+  onGetLocation: () => {},
 });
 
 // Props for the context provider
@@ -762,6 +775,74 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
     }
   }, [selectedManufacturer]);
 
+  // Define the onToggleChange function
+  const onToggleChange = (enabled: boolean) => {
+    console.log(`Geofence toggle changed: ${enabled}`);
+    setIsGeofenceActive(enabled);
+  };
+
+  // Define the setGeofenceLocation function
+  const setGeofenceLocation = (
+    location: { lat: number; lng: number } | null
+  ) => {
+    setGeofenceCenter(location);
+  };
+
+  // Handler for location input change
+  const handleLocationChange = useCallback(
+    (value: string) => {
+      // Basic validation for coordinate format
+      const coordsMatch = value.match(/^(-?\d+(\.\d+)?),\s*(-?\d+(\.\d+)?)$/);
+      if (coordsMatch) {
+        const lat = parseFloat(coordsMatch[1]);
+        const lng = parseFloat(coordsMatch[3]);
+
+        if (!isNaN(lat) && !isNaN(lng)) {
+          setGeofenceCenter({ lat, lng });
+        }
+      }
+    },
+    [setGeofenceCenter]
+  );
+
+  // Handler for radius change
+  const handleRadiusChange = useCallback(
+    (value: number) => {
+      if (!isNaN(value) && value > 0) {
+        setGeofenceRadius(value);
+      }
+    },
+    [setGeofenceRadius]
+  );
+
+  // Handler for search button
+  const handleSearch = useCallback(() => {
+    // Implementation depends on what you want to do when search is triggered
+    console.log('Search triggered with location:', geofenceCoordinates);
+
+    // If you have a search function, call it here
+    // For example: searchAircraftNearLocation(geofenceCoordinates);
+  }, [geofenceCoordinates]);
+
+  // Handler for get location button
+  const handleGetLocation = useCallback(() => {
+    // Use browser geolocation API
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const { latitude, longitude } = position.coords;
+          setGeofenceCenter({ lat: latitude, lng: longitude });
+        },
+        (error) => {
+          console.error('Error getting location:', error);
+          setTrackingStatus('Error getting current location');
+        }
+      );
+    } else {
+      setTrackingStatus('Geolocation is not supported by this browser');
+    }
+  }, [setGeofenceCenter, setTrackingStatus]);
+
   // Create context value
   const contextValue: EnhancedMapContextType = {
     mapInstance,
@@ -817,8 +898,16 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
     setGeofenceRadius,
     toggleGeofence,
     clearGeofence,
+    onToggleChange,
+
     isGeofencePlacementMode,
     setIsGeofencePlacementMode,
+
+    // Component interface methods
+    onLocationChange: handleLocationChange,
+    onRadiusChange: handleRadiusChange,
+    onSearch: handleSearch,
+    onGetLocation: handleGetLocation,
 
     // Region selection
     selectedRegion,

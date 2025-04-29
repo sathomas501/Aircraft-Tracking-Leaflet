@@ -1,16 +1,16 @@
 // hooks/useGeofencePanel.ts
-import { useState, useEffect } from 'react';
-import { ExtendedAircraft } from '@/types/base';
+import { useState, useEffect, useCallback } from 'react';
+import { useEnhancedMapContext } from '../context/EnhancedMapContext';
 import { MapboxService } from '../../../lib/services/MapboxService';
 
 // Define the shape of panel coordinates
-interface PanelPosition {
+export interface PanelPosition {
   x: number;
   y: number;
 }
 
 // Define the shape of geofence coordinates
-interface Coordinates {
+export interface Coordinates {
   lat: number;
   lng: number;
 }
@@ -22,104 +22,129 @@ export interface GeofencePanelOptions {
   isGeofenceActive: boolean;
   toggleGeofenceState: (enabled: boolean) => void;
   setActiveDropdown: (dropdown: string | null) => void;
-  updateGeofenceAircraft: (aircraft: ExtendedAircraft[]) => void;
+  updateGeofenceAircraft: (aircraft: any[]) => void;
   setGeofenceCenter?: (coords: Coordinates) => void;
   setGeofenceCoordinates?: (coords: Coordinates | null) => void;
   processGeofenceSearch?: (fromPanel?: boolean) => Promise<void> | void;
-  setCoordinates?: (coords: PanelPosition) => void;
+  setCoordinates?: (position: PanelPosition) => void;
   setShowPanel?: (show: boolean) => void;
+  onClose?: () => void;
+  onReset?: () => void;
 }
 
 export function useGeofencePanel(options: GeofencePanelOptions) {
-  // Panel state
+  const {
+    geofenceCenter,
+    geofenceRadius,
+    isGeofenceActive,
+    setGeofenceCenter,
+    setGeofenceRadius,
+    toggleGeofence,
+    clearGeofence,
+    isLoading,
+    trackingStatus,
+  } = useEnhancedMapContext();
+  
+  // Local state
   const [showPanel, setShowPanel] = useState<boolean>(false);
   const [panelPosition, setPanelPosition] = useState<PanelPosition | null>(null);
   const [tempCoordinates, setTempCoordinates] = useState<Coordinates | null>(null);
-  
-  // Geofence state
   const [locationName, setLocationName] = useState<string | null>(null);
   const [isLoadingLocation, setIsLoadingLocation] = useState<boolean>(false);
-  const [isSearching, setIsSearching] = useState<boolean>(false);
-  const [geofenceLocation, setGeofenceLocation] = useState<string>('');
+  
+  // Derived state
+  const hasError = trackingStatus.includes('Error') ? trackingStatus : null;
+  const isSearching = isLoading;
+
+  // Effect to update temp coordinates when geofenceCenter changes
+  useEffect(() => {
+    if (geofenceCenter && (!tempCoordinates || 
+        tempCoordinates.lat !== geofenceCenter.lat || 
+        tempCoordinates.lng !== geofenceCenter.lng)) {
+      setTempCoordinates(geofenceCenter);
+      
+      // Fetch location name
+      fetchLocationName(geofenceCenter.lat, geofenceCenter.lng);
+    }
+  }, [geofenceCenter, tempCoordinates]);
+  
+  // Function to fetch location name
+  const fetchLocationName = useCallback(async (lat: number, lng: number) => {
+    setIsLoadingLocation(true);
+    try {
+      const name = await MapboxService.getLocationNameFromCoordinates(lat, lng);
+      setLocationName(name);
+    } catch (error) {
+      console.error('Error getting location name:', error);
+      setLocationName(`${lat.toFixed(6)}, ${lng.toFixed(6)}`);
+    } finally {
+      setIsLoadingLocation(false);
+    }
+  }, []);
 
   // Open panel at specific position
-  const openPanel = (position: PanelPosition) => {
+  const openPanel = useCallback((position: PanelPosition, coordinates?: Coordinates) => {
     setPanelPosition(position);
     setShowPanel(true);
     
-    // Pass to parent if handler provided
-    if (options.setShowPanel) {
-      options.setShowPanel(true);
+    if (coordinates) {
+      setTempCoordinates(coordinates);
+      fetchLocationName(coordinates.lat, coordinates.lng);
     }
-  };
+  }, [fetchLocationName]);
 
   // Close panel
-  const closePanel = () => {
+  const closePanel = useCallback(() => {
     setShowPanel(false);
     setPanelPosition(null);
     
-    // Pass to parent if handler provided
-    if (options.setShowPanel) {
-      options.setShowPanel(false);
+    if (options?.onClose) {
+      options.onClose();
     }
-  };
+  }, [options]);
 
-  // Reset panel state
-  const resetPanel = () => {
+  // Reset panel and geofence
+  const resetPanel = useCallback(() => {
+    setShowPanel(false);
+    setPanelPosition(null);
     setTempCoordinates(null);
     setLocationName(null);
-    setGeofenceLocation('');
-    closePanel();
-  };
+    clearGeofence();
+    
+    if (options?.onReset) {
+      options.onReset();
+    }
+  }, [clearGeofence, options]);
 
-  // Handle search from panel
-  const handlePanelSearch = async (lat: number, lng: number) => {
+  // Process geofence search function with explicit type
+  const processGeofenceSearch = useCallback((fromPanel: boolean = false): Promise<void> | void => {
+    if (options.processGeofenceSearch) {
+      return options.processGeofenceSearch(fromPanel);
+    }
+    
+    // If no handler provided, at least log something
+    console.log('processGeofenceSearch called but no handler provided in options');
+    return Promise.resolve();
+  }, [options]);
+
+  // Search from panel
+  const handlePanelSearch = useCallback((lat: number, lng: number) => {
     if (!lat || !lng) return;
     
-    setIsSearching(true);
-    try {
-      // Update temp coordinates
-      setTempCoordinates({ lat, lng });
-      
-      // Get location name from coordinates
-      setIsLoadingLocation(true);
-      const name = await MapboxService.getLocationNameFromCoordinates(lat, lng);
-      setLocationName(name);
-      
-      // Set geofence coordinates if available
-      if (options.setGeofenceCoordinates) {
-        options.setGeofenceCoordinates({ lat, lng });
-      }
-      
-      // Set geofence center if available
-      if (options.setGeofenceCenter) {
-        options.setGeofenceCenter({ lat, lng });
-      }
-      
-      // Process search if available
-      if (options.processGeofenceSearch) {
-        await options.processGeofenceSearch(true);
-      }
-      
-      // Close panel after search
-      closePanel();
-    } catch (error) {
-      console.error('Error in panel search:', error);
-    } finally {
-      setIsSearching(false);
-      setIsLoadingLocation(false);
+    // Update geofence center and activate if needed
+    setGeofenceCenter({ lat, lng });
+    if (!isGeofenceActive) {
+      toggleGeofence();
     }
-  };
-
-  // Update panel position and notify parent
-  const updatePanelPosition = (position: PanelPosition) => {
-    setPanelPosition(position);
     
-    // Pass to parent if handler provided
-    if (options.setCoordinates) {
-      options.setCoordinates(position);
-    }
-  };
+    // Close panel
+    closePanel();
+  }, [setGeofenceCenter, isGeofenceActive, toggleGeofence, closePanel]);
+
+  // Update panel position
+  const updatePanelPosition = useCallback((position: PanelPosition) => {
+    setPanelPosition(position);
+  }, []);
 
   return {
     // State
@@ -129,19 +154,22 @@ export function useGeofencePanel(options: GeofencePanelOptions) {
     locationName,
     isLoadingLocation,
     isSearching,
-    geofenceLocation,
+    hasError,
+    geofenceRadius: geofenceRadius || 25,
+    isGeofenceActive,
     
     // Setters
     setShowPanel,
     setPanelPosition: updatePanelPosition,
     setTempCoordinates,
     setLocationName,
-    setGeofenceLocation,
+    setGeofenceRadius,
     
     // Methods
     openPanel,
     closePanel,
     resetPanel,
     handlePanelSearch,
+    processGeofenceSearch, // Added with explicit type
   };
 }

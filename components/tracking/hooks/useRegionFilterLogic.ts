@@ -106,43 +106,50 @@ const setLoading = (isLoading: boolean) => {
     };
 
 
-    const handleRegionSelect = async (region: RegionCode): Promise<void> => {
-  // Update state first
+const handleRegionSelect = async (region: RegionCode): Promise<void> => {
+  // Update centralized filter state
   updateFilter('region', 'value', region);
   updateFilter('region', 'selectedRegion', region);
   updateFilter('region', 'active', true);
-  
-  // Clear existing data
+
+  // Clear dropdown immediately to avoid UI delay
+  setActiveDropdown(null);
+
+  // Clear existing geofence data
   if (clearGeofenceData) {
     clearGeofenceData();
   }
-  
+
   setLocalLoading(true);
-  
+
   try {
-    // Add a small delay before map operations
-    await new Promise(resolve => setTimeout(resolve, 100));
-    
+    // Let UI render before starting heavy map operations
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+
     if (mapInstance) {
       const bounds = getBoundsByRegion(region);
       const zoomLevel = getZoomLevelForRegion(region);
-      
-      mapInstance.setZoom(zoomLevel);
-      
-      // Force redraw/reflow before fitBounds
+
+      console.log('Map size before fit:', mapInstance.getSize());
+      console.log('Target bounds:', bounds);
+
+      // Force layout reflow before setting bounds
       mapInstance.invalidateSize();
-      
-      const options = {
+
+      // Apply bounds with zoom limit
+      mapInstance.fitBounds(bounds as any, {
         padding: MAP_CONFIG.PADDING.DEFAULT,
-      };
-      
-      mapInstance.fitBounds(bounds as any, options);
-      
-      // Draw outline after bounds are set
-      drawRegionOutline(region);
+        maxZoom: zoomLevel,
+      });
+
+      // Ensure map layout is fully updated
+      setTimeout(() => {
+        mapInstance.invalidateSize();
+        drawRegionOutline(region);
+      }, 100);
     }
-    
-    // Fetch data
+
+    // Fetch region aircraft count
     const countResponse = await fetch(`/api/tracking/region-count?region=${region}`);
     if (countResponse.ok) {
       const countData = await countResponse.json();
@@ -153,9 +160,11 @@ const setLoading = (isLoading: boolean) => {
   } finally {
     setLocalLoading(false);
     updateUIState('loading', false);
-    setActiveDropdown(null);
   }
 };
+
+
+
 
 // In useRegionFilterLogic.ts
 useEffect(() => {

@@ -1,7 +1,22 @@
-// Barrel file for filter components
-export { default as FilterDropdown } from './FilterDropdown';
-export { default as ManufacturerFilter } from './ManufacturerFilter';
-export { default as ModelFilter } from './ModelFilter';
-export { default as GeofenceFilter } from './GeofenceFilter';
-export { default as OwnerFilter } from './OwnerFilter';
-export { default as RegionFilter } from './RegionFilter';
+// components/tracking/filters/index.ts
+
+// Export components
+export { default as GeofenceFilterComponent } from './GeofenceFilterComponent';
+export { default as GeofenceFilterContainer } from './Containers/GeofenceFilterContainer';
+export { default as FloatingGeofencePanelComponent } from '../filters/FloatingGeofencePanel';
+export { default as FloatingGeofencePanelContainer } from './Containers/FloatingGeofenceContainer';
+// Export types
+export type {
+  GeofenceFilterComponentProps
+} from './GeofenceFilterComponent';
+
+// Export coordinate types for reuse
+export interface Coordinates {
+  lat: number;
+  lng: number;
+}
+
+export interface PanelPosition {
+  x: number;
+  y: number;
+}

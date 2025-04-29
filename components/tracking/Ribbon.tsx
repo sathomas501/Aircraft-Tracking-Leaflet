@@ -2,7 +2,6 @@ import React from 'react';
 import { useFilterLogic } from './hooks/useFilterLogicCompatible';
 import ManufacturerFilter from './filters/ManufacturerFilter';
 import ModelFilter from './filters/ModelFilter';
-import GeofenceFilter from './filters/GeofenceFilter';
 import OwnerFilter from './filters/OwnerFilter';
 import RegionFilter from './filters/RegionFilter';
 import SearchRibbonSpinner from './map/components/SearchRibbonSpinner';
@@ -11,6 +10,7 @@ import { useEnhancedMapContext } from './context/EnhancedMapContext';
 import type { RibbonProps } from './types/filters';
 import ManualRefreshButton from './map/components/ManualRefreshButton';
 import StandaloneFilterDropdown from './filters/FilterDropdown';
+import RibbonGeofenceWrapper from './filters/RibbonGeofenceWrapper';
 import { FilterMode } from './types/filterState';
 
 const RibbonAircraftSelector: React.FC<RibbonProps> = ({ manufacturers }) => {
@@ -238,27 +238,10 @@ const RibbonAircraftSelector: React.FC<RibbonProps> = ({ manufacturers }) => {
           <div className="h-6 w-px bg-gray-300 mx-1"></div>
 
           {/* Location Dropdown */}
-          <GeofenceFilter
-            geofenceLocation={geofenceLocation}
-            geofenceRadius={geofenceRadius}
-            isGettingLocation={isGettingLocation}
-            isGeofenceActive={isGeofenceActive}
-            geofenceCoordinates={geofenceCoordinates}
-            getUserLocation={getUserLocation}
-            processGeofenceSearch={processGeofenceSearch}
-            toggleGeofenceState={toggleGeofenceState}
-            setGeofenceLocation={setGeofenceLocation}
-            setGeofenceRadius={setGeofenceRadius}
-            setGeofenceCoordinates={setGeofenceCoordinates}
-            setGeofenceCenter={setGeofenceCenter}
-            updateGeofenceAircraft={updateGeofenceAircraft}
-            combinedLoading={combinedLoading}
+          <RibbonGeofenceWrapper
             activeDropdown={activeDropdown}
-            setActiveDropdown={filterLogic.setActiveDropdown}
-            toggleDropdown={toggleDropdown}
+            setActiveDropdown={filterLogic.setActiveDropdown} // Use the one from filterLogic
             dropdownRef={dropdownRefs.location}
-            isGeofencePlacementMode={filterLogic.isGeofencePlacementMode}
-            setIsGettingLocation={filterLogic.setIsGettingLocation}
           />
 
           {/* Owner Type Dropdown */}
