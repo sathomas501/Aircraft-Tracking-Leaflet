@@ -7,8 +7,9 @@ import type { RegionFilterProps } from '../types/filters';
 const RegionFilter: React.FC<RegionFilterProps> = ({
   activeRegion,
   handleRegionSelect,
-  activeDropdown,
+  applyAllFilters,
   toggleDropdown,
+  activeDropdown,
   dropdownRef,
   selectedRegion,
 }) => {
@@ -65,7 +66,10 @@ const RegionFilter: React.FC<RegionFilterProps> = ({
             {Object.entries(MAP_CONFIG.REGIONS).map(([name, code]) => (
               <button
                 key={name}
-                onClick={() => handleRegionSelect(code as RegionCode)}
+                onClick={() => {
+                  handleRegionSelect(code as RegionCode);
+                  setTimeout(() => applyAllFilters(), 0); // defer to wait for state update
+                }}
                 className={`px-3 py-2 text-sm rounded-md ${
                   selectedRegion === code
                     ? 'bg-indigo-100 text-indigo-700 border border-indigo-300'

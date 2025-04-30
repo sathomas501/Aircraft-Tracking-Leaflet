@@ -358,6 +358,7 @@ export enum RegionCode {
   South_America = 4,
   Africa = 5,
   Oceania = 6,
+  Middle_East = 7,
 }
 
 export interface Feature {

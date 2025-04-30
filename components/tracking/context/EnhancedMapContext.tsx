@@ -7,6 +7,7 @@ import React, {
   useCallback,
   useRef,
   useMemo,
+  RefObject,
 } from 'react';
 import L from 'leaflet';
 import {
@@ -31,7 +32,7 @@ import {
 } from '../../../config/map';
 
 // Define context interface
-interface EnhancedMapContextType {
+export interface EnhancedMapContextType {
   // Map state
   mapInstance: L.Map | null;
   setMapInstance: (map: L.Map | null) => void;
@@ -61,16 +62,16 @@ interface EnhancedMapContextType {
   lastRefreshed: string | null;
 
   // Actions
-  selectManufacturer: (MANUFACTURER: string | null) => Promise<void>;
-  selectModel: (MODEL: string | null) => void;
+  selectManufacturer: (manufacturer: string | null) => Promise<void>;
+  selectModel: (model: string | null) => void;
   reset: () => Promise<void>;
   refreshPanel: () => void;
   refreshPositions: () => Promise<void>;
   fullRefresh: () => Promise<void>;
   clearCache: () => void;
   clearGeofenceData: () => void;
-  // Add new function for updating aircraft from geofence
   updateGeofenceAircraft: (geofenceAircraft: ExtendedAircraft[]) => void;
+  geofenceAircraft: ExtendedAircraft[];
 
   filterMode: 'manufacturer' | 'geofence' | 'both' | 'region' | 'owner';
   setFilterMode: (
@@ -82,25 +83,38 @@ interface EnhancedMapContextType {
   setIsManufacturerApiBlocked: (blocked: boolean) => void;
   filteredAircraft: ExtendedAircraft[];
 
-  // Geofencing properties
-  geofenceCenter: { lat: number; lng: number } | null; // Correctly typed as { lat: number; lng: number } | null
-  geofenceRadius: number | null; // in kilometers
+  // Geofencing
+  geofenceCenter: { lat: number; lng: number } | null;
+  geofenceRadius: number | null;
   isGeofenceActive: boolean;
   setGeofenceCenter: (center: { lat: number; lng: number } | null) => void;
   setGeofenceRadius: (radius: number | null) => void;
   toggleGeofence: () => void;
-  clearGeofence: () => {};
+  clearGeofence: () => void;
   geofenceCoordinates: { lat: number; lng: number } | null;
   isGeofencePlacementMode: boolean;
   setIsGeofencePlacementMode: (isPlacementMode: boolean) => void;
 
-  // Region selection properties
-  selectedRegion: RegionCode | string; // Allow both for backward compatibility
+  // Region
+  selectedRegion: RegionCode | string;
   setSelectedRegion: (region: RegionCode | string) => void;
   getBoundsByRegion: (region: string) => LatLngBoundsExpression;
+
+  // Dropdown handling
+  activeDropdown: string | null;
+  setActiveDropdown: (value: string | null) => void;
+  toggleDropdown: (type: string, event: React.MouseEvent) => void;
+  dropdownRefs: {
+    filter: RefObject<HTMLDivElement>;
+    manufacturer: RefObject<HTMLDivElement>;
+    model: RefObject<HTMLDivElement>;
+    location: RefObject<HTMLDivElement>;
+    region: RefObject<HTMLDivElement>;
+    owner: RefObject<HTMLDivElement>;
+    actions: RefObject<HTMLDivElement>;
+  };
 }
 
-// Create context with default values
 const EnhancedMapContext = createContext<EnhancedMapContextType>({
   mapInstance: null,
   setMapInstance: () => {},
@@ -110,33 +124,37 @@ const EnhancedMapContext = createContext<EnhancedMapContextType>({
   selectedAircraft: null,
   selectAircraft: () => {},
 
-  // Data persistence defaults
+  // Data persistence
   cachedAircraftData: {},
   updateAircraftData: () => {},
   lastPersistenceUpdate: null,
 
+  // Manufacturer/model
   selectedManufacturer: null,
   selectedModel: null,
   activeModels: [],
   totalActive: 0,
 
+  // Loading
   isLoading: false,
   isRefreshing: false,
   trackingStatus: '',
   lastRefreshed: null,
 
+  // Core functions
   selectManufacturer: async () => {},
   selectModel: () => {},
   refreshPanel: () => {},
-  // Reset function to clear all selections and data
   reset: async () => {},
   refreshPositions: async () => {},
   fullRefresh: async () => {},
   clearCache: () => {},
   clearGeofenceData: () => {},
-  // Add default for new function
   updateGeofenceAircraft: () => {},
+  geofenceAircraft: [],
+  filteredAircraft: [],
 
+  // Filters
   filterMode: 'manufacturer',
   setFilterMode: () => {},
   blockManufacturerApiCalls: false,
@@ -144,22 +162,37 @@ const EnhancedMapContext = createContext<EnhancedMapContextType>({
   isManufacturerApiBlocked: false,
   setIsManufacturerApiBlocked: () => {},
 
-  // Geofencing properties
+  // Geofence
   geofenceCenter: null,
-  geofenceRadius: 25, // Default to 25km, not null
+  geofenceRadius: 25,
   isGeofenceActive: false,
   setGeofenceCenter: () => {},
   setGeofenceRadius: () => {},
   geofenceCoordinates: null,
   toggleGeofence: () => {},
-  clearGeofence: () => ({}),
-  filteredAircraft: [],
-  selectedRegion: RegionCode.GLOBAL,
-  setSelectedRegion: (region: RegionCode | string) => {},
-  getBoundsByRegion: (region: string) =>
-    configGetBoundsByRegion('GLOBAL') as LatLngBoundsExpression,
+  clearGeofence: () => {},
   isGeofencePlacementMode: false,
   setIsGeofencePlacementMode: () => {},
+
+  // Region
+  selectedRegion: RegionCode.GLOBAL,
+  setSelectedRegion: () => {},
+  getBoundsByRegion: (region: string) =>
+    configGetBoundsByRegion(region) as LatLngBoundsExpression,
+
+  // Dropdown UI
+  activeDropdown: null,
+  setActiveDropdown: () => {},
+  toggleDropdown: () => {},
+  dropdownRefs: {
+    filter: React.createRef<HTMLDivElement>(),
+    manufacturer: React.createRef<HTMLDivElement>(),
+    model: React.createRef<HTMLDivElement>(),
+    location: React.createRef<HTMLDivElement>(),
+    region: React.createRef<HTMLDivElement>(),
+    owner: React.createRef<HTMLDivElement>(),
+    actions: React.createRef<HTMLDivElement>(),
+  },
 });
 
 // Props for the context provider
@@ -214,6 +247,11 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
   const [aircraftPositions, setAircraftPositions] = useState<
     AircraftPosition[]
   >([]);
+
+  // Declare and initialize geofenceAircraft state
+  const [geofenceAircraft, setGeofenceAircraft] = useState<ExtendedAircraft[]>(
+    []
+  );
   // Toggle geofence activation
   const toggleGeofence = useCallback(() => {
     setIsGeofenceActive((prev) => !prev);
@@ -254,6 +292,24 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
 
   // Flag to track if we're in geofence mode
   const [isGeofenceMode, setIsGeofenceMode] = useState<boolean>(false);
+
+  const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
+  const toggleDropdown = (type: string, event: React.MouseEvent) => {
+    setActiveDropdown((prev) =>
+      typeof type === 'string' && prev === type ? null : type
+    );
+    event.stopPropagation();
+  };
+
+  const dropdownRefs = {
+    filter: useRef<HTMLDivElement>(null),
+    manufacturer: useRef<HTMLDivElement>(null),
+    model: useRef<HTMLDivElement>(null),
+    location: useRef<HTMLDivElement>(null),
+    region: useRef<HTMLDivElement>(null),
+    owner: useRef<HTMLDivElement>(null),
+    actions: useRef<HTMLDivElement>(null),
+  };
 
   // Define the filter function correctly
   const filterAircraftByGeofence = useCallback(() => {
@@ -314,6 +370,12 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
     filterAircraftByGeofence,
     displayedAircraft,
   ]);
+
+  useEffect(() => {
+    if (!selectedRegion) {
+      setActiveDropdown('region'); // 👈 open Region filter dropdown
+    }
+  }, []);
 
   // Refs for tracking subscriptions
   const unsubscribeAircraftRef = useRef<(() => void) | null>(null);
@@ -789,7 +851,10 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
     lastRefreshed,
 
     selectManufacturer,
+    activeDropdown,
+    toggleDropdown,
     selectModel,
+    dropdownRefs,
     reset,
     refreshPanel: () => {
       console.warn('refreshPanel is not implemented yet.');
@@ -800,6 +865,7 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
     clearGeofenceData,
     updateGeofenceAircraft,
     filteredAircraft,
+    geofenceAircraft,
 
     filterMode,
     setFilterMode,
@@ -824,6 +890,8 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
     selectedRegion,
     setSelectedRegion,
     getBoundsByRegion: handleGetBoundsByRegion,
+
+    setActiveDropdown,
   };
 
   return (

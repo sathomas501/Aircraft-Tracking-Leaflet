@@ -354,7 +354,7 @@ class OpenSkyTrackingService {
     try {
       // Get aircraft in this region from API
       const response = await fetch(
-        `/api/tracking/region?region=${encodeURIComponent(region)}`
+        `/api/tracking/regionByPosition?region=${encodeURIComponent(region)}`
       );
       if (!response.ok) {
         throw new Error(`Region API error: ${response.statusText}`);
@@ -407,7 +407,7 @@ class OpenSkyTrackingService {
   ): Promise<ExtendedAircraft[]> {
     try {
       const response = await fetch(
-        `/api/tracking/region/${encodeURIComponent(region)}`
+        `/api/tracking/regionByRegistration/${encodeURIComponent(region)}`
       );
 
       if (!response.ok) {

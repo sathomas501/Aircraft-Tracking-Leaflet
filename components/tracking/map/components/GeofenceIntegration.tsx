@@ -23,11 +23,11 @@ const GeofenceMapIntegration: React.FC<GeofenceMapIntegrationProps> = ({
   } | null>(null);
 
   const geofenceIcon = new L.Icon({
-    iconUrl: '/images/marker-icon.png', // Check this path
+    iconUrl: '/icons/flag.png', // Check this path
     iconSize: [25, 41],
     iconAnchor: [12, 41], // Make sure to add this line
     popupAnchor: [1, -34],
-    shadowUrl: '/images/marker-shadow.png',
+    shadowUrl: '/icons/flag.png',
     shadowSize: [41, 41],
     // Make sure to add a proper tooltip for accessibility
     tooltipAnchor: [16, -28],

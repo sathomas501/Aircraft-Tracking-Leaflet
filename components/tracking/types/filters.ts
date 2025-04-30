@@ -65,12 +65,24 @@ export interface OwnerFilterProps {
 }
 
 export interface RegionFilterProps {
-  activeRegion: RegionCode | string | null;
-  handleRegionSelect: (region: RegionCode) => Promise<void>;
+  activeRegion: RegionCode | null;
+  selectedRegion: RegionCode | string | null;
+  handleRegionSelect: (region: RegionCode) => void;
+  applyAllFilters: () => void; // ✅ ← ADD THIS
   activeDropdown: string | null;
   toggleDropdown: (type: string, event: React.MouseEvent) => void;
   dropdownRef: RefObject<HTMLDivElement>;
-  selectedRegion: number;
+}
+
+export interface ModelOption {
+  label: string;
+  value: string;
+  count: number;
+}
+
+export interface AircraftModel {
+  MODEL: string;
+  count: number;
 }
 
 export interface ModelFilterProps {
@@ -81,7 +93,7 @@ export interface ModelFilterProps {
   toggleDropdown: (type: string, event: React.MouseEvent) => void;
   dropdownRef: RefObject<HTMLDivElement>;
   totalActive: number;
-  activeModels: any[];
+  activeModels: ModelOption[]; // ✅ updated
 }
 
 export interface RibbonProps {

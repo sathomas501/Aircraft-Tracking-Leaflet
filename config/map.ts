@@ -20,6 +20,7 @@ export const MAP_CONFIG = {
     Asia: 4,
     Africa: 4,
     Oceania: 4,
+    Middle_East: 5, // <- added
   },
 
   // Add other regional bounds
@@ -34,13 +35,18 @@ export const MAP_CONFIG = {
   ] as LatLngBoundsExpression,
 
   ASIA_BOUNDS: [
-    [-10.0, 60.0],
-    [60.0, 150.0],
+    [5.0, 66.0], // SW: starts just east of Iran
+    [60.0, 150.0], // NE: rest of Asia
   ] as LatLngBoundsExpression,
 
   AFRICA_BOUNDS: [
-    [-35.0, -20.0],
-    [40.0, 55.0],
+    [-35.0, -20.0], // SW
+    [30.0, 50.0], // NE: caps at Egypt/Sudan region
+  ] as LatLngBoundsExpression,
+
+  MIDDLE_EAST_BOUNDS: [
+    [12.0, 30.0], // Southwest: includes Egypt, Saudi Arabia, etc.
+    [40.0, 65.0], // Northeast: covers Iran, Iraq, Jordan, etc.
   ] as LatLngBoundsExpression,
 
   OCEANIA_BOUNDS: [
@@ -141,6 +147,7 @@ export const MAP_CONFIG = {
     Africa: RegionCode.Africa,
     Oceania: RegionCode.Oceania,
     South_America: RegionCode.South_America,
+    Middle_East: RegionCode.Middle_East, // <- added
   },
 };
 
@@ -175,6 +182,8 @@ export const getBoundsByRegion = (
         return MAP_CONFIG.ASIA_BOUNDS;
       case 'Africa':
         return MAP_CONFIG.AFRICA_BOUNDS;
+      case 'Middle East':
+        return MAP_CONFIG.MIDDLE_EAST_BOUNDS;
       case 'Oceania':
         return MAP_CONFIG.OCEANIA_BOUNDS;
       case 'South America':
@@ -195,6 +204,8 @@ export const getBoundsByRegion = (
       return MAP_CONFIG.ASIA_BOUNDS;
     case RegionCode.Africa:
       return MAP_CONFIG.AFRICA_BOUNDS;
+    case RegionCode.Middle_East:
+      return MAP_CONFIG.MIDDLE_EAST_BOUNDS;
     case RegionCode.Oceania:
       return MAP_CONFIG.OCEANIA_BOUNDS;
     case RegionCode.South_America:
@@ -218,6 +229,8 @@ export const getZoomLevelForRegion = (region: RegionCode | string): number => {
         return MAP_CONFIG.REGION_ZOOM_LEVELS.Asia;
       case 'Africa':
         return MAP_CONFIG.REGION_ZOOM_LEVELS.Africa;
+      case 'Middle East':
+        return MAP_CONFIG.REGION_ZOOM_LEVELS.Middle_East;
       case 'Oceania':
         return MAP_CONFIG.REGION_ZOOM_LEVELS.Oceania;
       case 'Global':
@@ -236,6 +249,8 @@ export const getZoomLevelForRegion = (region: RegionCode | string): number => {
       return MAP_CONFIG.REGION_ZOOM_LEVELS.Asia;
     case RegionCode.Africa:
       return MAP_CONFIG.REGION_ZOOM_LEVELS.Africa;
+    case RegionCode.Middle_East:
+      return MAP_CONFIG.REGION_ZOOM_LEVELS.Middle_East;
     case RegionCode.Oceania:
       return MAP_CONFIG.REGION_ZOOM_LEVELS.Oceania;
     case RegionCode.South_America:

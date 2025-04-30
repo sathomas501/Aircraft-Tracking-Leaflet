@@ -1,5 +1,6 @@
 import React from 'react';
 import type { ManufacturerFilterProps } from '../types/filters.ts';
+import ManufacturerFilterContainer from '../filters/Containers/ManufacturerFilterContainer.js';
 
 const ManufacturerFilter: React.FC<ManufacturerFilterProps> = ({
   manufacturers,
@@ -82,7 +83,7 @@ const ManufacturerFilter: React.FC<ManufacturerFilterProps> = ({
 
             {selectedManufacturer && (
               <button
-                onClick={() => selectManufacturerAndClose('')}
+                onClick={() => {}}
                 className="absolute right-4 top-4 text-gray-400 hover:text-gray-600"
               >
                 <svg
@@ -117,7 +118,9 @@ const ManufacturerFilter: React.FC<ManufacturerFilterProps> = ({
                       ? 'bg-indigo-50 font-medium text-indigo-700'
                       : 'text-gray-700'
                   }`}
-                  onClick={() => selectManufacturerAndClose(manufacturer.value)}
+                  onClick={() => {
+                    selectManufacturerAndClose(manufacturer.value); // from props
+                  }}
                 >
                   {manufacturer.label}
                 </div>

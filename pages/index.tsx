@@ -112,6 +112,7 @@ class HomePage extends React.Component<HomePageProps, HomePageState> {
 // Server-side props to pre-load manufacturers
 export async function getServerSideProps() {
   try {
+    const defaultRegion = 0;
     // Use Node.js fetch for server-side data fetching
     const response = await fetch(
       `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/tracking/manufacturers`

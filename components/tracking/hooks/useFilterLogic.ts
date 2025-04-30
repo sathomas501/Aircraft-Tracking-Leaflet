@@ -1,6 +1,6 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import React from 'react';
-import { RegionCode } from '@/types/base';
+import { RegionCode, SelectOption } from '@/types/base';
 import type { ExtendedAircraft } from '@/types/base';
 import { useEnhancedMapContext } from '../context/EnhancedMapContext';
 import openSkyTrackingService from '@/lib/services/openSkyTrackingService';
@@ -13,6 +13,10 @@ import {
   getAircraftNearSearchedLocation,
 } from '../../../lib/services/geofencing';
 import { useGeolocation } from '../hooks/useGeolocation';
+import { filterAircraftWithinBounds } from '../../../utils/filterAircraftWithinBound';
+import { filterAircraftByOwnerType } from '../../../utils/filterAircraftByOwnerType';
+import { filterAircraftByManufacturerModel } from '../../../utils/filterAircraftByManufacturerModel';
+import { filterAircraftAdvanced } from '../../../utils/filterAircraftAdvanced';
 
 import {
   MAP_CONFIG,
@@ -111,6 +115,12 @@ export function useFilterLogic() {
     RegionCode.GLOBAL
   );
 
+  // 1. New manufacturer/model state
+  const [manufacturerOptions, setManufacturerOptions] = useState<
+    SelectOption[]
+  >([]);
+  const [modelOptions, setModelOptions] = useState<string[]>([]);
+
   // Combined mode state
   const [combinedModeReady, setCombinedModeReady] = useState<boolean>(false);
 
@@ -137,6 +147,12 @@ export function useFilterLogic() {
     'military',
     'unknown',
   ];
+
+  const filteredByManufacturerModel = filterAircraftByManufacturerModel(
+    displayedAircraft,
+    selectedManufacturer,
+    selectedModel
+  );
 
   const [ownerFilters, setOwnerFilters] = useState<string[]>([
     ...allOwnerTypes,
@@ -738,6 +754,12 @@ export function useFilterLogic() {
     return ownerTypeMap[typeNum] || 'unknown';
   };
 
+  const filteredByOwner = filterAircraftByOwnerType(
+    displayedAircraft,
+    ownerFilters,
+    ownerTypeToString
+  );
+
   const applyOwnerTypeFilter = (filters: string[]) => {
     // Skip filtering if all types are selected or none are selected
     if (filters.length === 0 || filters.length === allOwnerTypes.length) {
@@ -834,6 +856,21 @@ export function useFilterLogic() {
     }
   };
 
+  const bounds = getBoundsByRegion(selectedRegion) as [
+    [number, number],
+    [number, number],
+  ];
+  const finalFiltered = filterAircraftAdvanced({
+    aircraft: displayedAircraft,
+    bounds,
+    manufacturer: selectedManufacturer,
+    model: selectedModel,
+    ownerFilters,
+    ownerTypeResolver: ownerTypeToString,
+  });
+
+  updateGeofenceAircraft(finalFiltered);
+
   const handleRegionSelect = async (region: RegionCode) => {
     setActiveRegion(region);
     setSelectedRegion(region);
@@ -924,6 +961,85 @@ export function useFilterLogic() {
       },
     });
   };
+
+  const fetchManufacturersForRegion = useCallback(
+    async (region: RegionCode) => {
+      try {
+        const response = await fetch(
+          `/api/aircraft/tracking/manufacturers?region=${region}`
+        );
+        const data = await response.json();
+        setManufacturerOptions(data);
+      } catch (err) {
+        console.error('Failed to load manufacturers for region:', err);
+        setManufacturerOptions([]);
+      }
+    },
+    []
+  );
+
+  // 3. Fetch models for manufacturer
+  const fetchModelsForManufacturer = useCallback(
+    async (manufacturer: string) => {
+      try {
+        const response = await fetch(
+          `/api/tracking/models?manufacturer=${encodeURIComponent(manufacturer)}`
+        );
+        const data: string[] = await response.json();
+        setModelOptions(data);
+      } catch (err) {
+        console.error('Failed to load models:', err);
+        setModelOptions([]);
+      }
+    },
+    []
+  );
+
+  const applyAllFilters = () => {
+    const bounds =
+      selectedRegion !== null
+        ? (getBoundsByRegion(selectedRegion) as [
+            [number, number],
+            [number, number],
+          ])
+        : undefined;
+
+    const filtered = filterAircraftAdvanced({
+      aircraft: displayedAircraft,
+      bounds,
+      manufacturer: selectedManufacturer,
+      model: selectedModel,
+      ownerFilters,
+      ownerTypeResolver: ownerTypeToString,
+    });
+
+    updateGeofenceAircraft(filtered);
+  };
+
+  // 4. Combined filter: Region + Manufacturer + Model
+  const filterAircraftByAll = useCallback(() => {
+    let filtered = [...displayedAircraft];
+
+    if (selectedRegion !== null) {
+      const bounds = getBoundsByRegion(selectedRegion);
+      filtered = filterAircraftWithinBounds(filtered, bounds);
+    }
+
+    if (selectedManufacturer) {
+      filtered = filtered.filter(
+        (a) =>
+          a.MANUFACTURER?.toLowerCase() === selectedManufacturer.toLowerCase()
+      );
+    }
+
+    if (selectedModel) {
+      filtered = filtered.filter(
+        (a) => a.MODEL?.toLowerCase() === selectedModel.toLowerCase()
+      );
+    }
+
+    updateGeofenceAircraft(filtered);
+  }, [displayedAircraft, selectedRegion, selectedManufacturer, selectedModel]);
 
   // Manufacturer filter methods
   const selectManufacturerAndClose = (value: string) => {
@@ -1236,6 +1352,8 @@ export function useFilterLogic() {
     selectedRegion,
     isRefreshing,
     isGeofencePlacementMode: false, // Initialize with a default value
+    manufacturerOptions,
+    modelOptions,
 
     // Methods
     toggleDropdown,
@@ -1257,6 +1375,10 @@ export function useFilterLogic() {
     setGeofenceCenter,
     setIsGettingLocation,
     updateGeofenceAircraft,
+    fetchManufacturersForRegion,
+    fetchModelsForManufacturer,
+    filterAircraftByAll,
+    applyAllFilters,
 
     refreshWithFilters: () => {
       // Implement refresh logic here

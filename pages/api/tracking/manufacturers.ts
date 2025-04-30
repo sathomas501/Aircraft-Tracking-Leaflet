@@ -1,7 +1,18 @@
 // pages/api/aircraft/tracking/manufacturers.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { SelectOption } from '@/types/base';
 import dbManager from '../../../lib/db/DatabaseManager';
+import { RegionCode } from '@/types/base';
+
+// Optional: bounding boxes (for future use)
+const regionBounds: Record<number, [number, number, number, number]> = {
+  [RegionCode.Middle_East]: [12.0, 37.5, 34.0, 58.0],
+  [RegionCode.Africa]: [-35.0, 37.0, -20.0, 52.0],
+  [RegionCode.Asia]: [1.0, 81.0, 25.0, 180.0],
+  [RegionCode.North_America]: [10, -170, 72, -50],
+  [RegionCode.South_America]: [-56, -82, 13, -30],
+  [RegionCode.Oceania]: [-50, 110, 0, 180],
+  [RegionCode.Europe]: [35, -25, 70, 45],
+};
 
 export default async function handler(
   req: NextApiRequest,
@@ -9,101 +20,72 @@ export default async function handler(
 ) {
   console.log('[API] Manufacturers endpoint called with method:', req.method);
 
+  if (req.method !== 'GET') {
+    return res.status(405).json({ error: 'Method Not Allowed' });
+  }
+
   try {
-    // Check database connection first
-    console.log('[API] Checking database connection...');
     await dbManager.initialize();
-    console.log('[API] Database initialized successfully');
 
-    // Get top 75 manufacturers by aircraft count
-    console.log('[API] Fetching manufacturers...');
+    const regionParam = req.query.region;
+    const region =
+      regionParam !== undefined ? parseInt(regionParam as string, 10) : null;
 
-    // Use a simpler query with explicit column name targeting
-    const query = `
-      SELECT 
-        MANUFACTURER AS name, 
-        COUNT(*) AS count 
-      FROM aircraft 
-      WHERE MANUFACTURER IS NOT NULL 
-      GROUP BY MANUFACTURER 
-      HAVING count > 0 
-      ORDER BY count DESC 
-      LIMIT 75
-    `;
-
-    console.log('[API] Executing query:', query);
-
-    // 1. First check for empty table
-    const countQuery = await dbManager.query(
-      'aircraft-count',
-      'SELECT COUNT(*) as count FROM aircraft',
-      [],
-      0
-    );
-    const tableCount =
-      countQuery.length > 0 ? (countQuery[0] as any).count || 0 : 0;
-
-    console.log('[API] Aircraft table has', tableCount, 'records');
-
-    if (tableCount === 0) {
-      console.log('[API] Aircraft table is empty, returning empty result');
-      return res.status(200).json([]);
-    }
-
-    // 2. Execute the manufacturers query
-    const manufacturers = await dbManager.query(
-      'manufacturers-direct',
-      query,
-      [],
-      0
-    );
-    console.log('[API] Query returned', manufacturers.length, 'results');
-
-    // Log a sample of the results
-    if (manufacturers.length > 0) {
-      console.log('[API] Sample results:', manufacturers.slice(0, 3));
-    }
-
-    // Format for the UI
-    const formattedManufacturers: SelectOption[] = manufacturers.map(
-      (m: any) => ({
-        value: m.name as string,
-        label: `${m.name as string} (${m.count as number} aircraft)`,
-      })
-    );
-
-    return res.status(200).json(formattedManufacturers);
-  } catch (error) {
-    console.error('[API] Error fetching manufacturers:', error);
-
-    // Check database tables
-    try {
-      console.log('[API] Checking database tables...');
-      const tables = await dbManager.query(
-        'db-tables',
-        "SELECT name FROM sqlite_master WHERE type='table'",
+    // 🟡 If region is missing or invalid
+    if (region === null || isNaN(region)) {
+      console.log(
+        '[API] Invalid or missing region. Returning top global manufacturers'
+      );
+      const manufacturers = await dbManager.query(
+        `manufacturers-global`,
+        `
+          SELECT MANUFACTURER AS name, COUNT(*) AS count
+          FROM aircraft
+          WHERE MANUFACTURER IS NOT NULL
+          GROUP BY MANUFACTURER
+          ORDER BY count DESC
+          LIMIT 75
+        `,
         [],
         0
       );
-      console.log('[API] Database tables:', tables);
 
-      // If aircraft table exists, check schema
-      if (tables.some((t: any) => t.name === 'aircraft')) {
-        const schemaResult = await dbManager.query(
-          'aircraft-schema',
-          'PRAGMA table_info(aircraft)',
-          [],
-          0
-        );
-        console.log('[API] Aircraft table schema:', schemaResult);
-      }
-    } catch (tableError) {
-      console.error('[API] Error checking tables:', tableError);
+      return res.status(200).json(
+        manufacturers.map((m: any) => ({
+          value: m.name,
+          label: `${m.name} (${m.count})`,
+        }))
+      );
     }
 
-    return res.status(500).json({
-      error: 'Failed to fetch manufacturers',
-      message: error instanceof Error ? error.message : 'Unknown error',
-    });
+    // ✅ Region is valid (including 0)
+    console.log(`[API] Region filter detected: ${region}`);
+
+    const manufacturers = await dbManager.query(
+      `manufacturers-region-${region}`,
+      `
+        SELECT 
+          MANUFACTURER AS name, 
+          COUNT(*) AS count 
+        FROM aircraft 
+        WHERE MANUFACTURER IS NOT NULL AND REGION = ?
+        GROUP BY MANUFACTURER 
+        HAVING count > 0 
+        ORDER BY count DESC 
+        LIMIT 50
+      `,
+      [region],
+      0
+    );
+
+    return res.status(200).json(
+      manufacturers.map((m: any) => ({
+        value: m.name,
+        label: `${m.name} (${m.count})`,
+      }))
+    );
+  } catch (error) {
+    console.error('[API] Error in manufacturers endpoint:', error);
+    return res.status(500).json({ error: 'Internal Server Error' });
   }
 }

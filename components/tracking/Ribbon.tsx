@@ -11,6 +11,7 @@ import { useEnhancedMapContext } from './context/EnhancedMapContext';
 import type { RibbonProps } from './types/filters';
 import ManualRefreshButton from './map/components/ManualRefreshButton';
 import StandaloneFilterDropdown from './filters/FilterDropdown';
+import { transformToModelOptions } from '@/utils/transformModels';
 
 const RibbonAircraftSelector: React.FC<RibbonProps> = ({ manufacturers }) => {
   // Get the aircraft state from context
@@ -184,11 +185,14 @@ const RibbonAircraftSelector: React.FC<RibbonProps> = ({ manufacturers }) => {
 
           {/* Region Dropdown */}
           <RegionFilter
-            activeRegion={activeRegion}
+            activeRegion={
+              typeof activeRegion === 'string' ? null : activeRegion
+            }
             handleRegionSelect={handleRegionSelect}
             activeDropdown={activeDropdown}
             toggleDropdown={toggleDropdown}
             dropdownRef={dropdownRefs.region}
+            applyAllFilters={filterLogic.applyAllFilters}
             selectedRegion={filterLogic.selectedRegion}
           />
 
@@ -214,7 +218,7 @@ const RibbonAircraftSelector: React.FC<RibbonProps> = ({ manufacturers }) => {
             toggleDropdown={toggleDropdown}
             dropdownRef={dropdownRefs.model}
             totalActive={totalActive}
-            activeModels={activeModels}
+            activeModels={transformToModelOptions(activeModels)}
           />
 
           {/* Divider */}
