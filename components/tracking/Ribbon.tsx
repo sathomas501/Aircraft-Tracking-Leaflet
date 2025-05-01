@@ -12,6 +12,7 @@ import type { RibbonProps } from './types/filters';
 import ManualRefreshButton from './map/components/ManualRefreshButton';
 import StandaloneFilterDropdown from './filters/FilterDropdown';
 import { transformToModelOptions } from '@/utils/transformModels';
+import { useManufacturerFilter } from './hooks/useManufacturerFilter';
 
 const RibbonAircraftSelector: React.FC<RibbonProps> = ({ manufacturers }) => {
   // Get the aircraft state from context
@@ -20,11 +21,11 @@ const RibbonAircraftSelector: React.FC<RibbonProps> = ({ manufacturers }) => {
 
   // Use our custom hook for filter logic
   const filterLogic = useFilterLogic();
-
+  if (!filterLogic) return null;
+  console.log('[Ribbon] rendered');
   const {
     filterMode,
     activeDropdown,
-    selectedManufacturer,
     selectedModel,
     geofenceLocation,
     geofenceRadius,
@@ -33,7 +34,6 @@ const RibbonAircraftSelector: React.FC<RibbonProps> = ({ manufacturers }) => {
     activeRegion,
     ownerFilters,
     allOwnerTypes,
-    manufacturerSearchTerm,
     combinedLoading,
     isGettingLocation,
     dropdownRefs,
@@ -49,7 +49,6 @@ const RibbonAircraftSelector: React.FC<RibbonProps> = ({ manufacturers }) => {
     processGeofenceSearch,
     handleOwnerFilterChange,
     handleRegionSelect,
-    setManufacturerSearchTerm,
     setGeofenceLocation,
     setGeofenceRadius,
     setGeofenceCoordinates,
@@ -58,6 +57,31 @@ const RibbonAircraftSelector: React.FC<RibbonProps> = ({ manufacturers }) => {
     toggleGeofenceState,
     clearAllFilters,
   } = filterLogic;
+
+  const { selectedRegion } = useEnhancedMapContext();
+  const stableRegion =
+    typeof selectedRegion === 'number' ? selectedRegion : null;
+
+  const {
+    selectedManufacturer,
+    manufacturerSearchTerm,
+    setManufacturerSearchTerm,
+    manufacturerOptions,
+    selectManufacturerAndFilter,
+    fetchModelsForManufacturer,
+    applyAllFilters,
+  } =
+    stableRegion !== null
+      ? useManufacturerFilter(stableRegion)
+      : {
+          selectedManufacturer: null,
+          manufacturerSearchTerm: '',
+          setManufacturerSearchTerm: () => {},
+          manufacturerOptions: [],
+          selectManufacturerAndFilter: () => {},
+          fetchModelsForManufacturer: null,
+          applyAllFilters: null,
+        };
 
   // Determine loading state and loading message
   const isLoading = combinedLoading || isRefreshing || localLoading;
@@ -154,129 +178,133 @@ const RibbonAircraftSelector: React.FC<RibbonProps> = ({ manufacturers }) => {
     );
   };
 
-  return (
-    <>
-      <div className="w-full sticky top-0 z-[100] bg-white overflow-visible">
-        {/* Main ribbon containing all controls */}
-        <div className="flex items-center h-12">
-          {/* Logo / Title */}
-          <div className="bg-indigo-600 text-white h-full flex items-center px-4 font-semibold">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              className="h-5 w-5 mr-2"
-              viewBox="0 0 20 20"
-              fill="currentColor"
-            >
-              <path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" />
-            </svg>
-            Aircraft Finder
+  if (fetchModelsForManufacturer && applyAllFilters) {
+    return (
+      <>
+        <div className="w-full sticky top-0 z-[100] bg-white overflow-visible">
+          {/* Main ribbon containing all controls */}
+          <div className="flex items-center h-12">
+            {/* Logo / Title */}
+            <div className="bg-indigo-600 text-white h-full flex items-center px-4 font-semibold">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="h-5 w-5 mr-2"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+              >
+                <path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" />
+              </svg>
+              Aircraft Finder
+            </div>
+
+            {/* Filter Mode Dropdown */}
+            <StandaloneFilterDropdown
+              currentFilterMode={filterMode}
+              onFilterModeChange={toggleFilterMode}
+              selectedManufacturer={selectedManufacturer}
+              isGeofenceActive={isGeofenceActive}
+            />
+
+            {/* Divider */}
+            <div className="h-6 w-px bg-gray-300 mx-1"></div>
+
+            {/* Region Dropdown */}
+            <RegionFilter
+              //activeRegion={
+              // typeof activeRegion === 'string' ? null : activeRegion
+              // }
+              activeRegion={filterLogic.selectedRegion ?? null}
+              handleRegionSelect={handleRegionSelect}
+              activeDropdown={activeDropdown}
+              toggleDropdown={toggleDropdown}
+              dropdownRef={dropdownRefs.region}
+              applyAllFilters={filterLogic.applyAllFilters}
+              selectedRegion={filterLogic.selectedRegion}
+            />
+
+            <ManufacturerFilter
+              manufacturers={manufacturerOptions}
+              selectedManufacturer={selectedManufacturer}
+              manufacturerSearchTerm={manufacturerSearchTerm}
+              setManufacturerSearchTerm={setManufacturerSearchTerm}
+              selectManufacturerAndClose={selectManufacturerAndFilter}
+              combinedLoading={isLoading}
+              activeDropdown={activeDropdown}
+              dropdownRef={dropdownRefs.manufacturer}
+              toggleDropdown={toggleDropdown}
+              fetchModelsForManufacturer={fetchModelsForManufacturer}
+              applyAllFilters={applyAllFilters}
+            />
+
+            {/* Model Dropdown */}
+            <ModelFilter
+              selectedManufacturer={selectedManufacturer}
+              selectedModel={selectedModel}
+              activeDropdown={activeDropdown}
+              handleModelSelect={handleModelSelect}
+              toggleDropdown={toggleDropdown}
+              dropdownRef={dropdownRefs.model}
+              totalActive={totalActive}
+              activeModels={transformToModelOptions(activeModels)}
+            />
+
+            {/* Divider */}
+            <div className="h-6 w-px bg-gray-300 mx-1"></div>
+
+            {/* Location Dropdown */}
+            <GeofenceFilter
+              geofenceLocation={geofenceLocation}
+              geofenceRadius={geofenceRadius}
+              isGettingLocation={isGettingLocation}
+              isGeofenceActive={isGeofenceActive}
+              geofenceCoordinates={geofenceCoordinates}
+              getUserLocation={getUserLocation}
+              processGeofenceSearch={processGeofenceSearch}
+              toggleGeofenceState={toggleGeofenceState}
+              setGeofenceLocation={setGeofenceLocation}
+              setGeofenceRadius={setGeofenceRadius}
+              setGeofenceCoordinates={setGeofenceCoordinates}
+              setGeofenceCenter={setGeofenceCenter}
+              updateGeofenceAircraft={updateGeofenceAircraft}
+              combinedLoading={combinedLoading}
+              activeDropdown={activeDropdown}
+              setActiveDropdown={filterLogic.setActiveDropdown}
+              toggleDropdown={toggleDropdown}
+              dropdownRef={dropdownRefs.location}
+              isGeofencePlacementMode={filterLogic.isGeofencePlacementMode}
+              setIsGettingLocation={filterLogic.setIsGettingLocation}
+            />
+
+            {/* Owner Type Dropdown */}
+            <OwnerFilter
+              activeFilters={ownerFilters}
+              onFilterChange={handleOwnerFilterChange}
+              allOwnerTypes={allOwnerTypes}
+              activeDropdown={activeDropdown}
+              toggleFilterMode={toggleFilterMode}
+              dropdownRef={dropdownRefs.owner}
+              toggleDropdown={toggleDropdown}
+            />
+
+            {/* Spacer */}
+            <div className="flex-grow"></div>
+
+            {/* Aircraft Stats Display */}
+            {renderAircraftStats()}
+
+            {/* Action Buttons - This line uses the renderActionButtons function */}
+            {renderActionButtons()}
           </div>
-
-          {/* Filter Mode Dropdown */}
-          <StandaloneFilterDropdown
-            currentFilterMode={filterMode}
-            onFilterModeChange={toggleFilterMode}
-            selectedManufacturer={selectedManufacturer}
-            isGeofenceActive={isGeofenceActive}
-          />
-
-          {/* Divider */}
-          <div className="h-6 w-px bg-gray-300 mx-1"></div>
-
-          {/* Region Dropdown */}
-          <RegionFilter
-            activeRegion={
-              typeof activeRegion === 'string' ? null : activeRegion
-            }
-            handleRegionSelect={handleRegionSelect}
-            activeDropdown={activeDropdown}
-            toggleDropdown={toggleDropdown}
-            dropdownRef={dropdownRefs.region}
-            applyAllFilters={filterLogic.applyAllFilters}
-            selectedRegion={filterLogic.selectedRegion}
-          />
-
-          {/* Manufacturer Dropdown */}
-          <ManufacturerFilter
-            manufacturers={manufacturers}
-            selectedManufacturer={selectedManufacturer}
-            manufacturerSearchTerm={manufacturerSearchTerm}
-            setManufacturerSearchTerm={setManufacturerSearchTerm}
-            selectManufacturerAndClose={selectManufacturerAndClose}
-            combinedLoading={combinedLoading}
-            activeDropdown={activeDropdown}
-            dropdownRef={dropdownRefs.manufacturer}
-            toggleDropdown={toggleDropdown}
-          />
-
-          {/* Model Dropdown */}
-          <ModelFilter
-            selectedManufacturer={selectedManufacturer}
-            selectedModel={selectedModel}
-            activeDropdown={activeDropdown}
-            handleModelSelect={handleModelSelect}
-            toggleDropdown={toggleDropdown}
-            dropdownRef={dropdownRefs.model}
-            totalActive={totalActive}
-            activeModels={transformToModelOptions(activeModels)}
-          />
-
-          {/* Divider */}
-          <div className="h-6 w-px bg-gray-300 mx-1"></div>
-
-          {/* Location Dropdown */}
-          <GeofenceFilter
-            geofenceLocation={geofenceLocation}
-            geofenceRadius={geofenceRadius}
-            isGettingLocation={isGettingLocation}
-            isGeofenceActive={isGeofenceActive}
-            geofenceCoordinates={geofenceCoordinates}
-            getUserLocation={getUserLocation}
-            processGeofenceSearch={processGeofenceSearch}
-            toggleGeofenceState={toggleGeofenceState}
-            setGeofenceLocation={setGeofenceLocation}
-            setGeofenceRadius={setGeofenceRadius}
-            setGeofenceCoordinates={setGeofenceCoordinates}
-            setGeofenceCenter={setGeofenceCenter}
-            updateGeofenceAircraft={updateGeofenceAircraft}
-            combinedLoading={combinedLoading}
-            activeDropdown={activeDropdown}
-            setActiveDropdown={filterLogic.setActiveDropdown}
-            toggleDropdown={toggleDropdown}
-            dropdownRef={dropdownRefs.location}
-            isGeofencePlacementMode={filterLogic.isGeofencePlacementMode}
-            setIsGettingLocation={filterLogic.setIsGettingLocation}
-          />
-
-          {/* Owner Type Dropdown */}
-          <OwnerFilter
-            activeFilters={ownerFilters}
-            onFilterChange={handleOwnerFilterChange}
-            allOwnerTypes={allOwnerTypes}
-            activeDropdown={activeDropdown}
-            toggleFilterMode={toggleFilterMode}
-            dropdownRef={dropdownRefs.owner}
-            toggleDropdown={toggleDropdown}
-          />
-
-          {/* Spacer */}
-          <div className="flex-grow"></div>
-
-          {/* Aircraft Stats Display */}
-          {renderAircraftStats()}
-
-          {/* Action Buttons - This line uses the renderActionButtons function */}
-          {renderActionButtons()}
         </div>
-      </div>
 
-      {/* Search Ribbon Spinner - Shows when loading */}
-      <SearchRibbonSpinner
-        isLoading={isLoading}
-        loadingText={getLoadingMessage()}
-      />
-    </>
-  );
+        {/* Search Ribbon Spinner - Shows when loading */}
+        <SearchRibbonSpinner
+          isLoading={isLoading}
+          loadingText={getLoadingMessage()}
+        />
+      </>
+    );
+  }
 };
 
 export default RibbonAircraftSelector;

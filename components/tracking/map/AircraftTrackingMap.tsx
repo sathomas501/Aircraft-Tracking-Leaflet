@@ -6,6 +6,15 @@ import { EnhancedUIProvider } from '../../tracking/context/EnhancedUIContext';
 import type { SelectOption } from '@/types/base';
 import AircraftSpinner from '../../tracking/map/components/AircraftSpinner';
 import RibbonAircraftSelector from '../Ribbon';
+import { useEnhancedMapContext } from '../context/EnhancedMapContext';
+import EnhancedReactBaseMap from './EnhancedReactBaseMap';
+
+// AircraftTrackingMap.tsx
+interface AircraftTrackingMapProps {
+  manufacturers: SelectOption[];
+  selectedRegion: number | null;
+  onError?: (message: string) => void;
+}
 
 // Dynamically import the optimized map to avoid SSR issues
 const EnhancedMap = dynamic(() => import('./EnhancedReactBaseMap'), {
@@ -23,9 +32,10 @@ const AircraftTrackingMap: React.FC<AircraftTrackingMapProps> = ({
   onError = () => {},
 }) => {
   // Add state for controlling update panel visibility
+
   const [updatePanelVisible, setUpdatePanelVisible] = useState(false);
   const [updateCount, setUpdateCount] = useState(0);
-
+  console.log('[AircraftTrackingMap] rendered');
   // Show the update panel after initial load
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -45,17 +55,30 @@ const AircraftTrackingMap: React.FC<AircraftTrackingMapProps> = ({
     setUpdatePanelVisible(!updatePanelVisible);
   };
 
+  const { selectedRegion } = useEnhancedMapContext();
+
   return (
     // Nest providers - UI context wraps Map context
     <EnhancedUIProvider>
-      <EnhancedMapProvider manufacturers={manufacturers} onError={onError}>
+      <EnhancedMapProvider
+        manufacturers={manufacturers}
+        onError={onError}
+        selectedRegion={selectedRegion} // ✅ Here
+      >
         <div className="relative w-full h-screen flex flex-col">
           {/* Sticky Ribbon */}
           <RibbonAircraftSelector manufacturers={manufacturers} />
 
           {/* Fill the rest of the space with the map */}
           <div className="flex-grow relative z-0">
-            <EnhancedMap onError={onError} />
+            <EnhancedMap
+              region={
+                typeof selectedRegion === 'string'
+                  ? parseInt(selectedRegion, 10)
+                  : selectedRegion
+              }
+              onError={onError}
+            />
           </div>
         </div>
       </EnhancedMapProvider>

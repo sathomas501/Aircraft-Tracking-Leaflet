@@ -11,6 +11,8 @@ const ManufacturerFilter: React.FC<ManufacturerFilterProps> = ({
   combinedLoading,
   activeDropdown,
   dropdownRef,
+  fetchModelsForManufacturer,
+  applyAllFilters,
   toggleDropdown,
 }) => {
   // Filter manufacturers by search term
@@ -119,7 +121,9 @@ const ManufacturerFilter: React.FC<ManufacturerFilterProps> = ({
                       : 'text-gray-700'
                   }`}
                   onClick={() => {
-                    selectManufacturerAndClose(manufacturer.value); // from props
+                    selectManufacturerAndClose(manufacturer.value); // selects and closes
+                    fetchModelsForManufacturer(manufacturer.value); // triggers model fetch
+                    setTimeout(() => applyAllFilters(), 0); // optional: trigger full filter logic
                   }}
                 >
                   {manufacturer.label}

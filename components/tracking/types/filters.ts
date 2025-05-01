@@ -52,6 +52,8 @@ export interface ManufacturerFilterProps {
   activeDropdown: string | null;
   dropdownRef: RefObject<HTMLDivElement>;
   toggleDropdown: (type: string, event: React.MouseEvent) => void;
+  fetchModelsForManufacturer: (manufacturer: string) => void;
+  applyAllFilters: () => void;
 }
 
 export interface OwnerFilterProps {

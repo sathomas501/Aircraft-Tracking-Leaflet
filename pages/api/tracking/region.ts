@@ -9,7 +9,6 @@ interface AircraftRecord {
   MANUFACTURER: string;
   MODEL: string;
   REGION: number;
-  // Add other fields as needed
 }
 
 export default async function handler(
@@ -17,7 +16,6 @@ export default async function handler(
   res: NextApiResponse
 ) {
   try {
-    // Check database connection first
     console.log('[API] Checking database connection...');
     await dbManager.initialize();
     console.log('[API] Database initialized successfully');
@@ -26,38 +24,33 @@ export default async function handler(
     return res.status(500).json({ error: 'Failed to initialize database' });
   }
 
-  // Allow only GET requests
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
   const { region } = req.query;
-  if (region === undefined) {
-    return res.status(400).json({ error: 'Missing region parameter' });
+
+  if (!region || typeof region !== 'string') {
+    return res
+      .status(400)
+      .json({ error: 'Missing or invalid region parameter' });
   }
 
-  // Convert string query parameter to numeric region code
-  const regionCode = parseInt(region as string, 10);
+  const parsed = parseInt(region, 10);
+  const regionCode = Number.isNaN(parsed) ? null : (parsed as RegionCode);
 
-  // Validate region code
-  if (isNaN(regionCode) || !Object.values(RegionCode).includes(regionCode)) {
+  if (regionCode === null || !Object.values(RegionCode).includes(regionCode)) {
     return res.status(400).json({ error: 'Invalid region code' });
   }
 
   try {
-    console.log(`[API] Fetching aircraft for region ${region}`);
+    console.log(`[API] Fetching aircraft for region ${regionCode}`);
 
-    // Execute query
-    const aircraftData: any[] = await new Promise((resolve, reject) => {
-      dbManager
-        .query(
-          `aircraft-region-${regionCode}`, // Unique cache key
-          'SELECT * FROM aircraft WHERE REGION = ?',
-          [regionCode]
-        )
-        .then(resolve)
-        .catch(reject);
-    });
+    const aircraftData: AircraftRecord[] = await dbManager.query(
+      `aircraft-region-${regionCode}`,
+      'SELECT * FROM aircraft WHERE REGION = ?',
+      [regionCode]
+    );
 
     res.status(200).json({
       aircraft: aircraftData,
@@ -70,4 +63,3 @@ export default async function handler(
     res.status(500).json({ error: 'Failed to fetch aircraft by region' });
   }
 }
-dbManager;

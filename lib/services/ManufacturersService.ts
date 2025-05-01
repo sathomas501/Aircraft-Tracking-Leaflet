@@ -1,13 +1,18 @@
 // lib/services/tracking-services/ManufacturersService.ts
-import { SelectOption } from '@/types/base';
+import { SelectOption, RegionCode } from '@/types/base';
+
+type Subscriber = (manufacturers: SelectOption[]) => void;
 
 class ManufacturersService {
   private static instance: ManufacturersService;
   private manufacturers: SelectOption[] = [];
   private loading: boolean = false;
-  private subscribers: Array<(manufacturers: SelectOption[]) => void> = [];
+  private subscribers: Subscriber[] = [];
+  private lastLoadedRegion: RegionCode | null = null;
 
-  private constructor() {}
+  private constructor() {
+    console.log('[ManufacturersService] Instance created');
+  }
 
   /**
    * Get the singleton instance
@@ -30,78 +35,79 @@ class ManufacturersService {
       this.manufacturers = data;
       // Notify subscribers about the new data
       this.notifySubscribers();
+    } else {
+      console.log('[ManufacturersService] No data provided for initialization');
     }
   }
+
   /**
    * Subscribe to manufacturers updates
    */
-  public subscribe(
-    callback: (manufacturers: SelectOption[]) => void
-  ): () => void {
+  subscribe(callback: Subscriber): () => void {
     this.subscribers.push(callback);
 
-    // Immediately notify with current data if available
+    // Immediately emit current list, if available
     if (this.manufacturers.length > 0) {
       callback(this.manufacturers);
     }
 
-    // Return unsubscribe function
+    // Return an unsubscribe function
     return () => {
-      this.subscribers = this.subscribers.filter((sub) => sub !== callback);
+      this.subscribers = this.subscribers.filter((cb) => cb !== callback);
     };
   }
 
   /**
-   * Notify all subscribers
+   * Notify all subscribers with safety checks
    */
   private notifySubscribers(): void {
+    console.log(
+      `[ManufacturersService] Notifying ${this.subscribers.length} subscribers with ${this.manufacturers.length} manufacturers`
+    );
+
+    // Make a safe copy of the data to prevent modifications
+    const data = [...this.manufacturers];
+
+    // Use for-of loop to allow for better error handling per subscriber
     for (const subscriber of this.subscribers) {
-      subscriber(this.manufacturers);
+      try {
+        subscriber(data);
+      } catch (error) {
+        console.error(
+          '[ManufacturersService] Error notifying subscriber:',
+          error
+        );
+        // Continue notifying other subscribers even if one fails
+      }
     }
   }
 
   /**
    * Load manufacturers from the API
    */
-  public async loadManufacturers(): Promise<SelectOption[]> {
-    if (this.loading) {
-      return this.manufacturers;
-    }
-
-    // If we already have manufacturers loaded, return them
-    if (this.manufacturers.length > 0) {
-      return this.manufacturers;
-    }
-
-    this.loading = true;
-
+  async loadManufacturers(region: RegionCode): Promise<void> {
     try {
-      console.log('[ManufacturersService] Fetching manufacturers...');
-      const response = await fetch('/api/tracking/manufacturers');
-
+      const response = await fetch(
+        `/api/tracking/manufacturers?region=${region}`
+      );
       if (!response.ok) {
-        throw new Error(
-          `Failed to fetch manufacturers: ${response.statusText}`
-        );
+        throw new Error(`Failed to fetch: ${response.statusText}`);
       }
 
       const data = await response.json();
-      console.log(`[ManufacturersService] Loaded ${data.length} manufacturers`);
+      this.manufacturers = data.manufacturers || [];
 
-      this.manufacturers = data || [];
-
-      // Notify subscribers
-      this.notifySubscribers();
-
-      return this.manufacturers;
+      // Notify all subscribers
+      this.subscribers.forEach((cb) => cb(this.manufacturers));
+      console.log(
+        `[ManufacturersService] Fetched ${this.manufacturers.length} manufacturers for region ${region}`
+      );
     } catch (error) {
       console.error(
-        '[ManufacturersService] Error loading manufacturers:',
+        `[ManufacturersService] Error fetching manufacturers for region ${region}`,
         error
       );
-      return [];
-    } finally {
-      this.loading = false;
+      throw error;
     }
   }
 
@@ -113,43 +119,25 @@ class ManufacturersService {
   }
 
   /**
-   * Refresh manufacturers
+   * Get the last loaded region
    */
-  public async refreshManufacturers(): Promise<SelectOption[]> {
-    this.loading = true;
+  public getLastLoadedRegion(): RegionCode | null {
+    return this.lastLoadedRegion;
+  }
 
-    try {
-      console.log('[ManufacturersService] Refreshing manufacturers...');
-      const response = await fetch('/api/tracking/manufacturers');
-
-      if (!response.ok) {
-        throw new Error(
-          `Failed to fetch manufacturers: ${response.statusText}`
-        );
-      }
-
-      const data = await response.json();
-      console.log(
-        `[ManufacturersService] Refreshed ${data.length} manufacturers`
-      );
-
-      this.manufacturers = data || [];
-
-      // Notify subscribers
-      this.notifySubscribers();
-
-      return this.manufacturers;
-    } catch (error) {
-      console.error(
-        '[ManufacturersService] Error refreshing manufacturers:',
-        error
-      );
-      return this.manufacturers;
-    } finally {
-      this.loading = false;
-    }
+  /**
+   * Clear cached data
+   */
+  public clearCache(): void {
+    console.log('[ManufacturersService] Clearing cache');
+    this.manufacturers = [];
+    this.lastLoadedRegion = null;
+    // Don't notify subscribers as they'll get notified when new data is loaded
   }
 }
 
-const manufacturersService = ManufacturersService.getInstance();
-export default manufacturersService;
+// Export singleton instance
+export const manufacturersService = ManufacturersService.getInstance();
+
+// Also export the class for testing purposes if needed
+export default ManufacturersService;

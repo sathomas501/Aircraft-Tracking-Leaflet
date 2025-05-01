@@ -68,6 +68,9 @@ const GeofenceFilter: React.FC<GeofenceFilterProps> = ({
 
   // Get filter logic from the main hook
 
+  const filterLogic = useFilterLogic();
+  if (!filterLogic) return null; // or show a loader/fallback
+
   const {
     geofenceLocation,
     geofenceRadius,
@@ -84,7 +87,7 @@ const GeofenceFilter: React.FC<GeofenceFilterProps> = ({
     setGeofenceCenter,
     updateGeofenceAircraft,
     setIsGettingLocation,
-  } = useFilterLogic();
+  } = filterLogic;
 
   // Use the panel hook for managing the floating panel
   const panelLogic = useGeofencePanel({

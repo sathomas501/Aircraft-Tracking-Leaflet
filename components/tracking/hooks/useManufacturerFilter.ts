@@ -1,14 +1,38 @@
 import { useState, useEffect } from 'react';
 import { RegionCode } from '@/types/base';
 import { useEnhancedMapContext } from '../context/EnhancedMapContext';
+import { useFilterLogic } from './useFilterLogic';
 
 export function useManufacturerFilter(selectedRegion: RegionCode | null) {
+  const context = useEnhancedMapContext();
+
+  // ✅ Short-circuit invalid regions
+  if (
+    selectedRegion === null ||
+    typeof selectedRegion !== 'number' ||
+    selectedRegion <= 0
+  ) {
+    return {
+      selectedManufacturer: null,
+      manufacturerSearchTerm: '',
+      setManufacturerSearchTerm: () => {},
+      manufacturerOptions: [],
+      selectManufacturerAndFilter: () => {},
+      isLoading: false,
+      fetchModelsForManufacturer: () => {},
+      applyAllFilters: () => {},
+    };
+  }
+
+  const { fetchModelsForManufacturer = () => {}, applyAllFilters = () => {} } =
+    useFilterLogic() ?? {};
+
   const {
     selectManufacturer,
     selectModel,
     updateGeofenceAircraft,
     clearGeofenceData,
-  } = useEnhancedMapContext();
+  } = context;
 
   const [manufacturerSearchTerm, setManufacturerSearchTerm] = useState('');
   const [selectedManufacturer, setSelectedManufacturer] = useState<
@@ -16,44 +40,17 @@ export function useManufacturerFilter(selectedRegion: RegionCode | null) {
   >(null);
   const [manufacturerOptions, setManufacturerOptions] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [models, setModels] = useState<string[]>([]); // ✅ for useModelFilter
-  const [modelsLoading, setModelsLoading] = useState(false);
 
-  // Load manufacturers when region changes
   useEffect(() => {
-    if (selectedRegion === null || typeof selectedRegion === 'string') {
-      setManufacturerOptions([]);
-      return;
-    }
+    if (selectedRegion == null || isNaN(selectedRegion)) return;
 
     setIsLoading(true);
     fetch(`/api/tracking/manufacturers?region=${selectedRegion}`)
       .then((res) => res.json())
       .then((data) => setManufacturerOptions(data))
-      .catch((err) => {
-        console.error(
-          '[ManufacturerFilter] Failed to load manufacturers:',
-          err
-        );
-      })
+      .catch((err) => console.error('[ManufacturerFilter] Load error:', err))
       .finally(() => setIsLoading(false));
   }, [selectedRegion]);
-
-  // Fetch models for selected manufacturer
-  useEffect(() => {
-    if (selectedManufacturer) {
-      setModelsLoading(true);
-      fetch(
-        `/api/aircraft/tracking/models?manufacturer=${encodeURIComponent(selectedManufacturer)}`
-      )
-        .then((res) => res.json())
-        .then((data) => setModels(data))
-        .catch((err) => console.error('[ModelFetcher] Error:', err))
-        .finally(() => setModelsLoading(false));
-    } else {
-      setModels([]); // reset
-    }
-  }, [selectedManufacturer]);
 
   const selectManufacturerAndFilter = (manufacturer: string) => {
     setSelectedManufacturer(manufacturer);
@@ -61,9 +58,7 @@ export function useManufacturerFilter(selectedRegion: RegionCode | null) {
     selectManufacturer(manufacturer);
     selectModel(null);
 
-    if (selectedRegion !== null) {
-      fetchAircraftByRegionAndManufacturer(selectedRegion, manufacturer);
-    }
+    fetchAircraftByRegionAndManufacturer(selectedRegion, manufacturer);
   };
 
   const fetchAircraftByRegionAndManufacturer = async (
@@ -77,11 +72,11 @@ export function useManufacturerFilter(selectedRegion: RegionCode | null) {
         `/api/tracking/filtered-aircraft?region=${region}&manufacturer=${encodeURIComponent(manufacturer)}&page=${page}&limit=${limit}`
       );
       const data = await res.json();
-      if (!res.ok) throw new Error(data.message || 'Failed to fetch');
+      if (!res.ok) throw new Error(data.message || 'Failed to fetch aircraft');
       clearGeofenceData();
       updateGeofenceAircraft(data.aircraft || []);
-    } catch (error) {
-      console.error('[Fetch] Aircraft by region + manufacturer failed:', error);
+    } catch (err) {
+      console.error('[ManufacturerFilter] Fetch aircraft failed:', err);
     }
   };
 
@@ -92,7 +87,7 @@ export function useManufacturerFilter(selectedRegion: RegionCode | null) {
     manufacturerOptions,
     selectManufacturerAndFilter,
     isLoading,
-    models, // ✅ exposed
-    modelsLoading, // ✅ exposed
+    fetchModelsForManufacturer,
+    applyAllFilters,
   };
 }

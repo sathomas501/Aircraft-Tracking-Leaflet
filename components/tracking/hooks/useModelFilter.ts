@@ -1,12 +1,15 @@
-import React from 'react';
 import { useState, useEffect } from 'react';
 import { useEnhancedMapContext } from '../context/EnhancedMapContext';
 
 export function useModelFilter(
   selectedManufacturer: string | null,
-  applyAllFilters: () => void
+  applyAllFilters: () => void = () => {}
 ) {
-  const { selectedModel, selectModel } = useEnhancedMapContext();
+  const mapContext = useEnhancedMapContext();
+
+  const selectedModel = mapContext?.selectedModel ?? null;
+  const selectModel = mapContext?.selectModel ?? (() => {});
+
   const [modelOptions, setModelOptions] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -25,6 +28,8 @@ export function useModelFilter(
         const data = await response.json();
         if (Array.isArray(data)) {
           setModelOptions(data);
+        } else {
+          setModelOptions([]);
         }
       } catch (err) {
         console.error('[useModelFilter] Failed to fetch models:', err);
@@ -39,7 +44,7 @@ export function useModelFilter(
 
   const handleModelSelect = (model: string) => {
     selectModel(model);
-    applyAllFilters(); // ✅ auto-trigger filter logic
+    applyAllFilters();
   };
 
   return {

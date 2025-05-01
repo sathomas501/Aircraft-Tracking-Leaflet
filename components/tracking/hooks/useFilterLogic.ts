@@ -78,6 +78,8 @@ export function useFilterLogic() {
     displayedAircraft,
   } = useEnhancedMapContext();
 
+  console.log('[useFilterLogic] running');
+
   // Use our combined geolocation services hook
   const geolocationServices = useGeolocationServices();
 
@@ -107,11 +109,9 @@ export function useFilterLogic() {
   const [isSearchReady, setIsSearchReady] = React.useState(false);
 
   // Region state
-  const [activeRegion, setActiveRegion] = useState<RegionCode | string | null>(
-    null
-  );
+  const [activeRegion, setActiveRegion] = useState<RegionCode | null>(null);
   const [regionOutline, setRegionOutline] = useState<any>(null);
-  const [selectedRegion, setSelectedRegion] = useState<number>(
+  const [selectedRegion, setSelectedRegion] = useState<RegionCode | null>(
     RegionCode.GLOBAL
   );
 
@@ -123,6 +123,67 @@ export function useFilterLogic() {
 
   // Combined mode state
   const [combinedModeReady, setCombinedModeReady] = useState<boolean>(false);
+
+  // 🛑 EARLY GUARD
+  if (selectedRegion === null) {
+    const noop = () => {};
+    const noopAsync = async () => {};
+
+    const dummyRef = React.createRef<HTMLDivElement>();
+    const dropdownRefs = {
+      filter: dummyRef,
+      manufacturer: dummyRef,
+      model: dummyRef,
+      location: dummyRef,
+      region: dummyRef,
+      owner: dummyRef,
+      actions: dummyRef,
+    };
+
+    return {
+      // State
+      activeDropdown: null,
+      selectedModel: null,
+      geofenceLocation: '',
+      geofenceRadius: 25,
+      isGettingLocation: false,
+      isGeofenceActive: false,
+      isGeofencePlacementMode: false,
+      geofenceCoordinates: null,
+      combinedLoading: false,
+      localLoading: false,
+      isRefreshing: false,
+      ownerFilters: [],
+      allOwnerTypes: [],
+
+      // Refs
+      dropdownRefs,
+
+      // Functions (no-ops to avoid crashes)
+      toggleDropdown: noop,
+      toggleFilterMode: noop,
+      selectManufacturerAndClose: noopAsync,
+      handleModelSelect: noop,
+      handleRegionSelect: noop,
+      getUserLocation: noopAsync,
+      processGeofenceSearch: noopAsync,
+      handleOwnerFilterChange: noop,
+      setGeofenceLocation: noop,
+      setGeofenceRadius: noop,
+      setGeofenceCoordinates: noop,
+      setGeofenceCenter: noop,
+      updateGeofenceAircraft: noop,
+      toggleGeofenceState: noop,
+      clearAllFilters: noop,
+      applyAllFilters: noop,
+      setIsGettingLocation: noop,
+      setActiveDropdown: noop,
+      fetchModelsForManufacturer: async () => {},
+      filterMode: 'manufacturer' as FilterMode,
+      selectedRegion: null as RegionCode | null,
+      refreshWithFilters: async () => {},
+    };
+  }
 
   // Owner filter state
   const allOwnerTypes = [
@@ -618,12 +679,7 @@ export function useFilterLogic() {
 
   // Main methods
   const toggleDropdown = (dropdown: string, event: React.MouseEvent) => {
-    if (activeDropdown === dropdown) {
-      setActiveDropdown(null);
-    } else {
-      setActiveDropdown(dropdown);
-    }
-    // Prevent events from bubbling up
+    setActiveDropdown((prev) => (prev === dropdown ? null : dropdown));
     event.stopPropagation();
   };
 
@@ -657,7 +713,11 @@ export function useFilterLogic() {
       openSkyTrackingService.setBlockAllApiCalls(true);
 
       // Apply region filtering if we already have data
-      if (displayedAircraft && displayedAircraft.length > 0) {
+      if (
+        selectedRegion !== null &&
+        displayedAircraft &&
+        displayedAircraft.length > 0
+      ) {
         filterAircraftByRegion(selectedRegion.toString());
       }
 
@@ -727,9 +787,7 @@ export function useFilterLogic() {
   };
 
   const ownerTypeToString = (type: number | string): string => {
-    const typeNum = typeof type === 'string' ? parseInt(type, 10) : type;
-
-    const ownerTypeMap: Record<number, string> = {
+    const map: Record<number, string> = {
       1: 'individual',
       2: 'partnership',
       3: 'corp-owner',
@@ -750,8 +808,8 @@ export function useFilterLogic() {
       20: 'leasing-corp',
       21: 'military',
     };
-
-    return ownerTypeMap[typeNum] || 'unknown';
+    const n = typeof type === 'string' ? parseInt(type, 10) : type;
+    return map[n] || 'unknown';
   };
 
   const filteredByOwner = filterAircraftByOwnerType(
@@ -856,155 +914,13 @@ export function useFilterLogic() {
     }
   };
 
-  const bounds = getBoundsByRegion(selectedRegion) as [
-    [number, number],
-    [number, number],
-  ];
-  const finalFiltered = filterAircraftAdvanced({
-    aircraft: displayedAircraft,
-    bounds,
-    manufacturer: selectedManufacturer,
-    model: selectedModel,
-    ownerFilters,
-    ownerTypeResolver: ownerTypeToString,
-  });
-
-  updateGeofenceAircraft(finalFiltered);
-
-  const handleRegionSelect = async (region: RegionCode) => {
-    setActiveRegion(region);
-    setSelectedRegion(region);
-    setLocalLoading(true);
-
-    try {
-      // Set map bounds based on region
-      if (mapInstance) {
-        const bounds = getBoundsByRegion(region);
-
-        // Get the appropriate zoom level for this region from your config
-        const zoomLevel = getZoomLevelForRegion(region);
-
-        // First, set the appropriate zoom level
-        mapInstance.setZoom(zoomLevel);
-
-        // Then fit bounds with padding
-        const options = {
-          padding: MAP_CONFIG.PADDING.DEFAULT,
-          // Don't set maxZoom here as we want the region to be properly displayed
-        };
-
-        mapInstance.fitBounds(bounds as any, options);
-        mapInstance.invalidateSize();
-        drawRegionOutline(region);
-      }
-
-      // Instead of immediately fetching aircraft data,
-      // just store the region selection for later use
-      console.log(`Region selected. Waiting for manufacturer selection...`);
-
-      // Optionally, you could fetch just the count of aircraft in this region
-      // to give the user an idea of the data volume
-      const countResponse = await fetch(
-        `/api/tracking/region-count?region=${region}`
-      );
-      if (countResponse.ok) {
-        const countData = await countResponse.json();
-        console.log(`${countData.count} aircraft available in this region`);
-      }
-
-      // Clear any previous aircraft data
-      if (clearGeofenceData) {
-        clearGeofenceData();
-      }
-    } catch (error) {
-      console.error('Error in region selection:', error);
-    } finally {
-      setLocalLoading(false);
-      setActiveDropdown(null);
-    }
-  };
-
-  const drawRegionOutline = (region: RegionCode) => {
-    if (!mapInstance) return;
-
-    // Clear any existing outline
-    if (regionOutline) {
-      regionOutline.remove();
-    }
-
-    // Get the bounds for the selected region
-    const bounds = getBoundsByRegion(region) as [
+  if (selectedRegion !== null) {
+    const bounds = getBoundsByRegion(selectedRegion) as [
       [number, number],
       [number, number],
     ];
 
-    // Create a polygon from the bounds
-    const L = require('leaflet');
-    const rectangle = L.rectangle(bounds, {
-      color: '#4f46e5', // Indigo color matching your UI
-      weight: 3,
-      opacity: 0.7,
-      fill: true,
-      fillColor: '#4f46e5',
-      fillOpacity: 0.1,
-      dashArray: '5, 10', // Optional: creates a dashed line
-      interactive: false, // Prevents the rectangle from capturing mouse events
-    });
-
-    // Add to map
-    rectangle.addTo(mapInstance);
-
-    // Update the state to include both the rectangle and the label
-    setRegionOutline({
-      remove: () => {
-        rectangle.remove();
-      },
-    });
-  };
-
-  const fetchManufacturersForRegion = useCallback(
-    async (region: RegionCode) => {
-      try {
-        const response = await fetch(
-          `/api/aircraft/tracking/manufacturers?region=${region}`
-        );
-        const data = await response.json();
-        setManufacturerOptions(data);
-      } catch (err) {
-        console.error('Failed to load manufacturers for region:', err);
-        setManufacturerOptions([]);
-      }
-    },
-    []
-  );
-
-  // 3. Fetch models for manufacturer
-  const fetchModelsForManufacturer = useCallback(
-    async (manufacturer: string) => {
-      try {
-        const response = await fetch(
-          `/api/tracking/models?manufacturer=${encodeURIComponent(manufacturer)}`
-        );
-        const data: string[] = await response.json();
-        setModelOptions(data);
-      } catch (err) {
-        console.error('Failed to load models:', err);
-        setModelOptions([]);
-      }
-    },
-    []
-  );
-
-  const applyAllFilters = () => {
-    const bounds =
-      selectedRegion !== null
-        ? (getBoundsByRegion(selectedRegion) as [
-            [number, number],
-            [number, number],
-          ])
-        : undefined;
-
-    const filtered = filterAircraftAdvanced({
+    const finalFiltered = filterAircraftAdvanced({
       aircraft: displayedAircraft,
       bounds,
       manufacturer: selectedManufacturer,
@@ -1013,385 +929,517 @@ export function useFilterLogic() {
       ownerTypeResolver: ownerTypeToString,
     });
 
-    updateGeofenceAircraft(filtered);
-  };
+    updateGeofenceAircraft(finalFiltered);
 
-  // 4. Combined filter: Region + Manufacturer + Model
-  const filterAircraftByAll = useCallback(() => {
-    let filtered = [...displayedAircraft];
+    const handleRegionSelect = async (region: RegionCode) => {
+      setSelectedRegion(region);
+      setLocalLoading(true);
 
-    if (selectedRegion !== null) {
-      const bounds = getBoundsByRegion(selectedRegion);
-      filtered = filterAircraftWithinBounds(filtered, bounds);
-    }
+      try {
+        const bounds = getBoundsByRegion(region);
+        if (!bounds || !Array.isArray(bounds)) return;
 
-    if (selectedManufacturer) {
-      filtered = filtered.filter(
-        (a) =>
-          a.MANUFACTURER?.toLowerCase() === selectedManufacturer.toLowerCase()
-      );
-    }
+        const [[minLat, minLng], [maxLat, maxLng]] = bounds;
+        const filtered = displayedAircraft.filter((aircraft) => {
+          return (
+            typeof aircraft.latitude === 'number' &&
+            typeof aircraft.longitude === 'number' &&
+            aircraft.latitude >= minLat &&
+            aircraft.latitude <= maxLat &&
+            aircraft.longitude >= minLng &&
+            aircraft.longitude <= maxLng
+          );
+        });
 
-    if (selectedModel) {
-      filtered = filtered.filter(
-        (a) => a.MODEL?.toLowerCase() === selectedModel.toLowerCase()
-      );
-    }
-
-    updateGeofenceAircraft(filtered);
-  }, [displayedAircraft, selectedRegion, selectedManufacturer, selectedModel]);
-
-  // Manufacturer filter methods
-  const selectManufacturerAndClose = (value: string) => {
-    // Close dropdown
-    setActiveDropdown(null);
-    setManufacturerSearchTerm('');
-
-    // If clearing the selection
-    if (value === '') {
-      selectManufacturer(null);
-      return;
-    }
-
-    // Set the manufacturer selection
-    selectManufacturer(value);
-
-    // If region is already selected, fetch filtered data
-    if (activeRegion !== null) {
-      fetchAircraftByRegionAndManufacturer(activeRegion as RegionCode, value);
-    } else {
-      // Otherwise, just proceed with manufacturer-only filtering as before
-      fetchManufacturerData(value);
-    }
-  };
-
-  const fetchManufacturerData = (manufacturer: string) => {
-    if (isRateLimited) {
-      console.log(`Skipping data fetch - rate limited for ${rateLimitTimer}s`);
-      return;
-    }
-
-    console.log(`Fetching data for manufacturer: ${manufacturer}`);
-
-    try {
-      // If you have a context function for this, call it after a slight delay
-      if (typeof refreshPositions === 'function') {
-        // Apply a small delay to prevent overwhelming the API
-        setTimeout(() => {
-          refreshPositions().catch((error: any) => {
-            if (error.message?.includes('rate limit') || error.status === 429) {
-              handleRateLimit(30);
-            } else {
-              console.error('Error fetching manufacturer data:', error);
-            }
-          });
-        }, 200);
+        clearGeofenceData();
+        updateGeofenceAircraft(filtered);
+      } catch (err) {
+        console.error('[RegionFilter] Failed to filter by region:', err);
+      } finally {
+        setLocalLoading(false);
       }
-    } catch (error: any) {
-      if (error.message?.includes('rate limit') || error.status === 429) {
-        handleRateLimit(30);
-      } else {
-        console.error('Error scheduling manufacturer data fetch:', error);
-      }
-    }
-  };
+    };
 
-  const fetchAircraftByRegionAndManufacturer = async (
-    region: RegionCode,
-    manufacturer: string,
-    page: number = 1,
-    limit: number = 500
-  ) => {
-    if (!region || !manufacturer) {
-      console.log('Both region and manufacturer must be selected');
-      return;
-    }
+    const drawRegionOutline = (region: RegionCode) => {
+      if (!mapInstance) return;
 
-    setLocalLoading(true);
-
-    try {
-      const response = await fetch(
-        `/api/tracking/filtered-aircraft?region=${region}&manufacturer=${encodeURIComponent(manufacturer)}&page=${page}&limit=${limit}`
-      );
-
-      const data = await response.json();
-      const aircraftData = data.aircraft || [];
-
-      if (!response.ok) {
-        throw new Error(`API error: ${response.statusText}`);
+      // Clear any existing outline
+      if (regionOutline) {
+        regionOutline.remove();
       }
 
-      // Process the filtered aircraft data
-      if (aircraftData.length > 0) {
-        // Transform to ExtendedAircraft
-        interface AircraftData {
-          TYPE_AIRCRAFT?: string;
-          OPERATOR?: string;
-          REGION: number;
+      // Get the bounds for the selected region
+      const bounds = getBoundsByRegion(region) as [
+        [number, number],
+        [number, number],
+      ];
+
+      // Create a polygon from the bounds
+      const L = require('leaflet');
+      const rectangle = L.rectangle(bounds, {
+        color: '#4f46e5', // Indigo color matching your UI
+        weight: 3,
+        opacity: 0.7,
+        fill: true,
+        fillColor: '#4f46e5',
+        fillOpacity: 0.1,
+        dashArray: '5, 10', // Optional: creates a dashed line
+        interactive: false, // Prevents the rectangle from capturing mouse events
+      });
+
+      // Add to map
+      rectangle.addTo(mapInstance);
+
+      // Update the state to include both the rectangle and the label
+      setRegionOutline({
+        remove: () => {
+          rectangle.remove();
+        },
+      });
+    };
+
+    const fetchManufacturersForRegion = useCallback(
+      async (region: RegionCode) => {
+        try {
+          const response = await fetch(
+            `/api/aircraft/tracking/manufacturers?region=${region}`
+          );
+          const data = await response.json();
+          setManufacturerOptions(data);
+        } catch (err) {
+          console.error('Failed to load manufacturers for region:', err);
+          setManufacturerOptions([]);
         }
+      },
+      []
+    );
 
-        const extendedAircraft: ExtendedAircraft[] = aircraftData.map(
-          (aircraft: AircraftData) => ({
-            ...aircraft,
-            type: aircraft.TYPE_AIRCRAFT || 'Unknown',
-            isGovernment:
-              aircraft.OPERATOR?.toLowerCase().includes('government') ?? false,
-            REGION: aircraft.REGION,
-            zoomLevel: undefined,
-          })
-        );
+    // 3. Fetch models for manufacturer
+    const fetchModelsForManufacturer = useCallback(
+      async (manufacturer: string) => {
+        try {
+          const response = await fetch(
+            `/api/tracking/models?manufacturer=${encodeURIComponent(manufacturer)}`
+          );
+          const models = await response.json();
+          console.log('[Models] Loaded models:', models);
+        } catch (err) {
+          console.error('[Models] Error fetching models:', err);
+        }
+      },
+      []
+    );
 
-        // Update the map
-        updateGeofenceAircraft(extendedAircraft);
-      } else {
-        console.log(
-          `No aircraft found for manufacturer ${manufacturer} in region ${region}`
+    const applyAllFilters = () => {
+      const bounds =
+        selectedRegion !== null
+          ? (getBoundsByRegion(selectedRegion) as [
+              [number, number],
+              [number, number],
+            ])
+          : undefined;
+
+      const filtered = filterAircraftAdvanced({
+        aircraft: displayedAircraft,
+        bounds,
+        manufacturer: selectedManufacturer,
+        model: selectedModel,
+        ownerFilters,
+        ownerTypeResolver: ownerTypeToString,
+      });
+
+      clearGeofenceData();
+      updateGeofenceAircraft(filtered);
+    };
+
+    // 4. Combined filter: Region + Manufacturer + Model
+    const filterAircraftByAll = useCallback(() => {
+      let filtered = [...displayedAircraft];
+
+      if (selectedRegion !== null) {
+        const bounds = getBoundsByRegion(selectedRegion);
+        filtered = filterAircraftWithinBounds(filtered, bounds);
+      }
+
+      if (selectedManufacturer) {
+        filtered = filtered.filter(
+          (a) =>
+            a.MANUFACTURER?.toLowerCase() === selectedManufacturer.toLowerCase()
         );
       }
-    } catch (error) {
-      console.error('Error fetching filtered aircraft:', error);
-    } finally {
-      setLocalLoading(false);
-    }
-  };
 
-  // Model selection methods
-  const handleModelSelect = (value: string) => {
-    selectModel(value === '' ? null : value);
-    setActiveDropdown(null);
-
-    // If in combined mode, reapply the filter
-    if (filterMode === 'both' && isGeofenceActive && selectedManufacturer) {
-      setTimeout(() => {
-        applyCombinedFilters();
-      }, 100);
-    }
-  };
-
-  // Combined filter methods
-  const applyCombinedFilters = () => {
-    if (
-      !selectedManufacturer ||
-      !isGeofenceActive ||
-      geofenceAircraft.length === 0
-    ) {
-      return;
-    }
-
-    setLocalLoading(true);
-
-    try {
-      console.log(
-        `Filtering ${geofenceAircraft.length} aircraft by ${selectedManufacturer}`
-      );
-
-      // Filter the aircraft by manufacturer
-      let filteredAircraft = geofenceAircraft.filter(
-        (aircraft) =>
-          aircraft.MANUFACTURER?.toLowerCase() ===
-          selectedManufacturer.toLowerCase()
-      );
-
-      // Further filter by model if selected
       if (selectedModel) {
-        filteredAircraft = filteredAircraft.filter(
-          (aircraft) =>
-            aircraft.MODEL?.toLowerCase() === selectedModel.toLowerCase()
+        filtered = filtered.filter(
+          (a) => a.MODEL?.toLowerCase() === selectedModel.toLowerCase()
         );
       }
 
-      console.log(`Found ${filteredAircraft.length} matching aircraft`);
+      updateGeofenceAircraft(filtered);
+    }, [
+      displayedAircraft,
+      selectedRegion,
+      selectedManufacturer,
+      selectedModel,
+    ]);
 
-      if (filteredAircraft.length === 0) {
-        alert(`No ${selectedManufacturer} aircraft found in this area.`);
+    // Manufacturer filter methods
+    const selectManufacturerAndClose = (value: string) => {
+      // Close dropdown
+      setActiveDropdown(null);
+      setManufacturerSearchTerm('');
+
+      // If clearing the selection
+      if (value === '') {
+        selectManufacturer(null);
         return;
       }
 
-      // Clear display data
-      if (clearGeofenceData) {
+      // Set the manufacturer selection
+      selectManufacturer(value);
+
+      // If region is already selected, fetch filtered data
+      if (activeRegion !== null) {
+        fetchAircraftByRegionAndManufacturer(activeRegion as RegionCode, value);
+      } else {
+        // Otherwise, just proceed with manufacturer-only filtering as before
+        fetchManufacturerData(value);
+      }
+    };
+
+    const fetchManufacturerData = (manufacturer: string) => {
+      if (isRateLimited) {
+        console.log(
+          `Skipping data fetch - rate limited for ${rateLimitTimer}s`
+        );
+        return;
+      }
+
+      console.log(`Fetching data for manufacturer: ${manufacturer}`);
+
+      try {
+        // If you have a context function for this, call it after a slight delay
+        if (typeof refreshPositions === 'function') {
+          // Apply a small delay to prevent overwhelming the API
+          setTimeout(() => {
+            refreshPositions().catch((error: any) => {
+              if (
+                error.message?.includes('rate limit') ||
+                error.status === 429
+              ) {
+                handleRateLimit(30);
+              } else {
+                console.error('Error fetching manufacturer data:', error);
+              }
+            });
+          }, 200);
+        }
+      } catch (error: any) {
+        if (error.message?.includes('rate limit') || error.status === 429) {
+          handleRateLimit(30);
+        } else {
+          console.error('Error scheduling manufacturer data fetch:', error);
+        }
+      }
+    };
+
+    const fetchAircraftByRegionAndManufacturer = async (
+      region: RegionCode,
+      manufacturer: string,
+      page: number = 1,
+      limit: number = 500
+    ) => {
+      if (!region || !manufacturer) {
+        console.log('Both region and manufacturer must be selected');
+        return;
+      }
+
+      setLocalLoading(true);
+
+      try {
+        const response = await fetch(
+          `/api/tracking/filtered-aircraft?region=${region}&manufacturer=${encodeURIComponent(manufacturer)}&page=${page}&limit=${limit}`
+        );
+
+        const data = await response.json();
+        const aircraftData = data.aircraft || [];
+
+        if (!response.ok) {
+          throw new Error(`API error: ${response.statusText}`);
+        }
+
+        // Process the filtered aircraft data
+        if (aircraftData.length > 0) {
+          // Transform to ExtendedAircraft
+          interface AircraftData {
+            TYPE_AIRCRAFT?: string;
+            OPERATOR?: string;
+            REGION: number;
+          }
+
+          const extendedAircraft: ExtendedAircraft[] = aircraftData.map(
+            (aircraft: AircraftData) => ({
+              ...aircraft,
+              type: aircraft.TYPE_AIRCRAFT || 'Unknown',
+              isGovernment:
+                aircraft.OPERATOR?.toLowerCase().includes('government') ??
+                false,
+              REGION: aircraft.REGION,
+              zoomLevel: undefined,
+            })
+          );
+
+          // Update the map
+          updateGeofenceAircraft(extendedAircraft);
+        } else {
+          console.log(
+            `No aircraft found for manufacturer ${manufacturer} in region ${region}`
+          );
+        }
+      } catch (error) {
+        console.error('Error fetching filtered aircraft:', error);
+      } finally {
+        setLocalLoading(false);
+      }
+    };
+
+    // Model selection methods
+    const handleModelSelect = (value: string) => {
+      selectModel(value === '' ? null : value);
+      setActiveDropdown(null);
+
+      // If in combined mode, reapply the filter
+      if (filterMode === 'both' && isGeofenceActive && selectedManufacturer) {
+        setTimeout(() => {
+          applyCombinedFilters();
+        }, 100);
+      }
+    };
+
+    // Combined filter methods
+    const applyCombinedFilters = () => {
+      if (
+        !selectedManufacturer ||
+        !isGeofenceActive ||
+        geofenceAircraft.length === 0
+      ) {
+        return;
+      }
+
+      setLocalLoading(true);
+
+      try {
+        console.log(
+          `Filtering ${geofenceAircraft.length} aircraft by ${selectedManufacturer}`
+        );
+
+        // Filter the aircraft by manufacturer
+        let filteredAircraft = geofenceAircraft.filter(
+          (aircraft) =>
+            aircraft.MANUFACTURER?.toLowerCase() ===
+            selectedManufacturer.toLowerCase()
+        );
+
+        // Further filter by model if selected
+        if (selectedModel) {
+          filteredAircraft = filteredAircraft.filter(
+            (aircraft) =>
+              aircraft.MODEL?.toLowerCase() === selectedModel.toLowerCase()
+          );
+        }
+
+        console.log(`Found ${filteredAircraft.length} matching aircraft`);
+
+        if (filteredAircraft.length === 0) {
+          alert(`No ${selectedManufacturer} aircraft found in this area.`);
+          return;
+        }
+
+        // Clear display data
+        if (clearGeofenceData) {
+          clearGeofenceData();
+        }
+
+        // Update the display
+        updateGeofenceAircraft(filteredAircraft);
+      } catch (error) {
+        console.error('Error filtering aircraft:', error);
+      } finally {
+        setLocalLoading(false);
+      }
+    };
+
+    // Reset all filters
+    const clearAllFilters = () => {
+      console.log('Clearing all filters...');
+
+      // 1. Reset filter mode
+      setFilterMode('manufacturer');
+
+      // 2. Unblock API calls that might have been blocked
+      openSkyTrackingService.setBlockAllApiCalls(false);
+      setBlockManufacturerApiCalls(false);
+      setIsManufacturerApiBlocked(false);
+
+      // 3. Clear manufacturer selection
+      selectManufacturer(null);
+      selectModel(null);
+
+      // 4. Clear geofence
+      setGeofenceLocation('');
+      setGeofenceCoordinates(null);
+      setGeofenceAircraft([]);
+      setGeofenceEnabled(false);
+      setIsGeofenceActive(false);
+      if (typeof clearGeofence === 'function') {
+        clearGeofence();
+      }
+      if (typeof clearGeofenceData === 'function') {
         clearGeofenceData();
       }
 
-      // Update the display
-      updateGeofenceAircraft(filteredAircraft);
-    } catch (error) {
-      console.error('Error filtering aircraft:', error);
-    } finally {
-      setLocalLoading(false);
-    }
-  };
+      // Add this line to clear locationName
+      setLocationName(null); // or setLocationName('') depending on how you handle empty states
 
-  // Reset all filters
-  const clearAllFilters = () => {
-    console.log('Clearing all filters...');
+      // 5. Reset owner filters to select all
+      setOwnerFilters([...allOwnerTypes]);
 
-    // 1. Reset filter mode
-    setFilterMode('manufacturer');
+      // 6. Clear region filter properly
+      setActiveRegion(null);
+      setSelectedRegion(RegionCode.GLOBAL);
 
-    // 2. Unblock API calls that might have been blocked
-    openSkyTrackingService.setBlockAllApiCalls(false);
-    setBlockManufacturerApiCalls(false);
-    setIsManufacturerApiBlocked(false);
+      setGeofenceLocation(''); // ✅ ← this clears the ribbon display
+      setGeofenceRadius(25); // or whatever your default is
 
-    // 3. Clear manufacturer selection
-    selectManufacturer(null);
-    selectModel(null);
+      // Clear region outline from map
+      if (regionOutline) {
+        try {
+          // Handle different possible object structures
+          if (typeof regionOutline.remove === 'function') {
+            regionOutline.remove();
+          } else if (
+            regionOutline.rectangle &&
+            typeof regionOutline.rectangle.remove === 'function'
+          ) {
+            regionOutline.rectangle.remove();
+          }
 
-    // 4. Clear geofence
-    setGeofenceLocation('');
-    setGeofenceCoordinates(null);
-    setGeofenceAircraft([]);
-    setGeofenceEnabled(false);
-    setIsGeofenceActive(false);
-    if (typeof clearGeofence === 'function') {
-      clearGeofence();
-    }
-    if (typeof clearGeofenceData === 'function') {
-      clearGeofenceData();
-    }
-
-    // Add this line to clear locationName
-    setLocationName(null); // or setLocationName('') depending on how you handle empty states
-
-    // 5. Reset owner filters to select all
-    setOwnerFilters([...allOwnerTypes]);
-
-    // 6. Clear region filter properly
-    setActiveRegion(null);
-    setSelectedRegion(RegionCode.GLOBAL);
-
-    setGeofenceLocation(''); // ✅ ← this clears the ribbon display
-    setGeofenceRadius(25); // or whatever your default is
-
-    // Clear region outline from map
-    if (regionOutline) {
-      try {
-        // Handle different possible object structures
-        if (typeof regionOutline.remove === 'function') {
-          regionOutline.remove();
-        } else if (
-          regionOutline.rectangle &&
-          typeof regionOutline.rectangle.remove === 'function'
-        ) {
-          regionOutline.rectangle.remove();
+          // Clear any labels associated with the region
+          if (
+            regionOutline.label &&
+            typeof regionOutline.label.remove === 'function'
+          ) {
+            regionOutline.label.remove();
+          }
+        } catch (error) {
+          console.error('Error removing region outline:', error);
         }
 
-        // Clear any labels associated with the region
-        if (
-          regionOutline.label &&
-          typeof regionOutline.label.remove === 'function'
-        ) {
-          regionOutline.label.remove();
+        // Always reset the region outline state
+        setRegionOutline(null);
+      }
+
+      // 7. Reset map view to global
+      if (mapInstance) {
+        // Use the predefined center and zoom level from your map config
+        mapInstance.setView(MAP_CONFIG.CENTER, MAP_CONFIG.DEFAULT_ZOOM);
+        mapInstance.invalidateSize();
+      }
+
+      // 8. Reset to initial aircraft data
+      if (typeof reset === 'function') {
+        reset();
+      } else if (typeof fullRefresh === 'function') {
+        fullRefresh();
+      }
+
+      // 9. Close any open dropdown
+      setActiveDropdown(null);
+
+      // 10. Reset rate limiting states
+      setIsRateLimited(false);
+      setRateLimitTimer(null);
+
+      // 11. Clear combined mode state
+      setCombinedModeReady(false);
+
+      // 12. Reset search terms
+      setManufacturerSearchTerm('');
+
+      // 13. Dispatch a custom event that other components can listen for
+      const clearEvent = new CustomEvent('ribbon-filters-cleared');
+      document.dispatchEvent(clearEvent);
+
+      console.log('All filters cleared successfully');
+    };
+
+    // Calculate combined loading state
+    const combinedLoading = localLoading;
+
+    return {
+      // State
+      filterMode,
+      activeDropdown,
+      selectedManufacturer,
+      selectedModel,
+      geofenceLocation,
+
+      geofenceRadius,
+      isGeofenceActive,
+      geofenceCoordinates,
+      getUserLocation,
+      activeRegion,
+      ownerFilters,
+      allOwnerTypes,
+      manufacturerSearchTerm,
+      combinedLoading,
+      isGettingLocation,
+      dropdownRefs,
+      localLoading,
+      isRateLimited,
+      selectedRegion,
+      isRefreshing,
+      isGeofencePlacementMode: false, // Initialize with a default value
+      manufacturerOptions,
+      modelOptions,
+
+      // Methods
+      toggleDropdown,
+      toggleFilterMode,
+      selectManufacturerAndClose,
+      handleModelSelect,
+      processGeofenceSearch,
+      handleOwnerFilterChange,
+      handleRegionSelect,
+      setManufacturerSearchTerm,
+      setGeofenceLocation,
+      setGeofenceRadius,
+      toggleGeofenceState,
+      clearAllFilters,
+      setLocationName,
+      applyCombinedFilters,
+      getAircraftOwnerType,
+      setGeofenceCoordinates,
+      setGeofenceCenter,
+      setIsGettingLocation,
+      updateGeofenceAircraft,
+      fetchManufacturersForRegion,
+      fetchModelsForManufacturer,
+      filterAircraftByAll,
+      applyAllFilters,
+
+      refreshWithFilters: () => {
+        // Implement refresh logic here
+        if (typeof refreshPositions === 'function') {
+          refreshPositions().catch((error) => {
+            console.error('Error refreshing positions:', error);
+          });
         }
-      } catch (error) {
-        console.error('Error removing region outline:', error);
-      }
+      },
+      setActiveDropdown, // Add this line if you have this function
+    };
+  }
 
-      // Always reset the region outline state
-      setRegionOutline(null);
-    }
-
-    // 7. Reset map view to global
-    if (mapInstance) {
-      // Use the predefined center and zoom level from your map config
-      mapInstance.setView(MAP_CONFIG.CENTER, MAP_CONFIG.DEFAULT_ZOOM);
-      mapInstance.invalidateSize();
-    }
-
-    // 8. Reset to initial aircraft data
-    if (typeof reset === 'function') {
-      reset();
-    } else if (typeof fullRefresh === 'function') {
-      fullRefresh();
-    }
-
-    // 9. Close any open dropdown
-    setActiveDropdown(null);
-
-    // 10. Reset rate limiting states
-    setIsRateLimited(false);
-    setRateLimitTimer(null);
-
-    // 11. Clear combined mode state
-    setCombinedModeReady(false);
-
-    // 12. Reset search terms
-    setManufacturerSearchTerm('');
-
-    // 13. Dispatch a custom event that other components can listen for
-    const clearEvent = new CustomEvent('ribbon-filters-cleared');
-    document.dispatchEvent(clearEvent);
-
-    console.log('All filters cleared successfully');
-  };
-
-  // Calculate combined loading state
-  const combinedLoading = localLoading;
-
-  return {
-    // State
-    filterMode,
-    activeDropdown,
-    selectedManufacturer,
-    selectedModel,
-    geofenceLocation,
-
-    geofenceRadius,
-    isGeofenceActive,
-    geofenceCoordinates,
-    getUserLocation,
-    activeRegion,
-    ownerFilters,
-    allOwnerTypes,
-    manufacturerSearchTerm,
-    combinedLoading,
-    isGettingLocation,
-    dropdownRefs,
-    localLoading,
-    isRateLimited,
-    selectedRegion,
-    isRefreshing,
-    isGeofencePlacementMode: false, // Initialize with a default value
-    manufacturerOptions,
-    modelOptions,
-
-    // Methods
-    toggleDropdown,
-    toggleFilterMode,
-    selectManufacturerAndClose,
-    handleModelSelect,
-    processGeofenceSearch,
-    handleOwnerFilterChange,
-    handleRegionSelect,
-    setManufacturerSearchTerm,
-    setGeofenceLocation,
-    setGeofenceRadius,
-    toggleGeofenceState,
-    clearAllFilters,
-    setLocationName,
-    applyCombinedFilters,
-    getAircraftOwnerType,
-    setGeofenceCoordinates,
-    setGeofenceCenter,
-    setIsGettingLocation,
-    updateGeofenceAircraft,
-    fetchManufacturersForRegion,
-    fetchModelsForManufacturer,
-    filterAircraftByAll,
-    applyAllFilters,
-
-    refreshWithFilters: () => {
-      // Implement refresh logic here
-      if (typeof refreshPositions === 'function') {
-        refreshPositions().catch((error) => {
-          console.error('Error refreshing positions:', error);
-        });
-      }
-    },
-    setActiveDropdown, // Add this line if you have this function
-  };
-}
-
-function applyCombinedFilters() {
-  throw new Error('Function not implemented.');
+  function applyCombinedFilters() {
+    throw new Error('Function not implemented.');
+  }
 }

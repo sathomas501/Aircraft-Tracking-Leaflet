@@ -30,6 +30,7 @@ import {
   MAP_CONFIG,
   getBoundsByRegion as configGetBoundsByRegion,
 } from '../../../config/map';
+import { useFilterLogic } from '../hooks/useFilterLogic';
 
 // Define context interface
 export interface EnhancedMapContextType {
@@ -96,8 +97,8 @@ export interface EnhancedMapContextType {
   setIsGeofencePlacementMode: (isPlacementMode: boolean) => void;
 
   // Region
-  selectedRegion: RegionCode | string;
-  setSelectedRegion: (region: RegionCode | string) => void;
+  selectedRegion: RegionCode | null;
+  setSelectedRegion: (region: RegionCode | null) => void;
   getBoundsByRegion: (region: string) => LatLngBoundsExpression;
 
   // Dropdown handling
@@ -200,6 +201,7 @@ interface EnhancedMapProviderProps {
   children: React.ReactNode;
   manufacturers: SelectOption[];
   onError: (message: string) => void;
+  selectedRegion: RegionCode | null; // ✅ Add this
 }
 
 // Enhanced Map Provider component
@@ -207,7 +209,12 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
   children,
   manufacturers,
   onError,
+  selectedRegion: initialRegion, // ✅ Rename for clarity
 }) => {
+  const [selectedRegion, setSelectedRegion] = useState<RegionCode | null>(
+    initialRegion
+  );
+
   // Map state
   const [mapInstance, setMapInstance] = useState<L.Map | null>(null);
   const [zoomLevel, setZoomLevel] = useState<number>(6);
@@ -231,10 +238,6 @@ export const EnhancedMapProvider: React.FC<EnhancedMapProviderProps> = ({
     lat: number;
     lng: number;
   } | null>(null);
-
-  const [selectedRegion, setSelectedRegion] = useState<RegionCode | string>(
-    RegionCode.GLOBAL
-  );
 
   // Derived state for geofence coordinates
   const geofenceCoordinates = useMemo(() => geofenceCenter, [geofenceCenter]);

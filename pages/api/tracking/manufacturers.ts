@@ -5,13 +5,13 @@ import { RegionCode } from '@/types/base';
 
 // Optional: bounding boxes (for future use)
 const regionBounds: Record<number, [number, number, number, number]> = {
-  [RegionCode.Middle_East]: [12.0, 37.5, 34.0, 58.0],
-  [RegionCode.Africa]: [-35.0, 37.0, -20.0, 52.0],
-  [RegionCode.Asia]: [1.0, 81.0, 25.0, 180.0],
-  [RegionCode.North_America]: [10, -170, 72, -50],
-  [RegionCode.South_America]: [-56, -82, 13, -30],
-  [RegionCode.Oceania]: [-50, 110, 0, 180],
-  [RegionCode.Europe]: [35, -25, 70, 45],
+  [RegionCode.MIDDLE_EAST]: [12.0, 37.5, 34.0, 58.0],
+  [RegionCode.AFRICA]: [-35.0, 37.0, -20.0, 52.0],
+  [RegionCode.ASIA]: [1.0, 81.0, 25.0, 180.0],
+  [RegionCode.NORTH_AMERICA]: [10, -170, 72, -50],
+  [RegionCode.SOUTH_AMERICA]: [-56, -82, 13, -30],
+  [RegionCode.OCEANIA]: [-50, 110, 0, 180],
+  [RegionCode.EUROPE]: [35, -25, 70, 45],
 };
 
 export default async function handler(
@@ -27,54 +27,40 @@ export default async function handler(
   try {
     await dbManager.initialize();
 
+    // Parse and normalize region parameter
     const regionParam = req.query.region;
-    const region =
-      regionParam !== undefined ? parseInt(regionParam as string, 10) : null;
+    const regionRaw =
+      regionParam !== undefined ? parseInt(regionParam as string, 10) : NaN;
+    const region = isNaN(regionRaw) || regionRaw <= 0 ? 1 : regionRaw;
 
-    // 🟡 If region is missing or invalid
-    if (region === null || isNaN(region)) {
-      console.log(
-        '[API] Invalid or missing region. Returning top global manufacturers'
-      );
-      const manufacturers = await dbManager.query(
-        `manufacturers-global`,
-        `
+    console.log(`[API] Region filter resolved to: ${region}`);
+
+    // Use global query for region 1, otherwise region-specific
+    const isGlobal = region === 1;
+
+    const manufacturers = await dbManager.query(
+      isGlobal ? `manufacturers-global` : `manufacturers-region-${region}`,
+      isGlobal
+        ? `
           SELECT MANUFACTURER AS name, COUNT(*) AS count
           FROM aircraft
           WHERE MANUFACTURER IS NOT NULL
           GROUP BY MANUFACTURER
           ORDER BY count DESC
           LIMIT 75
+        `
+        : `
+          SELECT 
+            MANUFACTURER AS name, 
+            COUNT(*) AS count 
+          FROM aircraft 
+          WHERE MANUFACTURER IS NOT NULL AND REGION = ?
+          GROUP BY MANUFACTURER 
+          HAVING count > 0 
+          ORDER BY count DESC 
+          LIMIT 50
         `,
-        [],
-        0
-      );
-
-      return res.status(200).json(
-        manufacturers.map((m: any) => ({
-          value: m.name,
-          label: `${m.name} (${m.count})`,
-        }))
-      );
-    }
-
-    // ✅ Region is valid (including 0)
-    console.log(`[API] Region filter detected: ${region}`);
-
-    const manufacturers = await dbManager.query(
-      `manufacturers-region-${region}`,
-      `
-        SELECT 
-          MANUFACTURER AS name, 
-          COUNT(*) AS count 
-        FROM aircraft 
-        WHERE MANUFACTURER IS NOT NULL AND REGION = ?
-        GROUP BY MANUFACTURER 
-        HAVING count > 0 
-        ORDER BY count DESC 
-        LIMIT 50
-      `,
-      [region],
+      isGlobal ? [] : [region],
       0
     );
 

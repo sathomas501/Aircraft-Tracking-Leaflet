@@ -352,13 +352,13 @@ export interface RegionalAircraft {
 
 export enum RegionCode {
   GLOBAL = 0,
-  North_America = 1,
-  Europe = 2,
-  Asia = 3,
-  South_America = 4,
-  Africa = 5,
-  Oceania = 6,
-  Middle_East = 7,
+  NORTH_AMERICA = 1,
+  EUROPE = 2,
+  ASIA = 3,
+  SOUTH_AMERICA = 4,
+  AFRICA = 5,
+  OCEANIA = 6,
+  MIDDLE_EAST = 7,
 }
 
 export interface Feature {
@@ -380,4 +380,46 @@ export interface Feature {
     [key: string]: any;
   }>;
   [key: string]: any;
+}
+
+export function getRegionName(regionCode: RegionCode): string {
+  switch (regionCode) {
+    case RegionCode.GLOBAL:
+      return 'Global';
+    case RegionCode.NORTH_AMERICA:
+      return 'North America';
+    case RegionCode.EUROPE:
+      return 'Europe';
+    case RegionCode.ASIA:
+      return 'Asia';
+    case RegionCode.SOUTH_AMERICA:
+      return 'South America';
+    case RegionCode.OCEANIA:
+      return 'Oceania';
+    case RegionCode.AFRICA:
+      return 'Africa';
+    case RegionCode.MIDDLE_EAST:
+      return 'Middle East';
+    default:
+      return 'Unknown Region';
+  }
+}
+
+/**
+ * Get all available regions for UI selection
+ */
+export function getAvailableRegions(): Array<{
+  code: RegionCode;
+  name: string;
+}> {
+  return [
+    { code: RegionCode.NORTH_AMERICA, name: 'North America' },
+    { code: RegionCode.GLOBAL, name: 'Global' },
+    { code: RegionCode.EUROPE, name: 'Europe' },
+    { code: RegionCode.ASIA, name: 'Asia' },
+    { code: RegionCode.SOUTH_AMERICA, name: 'South America' },
+    { code: RegionCode.OCEANIA, name: 'Oceania' },
+    { code: RegionCode.AFRICA, name: 'Africa' },
+    { code: RegionCode.MIDDLE_EAST, name: 'Middle East' },
+  ];
 }

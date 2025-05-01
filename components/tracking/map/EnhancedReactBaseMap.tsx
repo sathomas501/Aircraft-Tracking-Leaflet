@@ -28,6 +28,11 @@ import AircraftSpinner from './components/AircraftSpinner';
 import PopupFixer from './components/PopupFixer';
 import GeofenceMapIntegration from '../map/components/GeofenceIntegration';
 
+interface Props {
+  region: number | null;
+  onError?: (msg: string) => void;
+}
+
 // Map Events component to handle zoom changes
 const MapEvents: React.FC = () => {
   const { setZoomLevel } = useEnhancedMapContext();
@@ -91,7 +96,9 @@ export interface ReactBaseMapProps {
   onError: (message: string) => void;
 }
 
-const EnhancedReactBaseMap: React.FC<ReactBaseMapProps> = ({ onError }) => {
+const EnhancedReactBaseMap: React.FC<Props> = ({ region, onError }) => {
+  const [isLoading, setIsLoading] = useState(false);
+  const handleError = onError || ((msg) => console.error(msg));
   const [manufacturers, setManufacturers] = useState<SelectOption[]>([]);
   const {
     displayedAircraft,
@@ -106,8 +113,7 @@ const EnhancedReactBaseMap: React.FC<ReactBaseMapProps> = ({ onError }) => {
   } = useEnhancedMapContext();
 
   // Get UI context functions including openPanel
-  const { selectAircraft, openPanel, closePanel, panels, isLoading } =
-    useEnhancedUI();
+  const { selectAircraft, openPanel, closePanel, panels } = useEnhancedUI();
 
   // Initialize with all owner types selected
   const [ownerFilters, setOwnerFilters] = useState<string[]>([
@@ -135,18 +141,30 @@ const EnhancedReactBaseMap: React.FC<ReactBaseMapProps> = ({ onError }) => {
 
   // Fetch manufacturers
   useEffect(() => {
+    if (!region || region <= 0) return;
+
     const fetchManufacturers = async () => {
       try {
-        const response = await fetch('/api/tracking/manufacturers');
+        setIsLoading(true);
+        const response = await fetch(
+          `/api/tracking/manufacturers?region=${region}`
+        );
+        if (!response.ok)
+          throw new Error(`Fetch failed: ${response.statusText}`);
         const data = await response.json();
-        setManufacturers(data);
+        setManufacturers(data.manufacturers || []);
       } catch (error) {
-        onError('Failed to load manufacturers');
+        console.error('Error fetching manufacturers:', error);
+        handleError(
+          `Error loading manufacturers: ${error instanceof Error ? error.message : 'Unknown error'}`
+        );
+      } finally {
+        setIsLoading(false);
       }
     };
 
     fetchManufacturers();
-  }, [onError]);
+  }, [region]);
 
   // Define these helper functions before they're used in useMemo
   const getAircraftOwnerType = (aircraft: ExtendedAircraft): string => {

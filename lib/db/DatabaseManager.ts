@@ -151,6 +151,24 @@ export class DatabaseManager {
     }
   }
 
+  public async ensureRegionIndex(): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const indexes = await this.db.all<{ name: string }[]>(
+      `PRAGMA index_list('aircraft')`
+    );
+    const hasRegionIndex = indexes.some((idx) =>
+      idx.name.toLowerCase().includes('region')
+    );
+
+    if (!hasRegionIndex) {
+      console.log('[DB] Creating index on REGION column...');
+      await this.db.exec(
+        `CREATE INDEX IF NOT EXISTS idx_aircraft_region ON aircraft(REGION)`
+      );
+    }
+  }
+
   /**
    * Get manufacturers with aircraft count
    */
